@@ -1,0 +1,21 @@
+import React,{useEffect,useState} from 'react';import * as T from 'three';
+import {ViewAssets} from './native-assets';import type {LevelView,RegionBundle} from '../shared';import type {ObjectPreset} from '../catalog-types';import {Icon} from './studio-ui';
+const views=new Map<string,Promise<LevelView>>(),images=new Map<string,Promise<string>>(),subscribers=new Map<string,number>();
+export function presetView(key:string){let p=views.get(key);if(!p){p=window.editor.presetPreview(key);views.set(key,p);if(views.size>160)views.delete(views.keys().next().value!);p.catch(()=>views.delete(key));}return p;}
+let renderer:T.WebGLRenderer|undefined,assets:ViewAssets|undefined,chain=Promise.resolve(),rendered=0;
+async function renderThumb(p:ObjectPreset){
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('thumbnail-v05-idle-3:'+p.key));const key=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
+  const cached=await window.editor.thumbnailRead(key);if(cached)return cached;
+  renderer??=new T.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true});renderer.setSize(128,128,false);renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.3;
+  if(rendered++%32===0&&assets){assets.dispose();assets=undefined;}assets??=new ViewAssets(()=>{},()=>{});const level=await presetView(p.key),scene=new T.Scene(),root=new T.Group();scene.add(root);scene.background=new T.Color('#242a30');
+  const light=new T.DirectionalLight(0xfff0db,3);light.position.set(-3,-5,8);scene.add(light,new T.HemisphereLight(0xe4f0ff,0x69736a,2));
+  for(const e of level.entities){if(!e.position)continue;const g=new T.Group();g.position.fromArray(e.position);if(e.rotation)g.quaternion.fromArray(e.rotation);if(e.scale)g.scale.fromArray(e.scale);if(e.mesh)g.add(await assets.entity(e));root.add(g);}
+  const temporary:T.BufferGeometry[]=[];const mats:T.Material[]=[];
+  if(!new T.Box3().setFromObject(root).isEmpty()){}else{const geo=new T.BoxGeometry(1,1,1),mat=new T.MeshStandardMaterial({color:p.type==='Ocean_Map'?0x4e96b3:0x9ba9a2});root.add(new T.Mesh(geo,mat));temporary.push(geo);mats.push(mat);}
+  const box=new T.Box3().setFromObject(root),center=box.getCenter(new T.Vector3()),size=box.getSize(new T.Vector3()),extent=Math.max(size.x,size.y,size.z,.5);root.position.sub(center);
+  const camera=new T.OrthographicCamera(-extent*.72,extent*.72,extent*.72,-extent*.72,.01,extent*20+20);camera.up.set(0,0,1);camera.position.set(extent*2,-extent*3,extent*2.2);camera.lookAt(0,0,0);renderer.render(scene,camera);const png=renderer.domElement.toDataURL('image/png');temporary.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());await window.editor.thumbnailWrite(key,png).catch(()=>{});return png;
+}
+function thumbnail(p:ObjectPreset){let job=images.get(p.key);if(!job){job=chain.then(()=>{if(!(subscribers.get(p.key)??0))throw new Error('缩略图已离开可见区域');return renderThumb(p);});chain=job.then(()=>{},()=>{});images.set(p.key,job);if(images.size>600)images.delete(images.keys().next().value!);job.catch(()=>images.delete(p.key));}return job;}
+export function NativeThumbnail({preset}:{preset:ObjectPreset}){const[src,setSrc]=useState(''),[error,setError]=useState('');useEffect(()=>{let alive=true;subscribers.set(preset.key,(subscribers.get(preset.key)??0)+1);setSrc('');setError('');void thumbnail(preset).then(s=>{if(alive)setSrc(s);}).catch(e=>{if(alive)setError('原生预览失败：'+String(e));});return()=>{alive=false;const n=(subscribers.get(preset.key)??1)-1;if(n)subscribers.set(preset.key,n);else subscribers.delete(preset.key);};},[preset.key]);return src?<img className="s-thumb" src={src} alt={preset.label} draggable={false}/>:<span className="s-thumb placeholder" title={error||'正在读取原生模型'} aria-label={error||'正在读取原生模型'}><Icon name={preset.type==='Guy'?'user':'cube'} size={28}/></span>;}
+
+export function RegionThumbnail({bundle}:{bundle:RegionBundle}){const key='region:'+JSON.stringify(bundle);const preset={key,label:bundle.name,type:'Group',category:'advanced',mesh:'',materials:[],signature:{},values:{},tags:[],parsed:true,placement:'assembly',template:'mirror_1',sourceId:0,verification:'native-data'}as ObjectPreset;if(!views.has(key))views.set(key,window.editor.regionPreview(bundle));return <NativeThumbnail preset={preset}/>;}

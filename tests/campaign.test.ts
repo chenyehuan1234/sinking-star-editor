@@ -1,0 +1,14 @@
+import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs/promises';import os from'node:os';import path from'node:path';
+import{newCampaign,readCampaign,writeCampaign}from'../src/core/campaign';import{CampaignManager}from'../src/main/campaigns';
+test('战役 v33 保留进度与尾部，修改当前关卡可往返',()=>{const b=newCampaign(),c=readCampaign(b);assert.equal(c.current,'overworld');assert.deepEqual(writeCampaign(b,{}),b);const updated=writeCampaign(b,{current:'ed_123456789abc_level_a',time:123456789n});assert.equal(readCampaign(updated).current,'ed_123456789abc_level_a');assert.equal(readCampaign(updated).time,123456789n);assert.deepEqual(readCampaign(updated).tail,c.tail);assert.throws(()=>readCampaign(Buffer.alloc(100)));});
+test('测试战役启动、归档历史、退出恢复选择、重置均不写正常战役',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'sstar-campaign-')),saves=path.join(root,'saves'),workspace=path.join(root,'workspace'),m=new CampaignManager(workspace,saves),id='0123456789ab',hash='a'.repeat(64);
+  try{await fs.mkdir(path.join(saves,'normal'),{recursive:true});const normal=newCampaign();await fs.writeFile(path.join(saves,'normal','Status.sokoban_status'),normal);await fs.writeFile(path.join(saves,'normal','overworld.history'),'original');
+    const dir=await m.ensure(id,hash);await fs.writeFile(path.join(dir,'overworld.history'),'owned history');await m.activate(id,hash);await assert.rejects(()=>fs.access(path.join(dir,'overworld.history')));assert.equal(readCampaign(await fs.readFile(path.join(dir,'Status.sokoban_status'))).current,'overworld');
+    await m.deactivate();assert.ok(readCampaign(await fs.readFile(path.join(dir,'Status.sokoban_status'))).time<readCampaign(normal).time);
+    await fs.writeFile(path.join(dir,'ed_level.history'),'owned small history');const archive=await m.reset(id,hash);assert.equal(await fs.readFile(path.join(archive,'ed_level.history'),'utf8'),'owned small history');
+    assert.deepEqual(await fs.readFile(path.join(saves,'normal','Status.sokoban_status')),normal);assert.equal(await fs.readFile(path.join(saves,'normal','overworld.history'),'utf8'),'original');
+    await assert.rejects(()=>m.ensure(id,'b'.repeat(64)),/不属于/);assert.throws(()=>m.directory('../normal'));
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});
+test('同名而未登记的战役拒绝接管',async()=>{const root=await fs.mkdtemp(path.join(os.tmpdir(),'sstar-owner-'));try{const m=new CampaignManager(path.join(root,'workspace'),path.join(root,'saves'));await fs.mkdir(m.directory('0123456789ab'),{recursive:true});await fs.writeFile(path.join(m.directory('0123456789ab'),'keep'),'keep');await assert.rejects(()=>m.ensure('0123456789ab','a'.repeat(64)),/未登记/);assert.equal(await fs.readFile(path.join(m.directory('0123456789ab'),'keep'),'utf8'),'keep');}finally{await fs.rm(root,{recursive:true,force:true});}});

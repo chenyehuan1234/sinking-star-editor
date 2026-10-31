@@ -1,0 +1,34 @@
+name: Windows checks and packages
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: General tests (native game is not installed)
+        run: npm test
+      - run: npm run package
+      - run: npm run verify:release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64
+          path: |
+            release-public/*Setup.exe
+            release-public/*x64.zip
+            release-public/SHA256SUMS.txt
+      - name: Record test scope
+        shell: pwsh
+        run: '"General tests and package audit ran here. Original-game integration, UI, installation and in-game checks did not run on this runner." >> $env:GITHUB_STEP_SUMMARY'

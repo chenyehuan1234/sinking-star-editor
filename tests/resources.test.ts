@@ -1,0 +1,8 @@
+import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import{GamePackage}from'../src/core/package';import{ExeReflection}from'../src/core/reflection';import{PropertyCodec}from'../src/core/properties';import{parseEntities}from'../src/core/entities';import{transform}from'../src/core/mechanisms';
+const root=process.env.SINKING_STAR_GAME??'',available=fs.existsSync(root+'/sinking_star.exe'),pkg=available?new GamePackage(fs.readFileSync(root+'/data/levels.package')):null,c=available?new PropertyCodec(new ExeReflection(fs.readFileSync(root+'/sinking_star.exe'))):null;
+test('标牌图片、塔贴图和宝藏模型使用资源字符串而非内存指针，全部字段往返',{skip:!available},()=>{
+  const f=parseEntities(pkg!.get('data-common/overworld.entities'));for(const type of ['Area_Pin','Tower','Treasure_Display','Sign']){const r=f.records.find(r=>r.type===type)!;assert.ok(r);const p=c!.parse(r);assert.ok(p.complete,type);const values=Object.fromEntries(p.fields.map(f=>[f.schema.name,f.value]));assert.deepEqual(c!.patch(r,values).diff,r.diff,type);}
+});
+test('原生水域的 u8 数组往返，整体移动保持水格相对位置',{skip:!available},()=>{
+  const r=parseEntities(pkg!.get('data-common/3d_intro_skipping.entities')).records.find(r=>r.type==='Ocean_Map')!,p=c!.parse(r);assert.ok(p.complete);assert.equal((c!.get(r,'ocean_values')as number[]).length,180);assert.deepEqual(c!.patch(r,Object.fromEntries(p.fields.map(f=>[f.schema.name,f.value]))).diff,r.diff);const moved=transform(c!,r,[2,3,0]);assert.equal(Number(c!.get(moved,'grid.corner.x'))-Number(c!.get(r,'grid.corner.x')),7);assert.equal(Number(c!.get(moved,'grid.corner.y'))-Number(c!.get(r,'grid.corner.y')),4);assert.deepEqual(c!.get(moved,'ocean_values'),c!.get(r,'ocean_values'));
+});

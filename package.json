@@ -1,0 +1,89 @@
+{
+  "name": "sinking-star-editor",
+  "version": "0.7.6-beta.1",
+  "private": true,
+  "description": "沉星之序 · 本地关卡工作台",
+  "type": "module",
+  "main": "dist/main/main.cjs",
+  "scripts": {
+    "postinstall": "node scripts/install-runtime.mjs",
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "test": "tsx --test tests/*.test.ts",
+    "inspect": "tsx scripts/inspect.ts",
+    "typecheck": "tsc --noEmit",
+    "package": "npm run build && electron-builder --win nsis zip --x64",
+    "test:native": "node scripts/native-test.mjs",
+    "package:dir": "npm run build && electron-builder --win dir --x64",
+    "verify:release": "node scripts/audit-release.mjs"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.186.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.8.0",
+    "undici": "^6.29.1"
+  },
+  "build": {
+    "electronDist": "node_modules/electron/dist",
+    "appId": "local.sinking-star.editor",
+    "productName": "沉星之序关卡编辑器",
+    "directories": {
+      "output": "release-public"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "package.json"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "artifactName": "SinkingStarEditor-${version}-${arch}.${ext}",
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "SinkingStarEditor-${version}-Setup.${ext}",
+      "license": "LICENSE"
+    }
+  },
+  "license": "MIT",
+  "author": "chenyehuan1234",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chenyehuan1234/sinking-star-editor.git"
+  },
+  "homepage": "https://github.com/chenyehuan1234/sinking-star-editor",
+  "bugs": {
+    "url": "https://github.com/chenyehuan1234/sinking-star-editor/issues"
+  }
+}

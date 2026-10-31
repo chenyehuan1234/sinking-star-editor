@@ -1,0 +1,25 @@
+node_modules/
+dist/
+release*/
+workspace/
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.key
+Thumbs.db
+.DS_Store
+# Historical internal reports and local probing scripts stay on this computer.
+docs/*
+!docs/FORMAT.md
+!docs/USER-TEST.md
+!docs/RELEASE-NOTES.md
+scripts/*
+!scripts/build.mjs
+!scripts/install-runtime.mjs
+!scripts/native-test.mjs
+!scripts/inspect.ts
+!scripts/audit-release.mjs
+!scripts/verify-public.ts

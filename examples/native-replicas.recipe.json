@@ -1,0 +1,2606 @@
+{
+  "format": "sstar-example-recipe",
+  "version": 1,
+  "world": {
+    "format": "sinking-star-world",
+    "version": 1,
+    "id": "a40300261026",
+    "name": "原版关卡复刻对照测试",
+    "map": {
+      "width": 32,
+      "height": 32,
+      "tiles": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "spawn": [
+        5,
+        5
+      ],
+      "entries": [
+        {
+          "id": "entry_mirror_source",
+          "title": "原版 · 镜子教学",
+          "levelId": "mirror_source",
+          "x": 5,
+          "y": 7
+        },
+        {
+          "id": "entry_mirror_copy",
+          "title": "复刻 · 镜子教学",
+          "levelId": "mirror_copy",
+          "x": 5,
+          "y": 10
+        },
+        {
+          "id": "entry_push_source",
+          "title": "原版 · 战士推动",
+          "levelId": "push_source",
+          "x": 8,
+          "y": 7
+        },
+        {
+          "id": "entry_push_copy",
+          "title": "复刻 · 战士推动",
+          "levelId": "push_copy",
+          "x": 8,
+          "y": 10
+        },
+        {
+          "id": "entry_switches_source",
+          "title": "原版 · 开关联动",
+          "levelId": "switches_source",
+          "x": 11,
+          "y": 7
+        },
+        {
+          "id": "entry_switches_copy",
+          "title": "复刻 · 开关联动",
+          "levelId": "switches_copy",
+          "x": 11,
+          "y": 10
+        },
+        {
+          "id": "entry_beams_source",
+          "title": "原版 · 光束与开关",
+          "levelId": "beams_source",
+          "x": 14,
+          "y": 7
+        },
+        {
+          "id": "entry_beams_copy",
+          "title": "复刻 · 光束与开关",
+          "levelId": "beams_copy",
+          "x": 14,
+          "y": 10
+        }
+      ]
+    },
+    "levels": [
+      {
+        "id": "mirror_source",
+        "title": "原版 · 镜子教学",
+        "project": {
+          "format": "sinking-star-project",
+          "version": 1,
+          "template": "mirror_1",
+          "name": "mirror_1",
+          "operations": []
+        }
+      },
+      {
+        "id": "mirror_copy",
+        "title": "复刻 · 镜子教学",
+        "project": {
+          "format": "sinking-star-project",
+          "version": 1,
+          "template": "mirror_1",
+          "name": "mirror_1",
+          "operations": [
+            {
+              "kind": "prefab",
+              "id": 943718402,
+              "template": "mirror_1",
+              "sourceId": 1048632,
+              "position": [
+                9,
+                9,
+                0
+              ]
+            },
+            {
+              "kind": "delete",
+              "id": 1048615
+            },
+            {
+              "kind": "delete",
+              "id": 1048632
+            },
+            {
+              "kind": "delete",
+              "id": 1048662
+            },
+            {
+              "kind": "delete",
+              "id": 44040198
+            },
+            {
+              "kind": "delete",
+              "id": 62914561
+            },
+            {
+              "kind": "delete",
+              "id": 62914562
+            },
+            {
+              "kind": "delete",
+              "id": 62914563
+            },
+            {
+              "kind": "delete",
+              "id": 62914566
+            },
+            {
+              "kind": "prefab",
+              "id": 943718401,
+              "template": "mirror_1",
+              "sourceId": 1048615,
+              "position": [
+                5,
+                6,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718403,
+              "template": "mirror_1",
+              "sourceId": 1048662,
+              "position": [
+                11,
+                13,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718404,
+              "template": "mirror_1",
+              "sourceId": 44040198,
+              "position": [
+                -4,
+                0,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718405,
+              "template": "mirror_1",
+              "sourceId": 62914561,
+              "position": [
+                3,
+                14,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718406,
+              "template": "mirror_1",
+              "sourceId": 62914562,
+              "position": [
+                10,
+                15,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718407,
+              "template": "mirror_1",
+              "sourceId": 62914563,
+              "position": [
+                11,
+                5,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718408,
+              "template": "mirror_1",
+              "sourceId": 62914566,
+              "position": [
+                9,
+                8,
+                -1
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "push_source",
+        "title": "原版 · 战士推动",
+        "project": {
+          "format": "sinking-star-project",
+          "version": 1,
+          "template": "heroes1_1",
+          "name": "heroes1_1",
+          "operations": []
+        }
+      },
+      {
+        "id": "push_copy",
+        "title": "复刻 · 战士推动",
+        "project": {
+          "format": "sinking-star-project",
+          "version": 1,
+          "template": "heroes1_1",
+          "name": "heroes1_1",
+          "operations": [
+            {
+              "kind": "prefab",
+              "id": 943718409,
+              "template": "heroes1_1",
+              "sourceId": 1048837,
+              "position": [
+                2,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "delete",
+              "id": 1
+            },
+            {
+              "kind": "delete",
+              "id": 10
+            },
+            {
+              "kind": "delete",
+              "id": 6
+            },
+            {
+              "kind": "delete",
+              "id": 7
+            },
+            {
+              "kind": "delete",
+              "id": 8
+            },
+            {
+              "kind": "delete",
+              "id": 9
+            },
+            {
+              "kind": "delete",
+              "id": 16777222
+            },
+            {
+              "kind": "delete",
+              "id": 16777223
+            },
+            {
+              "kind": "delete",
+              "id": 1048837
+            },
+            {
+              "kind": "delete",
+              "id": 58720258
+            },
+            {
+              "kind": "delete",
+              "id": 62914562
+            },
+            {
+              "kind": "delete",
+              "id": 62914563
+            },
+            {
+              "kind": "delete",
+              "id": 62914564
+            },
+            {
+              "kind": "delete",
+              "id": 62914566
+            },
+            {
+              "kind": "prefab",
+              "id": 943718401,
+              "template": "heroes1_1",
+              "sourceId": 1,
+              "position": [
+                10,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718402,
+              "template": "heroes1_1",
+              "sourceId": 10,
+              "position": [
+                12,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718403,
+              "template": "heroes1_1",
+              "sourceId": 6,
+              "position": [
+                6,
+                0,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718404,
+              "template": "heroes1_1",
+              "sourceId": 7,
+              "position": [
+                6,
+                4,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718405,
+              "template": "heroes1_1",
+              "sourceId": 8,
+              "position": [
+                0,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718406,
+              "template": "heroes1_1",
+              "sourceId": 9,
+              "position": [
+                4,
+                3,
+                1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718407,
+              "template": "heroes1_1",
+              "sourceId": 16777222,
+              "position": [
+                4,
+                1,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718408,
+              "template": "heroes1_1",
+              "sourceId": 16777223,
+              "position": [
+                8,
+                3,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718410,
+              "template": "heroes1_1",
+              "sourceId": 58720258,
+              "position": [
+                1,
+                3,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718411,
+              "template": "heroes1_1",
+              "sourceId": 62914562,
+              "position": [
+                2,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718412,
+              "template": "heroes1_1",
+              "sourceId": 62914563,
+              "position": [
+                2,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718413,
+              "template": "heroes1_1",
+              "sourceId": 62914564,
+              "position": [
+                1,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718414,
+              "template": "heroes1_1",
+              "sourceId": 62914566,
+              "position": [
+                2,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "properties",
+              "id": 943718411,
+              "values": {
+                "group_id": 62914568
+              }
+            },
+            {
+              "kind": "properties",
+              "id": 943718412,
+              "values": {
+                "group_id": 62914568
+              }
+            },
+            {
+              "kind": "properties",
+              "id": 943718413,
+              "values": {
+                "group_id": 62914568
+              }
+            },
+            {
+              "kind": "properties",
+              "id": 943718414,
+              "values": {
+                "group_id": 62914568
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "switches_source",
+        "title": "原版 · 开关联动",
+        "project": {
+          "format": "sinking-star-project",
+          "version": 1,
+          "template": "button_clone_journey",
+          "name": "button_clone_journey",
+          "operations": []
+        }
+      },
+      {
+        "id": "switches_copy",
+        "title": "复刻 · 开关联动",
+        "project": {
+          "format": "sinking-star-project",
+          "version": 1,
+          "template": "button_clone_journey",
+          "name": "button_clone_journey",
+          "operations": [
+            {
+              "kind": "prefab",
+              "id": 943718404,
+              "template": "button_clone_journey",
+              "sourceId": 16777219,
+              "position": [
+                9,
+                8,
+                0
+              ]
+            },
+            {
+              "kind": "delete",
+              "id": 1
+            },
+            {
+              "kind": "delete",
+              "id": 2
+            },
+            {
+              "kind": "delete",
+              "id": 3
+            },
+            {
+              "kind": "delete",
+              "id": 16777219
+            },
+            {
+              "kind": "delete",
+              "id": 1048740
+            },
+            {
+              "kind": "delete",
+              "id": 25166126
+            },
+            {
+              "kind": "delete",
+              "id": 3145738
+            },
+            {
+              "kind": "delete",
+              "id": 3145739
+            },
+            {
+              "kind": "delete",
+              "id": 3145740
+            },
+            {
+              "kind": "delete",
+              "id": 3145746
+            },
+            {
+              "kind": "delete",
+              "id": 3145748
+            },
+            {
+              "kind": "delete",
+              "id": 3145749
+            },
+            {
+              "kind": "delete",
+              "id": 3145751
+            },
+            {
+              "kind": "delete",
+              "id": 3145731
+            },
+            {
+              "kind": "delete",
+              "id": 3145795
+            },
+            {
+              "kind": "delete",
+              "id": 94371851
+            },
+            {
+              "kind": "delete",
+              "id": 94371853
+            },
+            {
+              "kind": "delete",
+              "id": 94371855
+            },
+            {
+              "kind": "delete",
+              "id": 94371849
+            },
+            {
+              "kind": "delete",
+              "id": 94371848
+            },
+            {
+              "kind": "delete",
+              "id": 94371844
+            },
+            {
+              "kind": "delete",
+              "id": 94371846
+            },
+            {
+              "kind": "prefab",
+              "id": 943718401,
+              "template": "button_clone_journey",
+              "sourceId": 1,
+              "position": [
+                6,
+                13,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718402,
+              "template": "button_clone_journey",
+              "sourceId": 2,
+              "position": [
+                5,
+                8,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718403,
+              "template": "button_clone_journey",
+              "sourceId": 3,
+              "position": [
+                12,
+                7,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718405,
+              "template": "button_clone_journey",
+              "sourceId": 1048740,
+              "position": [
+                12,
+                8,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718406,
+              "template": "button_clone_journey",
+              "sourceId": 25166126,
+              "position": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718407,
+              "template": "button_clone_journey",
+              "sourceId": 3145738,
+              "position": [
+                9,
+                7,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718408,
+              "template": "button_clone_journey",
+              "sourceId": 3145739,
+              "position": [
+                10,
+                8,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718409,
+              "template": "button_clone_journey",
+              "sourceId": 3145740,
+              "position": [
+                3,
+                10,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718410,
+              "template": "button_clone_journey",
+              "sourceId": 3145746,
+              "position": [
+                11,
+                8,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718411,
+              "template": "button_clone_journey",
+              "sourceId": 3145748,
+              "position": [
+                1,
+                9,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718412,
+              "template": "button_clone_journey",
+              "sourceId": 3145749,
+              "position": [
+                1,
+                8,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718413,
+              "template": "button_clone_journey",
+              "sourceId": 3145751,
+              "position": [
+                12,
+                7,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718414,
+              "template": "button_clone_journey",
+              "sourceId": 3145731,
+              "position": [
+                8,
+                7,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718415,
+              "template": "button_clone_journey",
+              "sourceId": 3145795,
+              "position": [
+                5,
+                10,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718416,
+              "template": "button_clone_journey",
+              "sourceId": 94371851,
+              "position": [
+                3,
+                7,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718417,
+              "template": "button_clone_journey",
+              "sourceId": 94371853,
+              "position": [
+                5,
+                9,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718418,
+              "template": "button_clone_journey",
+              "sourceId": 94371855,
+              "position": [
+                7,
+                7,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718419,
+              "template": "button_clone_journey",
+              "sourceId": 94371849,
+              "position": [
+                9,
+                9,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718420,
+              "template": "button_clone_journey",
+              "sourceId": 94371848,
+              "position": [
+                10,
+                7,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718421,
+              "template": "button_clone_journey",
+              "sourceId": 94371844,
+              "position": [
+                4,
+                8,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718422,
+              "template": "button_clone_journey",
+              "sourceId": 94371846,
+              "position": [
+                6,
+                8,
+                0
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "beams_source",
+        "title": "原版 · 光束与开关",
+        "project": {
+          "format": "sinking-star-project",
+          "version": 1,
+          "template": "button_playground",
+          "name": "button_playground",
+          "operations": []
+        }
+      },
+      {
+        "id": "beams_copy",
+        "title": "复刻 · 光束与开关",
+        "project": {
+          "format": "sinking-star-project",
+          "version": 1,
+          "template": "button_playground",
+          "name": "button_playground",
+          "operations": [
+            {
+              "kind": "prefab",
+              "id": 943718407,
+              "template": "button_playground",
+              "sourceId": 46137346,
+              "position": [
+                15,
+                12,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718416,
+              "template": "button_playground",
+              "sourceId": 59768835,
+              "position": [
+                9,
+                0,
+                0
+              ]
+            },
+            {
+              "kind": "delete",
+              "id": 16777558
+            },
+            {
+              "kind": "delete",
+              "id": 16777958
+            },
+            {
+              "kind": "delete",
+              "id": 16777992
+            },
+            {
+              "kind": "delete",
+              "id": 16777994
+            },
+            {
+              "kind": "delete",
+              "id": 29360148
+            },
+            {
+              "kind": "delete",
+              "id": 29360150
+            },
+            {
+              "kind": "delete",
+              "id": 46137346
+            },
+            {
+              "kind": "delete",
+              "id": 46137353
+            },
+            {
+              "kind": "delete",
+              "id": 59768843
+            },
+            {
+              "kind": "delete",
+              "id": 59768844
+            },
+            {
+              "kind": "delete",
+              "id": 59768849
+            },
+            {
+              "kind": "delete",
+              "id": 59768854
+            },
+            {
+              "kind": "delete",
+              "id": 59768858
+            },
+            {
+              "kind": "delete",
+              "id": 59768860
+            },
+            {
+              "kind": "delete",
+              "id": 59768861
+            },
+            {
+              "kind": "delete",
+              "id": 59768835
+            },
+            {
+              "kind": "delete",
+              "id": 59768863
+            },
+            {
+              "kind": "delete",
+              "id": 59768865
+            },
+            {
+              "kind": "delete",
+              "id": 59768867
+            },
+            {
+              "kind": "delete",
+              "id": 59768871
+            },
+            {
+              "kind": "delete",
+              "id": 59768875
+            },
+            {
+              "kind": "delete",
+              "id": 59768837
+            },
+            {
+              "kind": "delete",
+              "id": 59768882
+            },
+            {
+              "kind": "delete",
+              "id": 59768839
+            },
+            {
+              "kind": "delete",
+              "id": 59768841
+            },
+            {
+              "kind": "prefab",
+              "id": 943718401,
+              "template": "button_playground",
+              "sourceId": 16777558,
+              "position": [
+                -1,
+                18,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718402,
+              "template": "button_playground",
+              "sourceId": 16777958,
+              "position": [
+                9,
+                1,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718403,
+              "template": "button_playground",
+              "sourceId": 16777992,
+              "position": [
+                15,
+                6,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718404,
+              "template": "button_playground",
+              "sourceId": 16777994,
+              "position": [
+                -1,
+                18,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718405,
+              "template": "button_playground",
+              "sourceId": 29360148,
+              "position": [
+                4,
+                11,
+                1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718406,
+              "template": "button_playground",
+              "sourceId": 29360150,
+              "position": [
+                4,
+                11,
+                1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718408,
+              "template": "button_playground",
+              "sourceId": 46137353,
+              "position": [
+                1,
+                4,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718409,
+              "template": "button_playground",
+              "sourceId": 59768843,
+              "position": [
+                9,
+                11,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718410,
+              "template": "button_playground",
+              "sourceId": 59768844,
+              "position": [
+                6,
+                -1,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718411,
+              "template": "button_playground",
+              "sourceId": 59768849,
+              "position": [
+                6,
+                10,
+                -1
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718412,
+              "template": "button_playground",
+              "sourceId": 59768854,
+              "position": [
+                0,
+                13,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718413,
+              "template": "button_playground",
+              "sourceId": 59768858,
+              "position": [
+                6,
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718414,
+              "template": "button_playground",
+              "sourceId": 59768860,
+              "position": [
+                6,
+                16,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718415,
+              "template": "button_playground",
+              "sourceId": 59768861,
+              "position": [
+                13,
+                5,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718417,
+              "template": "button_playground",
+              "sourceId": 59768863,
+              "position": [
+                0,
+                6,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718418,
+              "template": "button_playground",
+              "sourceId": 59768865,
+              "position": [
+                15,
+                15,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718419,
+              "template": "button_playground",
+              "sourceId": 59768867,
+              "position": [
+                10,
+                10,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718420,
+              "template": "button_playground",
+              "sourceId": 59768871,
+              "position": [
+                -2,
+                1,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718421,
+              "template": "button_playground",
+              "sourceId": 59768875,
+              "position": [
+                -2,
+                1,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718422,
+              "template": "button_playground",
+              "sourceId": 59768837,
+              "position": [
+                15,
+                17,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718423,
+              "template": "button_playground",
+              "sourceId": 59768882,
+              "position": [
+                7,
+                9,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718424,
+              "template": "button_playground",
+              "sourceId": 59768839,
+              "position": [
+                0,
+                13,
+                0
+              ]
+            },
+            {
+              "kind": "prefab",
+              "id": 943718425,
+              "template": "button_playground",
+              "sourceId": 59768841,
+              "position": [
+                6,
+                17,
+                0
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "checks": [
+    {
+      "template": "mirror_1",
+      "id": 1048632,
+      "type": "Guy"
+    },
+    {
+      "template": "mirror_1",
+      "id": 1048615,
+      "type": "Door"
+    },
+    {
+      "template": "mirror_1",
+      "id": 1048662,
+      "type": "Mirror"
+    },
+    {
+      "template": "mirror_1",
+      "id": 44040198,
+      "type": "Ocean_Map"
+    },
+    {
+      "template": "mirror_1",
+      "id": 62914561,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "mirror_1",
+      "id": 62914562,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "mirror_1",
+      "id": 62914563,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "mirror_1",
+      "id": 62914566,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 1048837,
+      "type": "Guy"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 1,
+      "type": "Door"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 10,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 6,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 7,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 8,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 9,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 16777222,
+      "type": "Rock"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 16777223,
+      "type": "Rock"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 58720258,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 62914562,
+      "type": "Fence"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 62914563,
+      "type": "Fence"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 62914564,
+      "type": "Fence"
+    },
+    {
+      "template": "heroes1_1",
+      "id": 62914566,
+      "type": "Fence"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 16777219,
+      "type": "Guy"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 1,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 2,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 1048740,
+      "type": "Door"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 25166126,
+      "type": "Ocean_Map"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145738,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145739,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145740,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145746,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145748,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145749,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145751,
+      "type": "Rock"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145731,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 3145795,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 94371851,
+      "type": "Switch"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 94371853,
+      "type": "Switch"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 94371855,
+      "type": "Switch"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 94371849,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 94371848,
+      "type": "Gate"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 94371844,
+      "type": "Mirror"
+    },
+    {
+      "template": "button_clone_journey",
+      "id": 94371846,
+      "type": "Mirror"
+    },
+    {
+      "template": "button_playground",
+      "id": 46137346,
+      "type": "Guy"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768835,
+      "type": "Guy"
+    },
+    {
+      "template": "button_playground",
+      "id": 16777558,
+      "type": "Door"
+    },
+    {
+      "template": "button_playground",
+      "id": 16777958,
+      "type": "Promesst_Light"
+    },
+    {
+      "template": "button_playground",
+      "id": 16777992,
+      "type": "Switch"
+    },
+    {
+      "template": "button_playground",
+      "id": 16777994,
+      "type": "Gate"
+    },
+    {
+      "template": "button_playground",
+      "id": 29360148,
+      "type": "Gem_Slot"
+    },
+    {
+      "template": "button_playground",
+      "id": 29360150,
+      "type": "Gem"
+    },
+    {
+      "template": "button_playground",
+      "id": 46137353,
+      "type": "Rock"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768843,
+      "type": "Rock"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768844,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768849,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768854,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768858,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768860,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768861,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768863,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768865,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768867,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768871,
+      "type": "Door"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768875,
+      "type": "Gate"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768837,
+      "type": "Rock"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768882,
+      "type": "Wall_Set"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768839,
+      "type": "Switch"
+    },
+    {
+      "template": "button_playground",
+      "id": 59768841,
+      "type": "Switch"
+    }
+  ]
+}
