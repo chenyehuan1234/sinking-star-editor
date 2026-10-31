@@ -16,6 +16,7 @@ docs/*
 !docs/FORMAT.md
 !docs/USER-TEST.md
 !docs/RELEASE-NOTES.md
+!docs/screenshots/
 scripts/*
 !scripts/build.mjs
 !scripts/install-runtime.mjs

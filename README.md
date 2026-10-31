@@ -4,6 +4,22 @@
 
 **[下载 v0.7.6-beta.1 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.6-beta.1)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
 
+## 编辑器截图
+
+以下为 v0.7.6-beta.1 的实际编辑器界面，使用独立演示工程截取。
+
+**3D 工作区与角色素材库**：场景选择、原生角色图卡与右侧属性面板。
+
+![3D 工作区、角色素材库与物件属性](docs/screenshots/workspace-and-assets.png)
+
+**物件参数编辑**：选中门闸后查看变换、原版配置、玩法参数及关联。
+
+![门闸物件参数与机关素材库](docs/screenshots/mechanism-properties.png)
+
+**原生区域相机**：查看玩法镜头、高度锁定、分屏限制与总览范围。
+
+![原生相机区域与分层镜头编辑面板](docs/screenshots/native-camera-regions.png)
+
 ## 下载与首次启动
 
 需要 Windows x64，以及通过 Steam 安装的《沉星之序 / Order of the Sinking Star》。下载包不包含原游戏资源，不需要另装 Node.js。
