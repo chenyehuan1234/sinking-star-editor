@@ -17,6 +17,10 @@ docs/*
 !docs/USER-TEST.md
 !docs/RELEASE-NOTES.md
 !docs/screenshots/
+docs/screenshots/*
+!docs/screenshots/workspace-and-assets.png
+!docs/screenshots/mechanism-properties.png
+!docs/screenshots/native-camera-regions.png
 scripts/*
 !scripts/build.mjs
 !scripts/install-runtime.mjs
