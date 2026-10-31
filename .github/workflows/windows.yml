@@ -20,7 +20,7 @@ jobs:
       - run: npm run typecheck
       - name: General tests (native game is not installed)
         run: npm test
-      - run: npm run package
+      - run: npm run package -- --publish never
       - run: npm run verify:release
       - uses: actions/upload-artifact@v4
         with:
