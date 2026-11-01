@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import{createHash}from'node:crypto';
 import{inflateRawSync}from'node:zlib';
-const root='release-public',version=JSON.parse(fs.readFileSync('package.json','utf8')).version;
+const root=process.argv[2]??'release-public',version=JSON.parse(fs.readFileSync('package.json','utf8')).version;
 const sum=b=>createHash('sha256').update(b).digest('hex');
 const assert=(condition,message)=>{if(!condition)throw Error(message);};
 const asar=fs.readFileSync(path.join(root,'win-unpacked/resources/app.asar'));

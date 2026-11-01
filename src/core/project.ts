@@ -1,3 +1,4 @@
+import{applyCharacterControl}from'./character-control';import{applyTopology,topologyView,validateTopology}from'./topology';
 import{applyStamp,validateBundle}from'./regions';
 import { GamePackage } from './package';
 import { baseFields, canEdit, EDITABLE, parseEntities, patchTransform, position, writeEntities, yawOf, type EntityFile } from './entities';
@@ -16,9 +17,10 @@ export function validateProject(value: unknown): asserts value is EditorProject 
   const p=value as EditorProject;
   if(!p||p.format!=='sinking-star-project'||![1,2,3].includes(p.version)||!/^[a-f0-9]{64}$/.test(p.sourceHash)||typeof p.sourceBuild!=='string'||!validName(p.template)||!validName(p.name)||!Array.isArray(p.operations)||p.operations.length>10000)throw new Error('无效的编辑工程');
   if(p.base){if(![2,3].includes(p.version)||!['blank','template'].includes(p.base.kind))throw new Error('无效的场景基础');if(p.base.kind==='blank'&&![p.base.width,p.base.height].every(n=>Number.isInteger(n)&&n>=4&&n<=128))throw new Error('空白场景尺寸无效');if(p.base.kind==='template'&&p.base.template!==p.template)throw new Error('模板基础与资源模板不一致');}
-  validateCamera(p.camera);
+  validateCamera(p.camera);validateTopology(p.topology);
   for(const o of p.operations){
-    if(!o||!['stamp','transform','clone','delete','properties','prefab','terrain','profile','duplicate'].includes(o.kind)||!Number.isInteger(o.id)||o.id<0||o.id>0xffffffff)throw new Error('无效的编辑操作');
+    if(!o||!['control','stamp','transform','clone','delete','properties','prefab','terrain','profile','duplicate'].includes(o.kind)||!Number.isInteger(o.id)||o.id<0||o.id>0xffffffff)throw new Error('无效的编辑操作');
+    if(o.kind==='control'&&(!Array.isArray(o.ids)||!o.ids.includes(o.id)||!o.ids.length||o.ids.length>2000||new Set(o.ids).size!==o.ids.length||o.ids.some(id=>!Number.isInteger(id)||id<1||id>0xffffffff)||o.targetId!==undefined&&(!Number.isInteger(o.targetId)||o.targetId<1||o.targetId>0xffffffff)))throw Error('原生角色控制设置无效');
     if(o.kind==='profile'&&(!validName(o.template)||!Number.isInteger(o.sourceId)||o.sourceId<0||o.sourceId>0xffffffff))throw new Error('原版配置无效');
     if(o.kind==='stamp'){if(p.version!==3)throw new Error('区域快照需要 v3 工程');validateBundle(o.bundle);if(o.bundle.sourceHash!==p.sourceHash||o.bundle.sourceBuild!==p.sourceBuild)throw Error('区域快照与工程源版本不一致');if(!Number.isInteger(o.yaw)||o.yaw%90)throw new Error('区域旋转必须为90度倍数');}
     if(o.kind==='duplicate'&&o.associations!==undefined&&!['independent','shared'].includes(o.associations))throw new Error('复制关联策略无效');
@@ -37,6 +39,7 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
   validateProject(project);
   const f=base??(project.base?.kind==='blank'?(codec?blankFile(pkg,codec,project.base.width,project.base.height):(()=>{throw new Error('空白场景需要游戏类型信息');})()):parseEntities(pkg.get(`data-common/${project.template}.entities`)));
   for(const o of project.operations){
+    if(o.kind==='control'){if(!codec)throw Error('角色同步控制需要原生类型信息');applyCharacterControl(codec,f,o);continue;}
     if(o.kind==='stamp'){if(!codec)throw new Error('区域放置需要类型信息');applyStamp(pkg,codec,f,o);continue;}
     if(o.kind==='duplicate'){if(!codec)throw new Error('批量复制需要类型信息');if(o.copies.some(p=>!editableType(f.records.find(r=>r.id===p.id)?.type??'')))throw new Error('不能复制内部对象');duplicateRecords(codec,f,o);continue;}
     if(o.kind==='terrain'){if(!codec)throw new Error('地形编辑需要游戏类型信息');applyTerrain(pkg,codec,f,o);continue;}
@@ -64,8 +67,8 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
       f.records.splice(index,1);
     }
   }
-  if(project.base?.kind==='blank'&&codec)updateBlankBounds(codec,f);
-  if(codec)applyCamera(codec,f,project.camera,pkg);
+  if(project.base?.kind==='blank'&&codec&&!project.topology)updateBlankBounds(codec,f);
+  if(codec){applyCamera(codec,f,project.camera,pkg);applyTopology(codec,f,project.topology);}
   return f;
 }
 export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:PropertyCodec):LevelView {
@@ -79,7 +82,7 @@ export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:Pr
     for(let i=0;i<sx*sy*sz&&terrain.length<30000;i++)if(((bits[i>>6]??0n)&(1n<<BigInt(i%64)))!==0n)terrain.push({id:r.id,x:p[0]+cx+i%sx,y:p[1]+cy+Math.floor(i/sx)%sy,z:p[2]+cz+Math.floor(i/(sx*sy))+1});
   }
   const waters=codec?f.records.filter(r=>r.type==='Ocean_Map'&&codec.parse(r).complete).map(r=>({id:r.id,x:Number(codec.get(r,'grid.corner.x')),y:Number(codec.get(r,'grid.corner.y')),z:Number(codec.get(r,'grid.corner.z'))-Number(codec.get(r,'sink')),width:Number(codec.get(r,'grid.squares_x')),height:Number(codec.get(r,'grid.squares_y')),cells:codec.get(r,'ocean_values',[])as number[]})):[];
-  return {name,typeCount:f.types.length,terrain,waters,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
+  return {name,typeCount:f.types.length,terrain,waters,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
     const field=baseFields(r.diff).fields.find(f=>f.id===0x1f);
     const editable=codec?editableType(r.type)&&codec.parse(r).complete:canEdit(r);
     const raw=codec?Object.fromEntries(codec.parse(r).fields.map(f=>[f.schema.name,f.value])):{};

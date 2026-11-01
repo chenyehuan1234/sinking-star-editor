@@ -70,3 +70,12 @@ map.objects 为可选原生对象操作列表；大地图 hub/intro 和预览应
 ## v0.3.1 组合与存在组修正
 
 实机复刻 heroes1_1 证实 group_id 同时承载玩法存在组关联。新复制的同关对象保留 group_id；跨模板独立 prefab 仍默认清除源 PID，但可通过受校验的 group_id 属性关联当前关卡 Group。复刻对照在保留原生 Group 上下文的同时恢复该引用。编辑器检查失效组与组循环。不可再将 group_id 视为可忽略的编辑元数据。
+
+
+## v0.7.7 原生循环与角色控制（兼容 v3 工程）
+
+`EditorProject.topology` 可选，包含 `corner: [x,y,z]`、`size: [x,y,z]`、`wrapping`、`wrappingOverride`、`forceWrappingOverride`。缺省不写回 Settings；空白关继续按内容计算边界。自定义时以整数格中心写入 `grid.corner.*`、`grid.squares_x/y`、`grid.num_squares`、`squares_z`、`grid.wrapping`，并启用 `lock_grid`，不再自动扩边。X/Y 循环，Z 不循环。方向覆盖与强制标志是原生重复画面参数，不作为分轴物理开关；所有 Wrapping_Mask 原样保留。
+
+新增 `control` 操作：`{kind:"control", id, ids, targetId?}`。ids 仅为本关 Guy；有 targetId 时加入目标的原生控制身份，无目标时所选角色各自独立。`turn_order_id` 为 0 时原游戏使用角色自身 PID；显式数值按直接相等分组，不递归跟随引用，也不按 mesh、skill_flags 或 group_id 合组。原锚点删除后控制身份可继续有效，不当作失效引用。
+
+控制设置保留位置、外观能力、存在组与切换顺序。原锚点主动离组时，其余成员改用新身份，并同步更新 Rock 中序列化的 `transmute_stashed_turn_order_id`。独立复制和区域粘贴重映射控制身份；只复制部分成员或原锚点已删除时，仍保留副本内部的同步，避免错误关联原组。共享关联保留未复制的外部控制身份。

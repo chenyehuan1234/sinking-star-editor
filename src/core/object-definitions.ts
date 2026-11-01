@@ -1,7 +1,7 @@
 import type{ObjectCategory,ObjectDefinition}from'../catalog-types';
 const d=(type:string,label:string,category:ObjectCategory,description:string,fields:Record<string,string>={},placement:ObjectDefinition['placement']='single',dependencies:string[]=[],tests:string[]=[]):ObjectDefinition=>({type,label,category,description,fields,placement,dependencies,tests});
 export const OBJECT_DEFINITIONS:ObjectDefinition[]=[
-  d('Guy','角色','character','职业、能力、装备和外观分别读取；采用原生职业预设。',{skill_flags:'原生职业能力',inventory_flags:'原生装备',turn_order:'切换顺序',turn_order_id:'行动分组'},'single',[],['各职业行动','多角色切换','职业与外观对应','衣柜进出']),
+  d('Guy','角色','character','职业、能力、装备和外观分别读取；采用原生职业预设。',{skill_flags:'原生职业能力',inventory_flags:'原生装备',turn_order:'切换顺序',turn_order_id:'原生控制组标识'},'single',[],['各职业行动','多角色切换','职业与外观对应','衣柜进出']),
   d('Monster','怪物','monster','哥布林与敌对龙；攻击目标和火焰长度由游戏计算。',{constant_flags:'怪物类型',accessory_mask:'原版配饰'},'single',[],['哥布林邻接攻击','龙的四方向喷火','死亡与怪物门','牧师保护']),
   d('Friendly_Dragon','友善龙','monster','原版跟随、动作与光束组合。',{action_type:'原生动作',following_id:'跟随对象',breadcrumbs_are_active:'路径激活'},'assembly',['跟随对象'],['跟随','原生活动类型','撤销']),
   d('Baby_Dragon','幼龙','monster','喂食与等待状态使用原版组合。',{staying:'原地停留',gems_stored:'初始宝石数量'},'assembly',['原版幼龙场景'],['喂食','等待与移动']),
