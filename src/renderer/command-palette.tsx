@@ -1,0 +1,12 @@
+import React,{useEffect,useRef,useState} from 'react';
+import {commandDefinitions,shortcut,useInputPreferences,type CommandId} from './commands';
+import {Modal} from './studio-ui';
+const aliases:Partial<Record<CommandId,string>>={camera:'相机 镜头 取景',cameraRegions:'分屏 分镜 相机 区域',quickLink:'门 门闸 开关 频道 连接',groups:'组织 分组',array:'排列 批量 阵列',isolate:'隔离 单独显示',overlap:'遮挡 重叠 选择',extrude:'拉伸 挤出 削减 地面 墙',sample:'取样 吸管 复制',palette:'命令 搜索'};
+export function CommandPalette({reason,onExecute,onClose}:{reason:(id:CommandId)=>string;onExecute:(id:CommandId)=>void;onClose:()=>void}){
+ useInputPreferences();const[q,setQ]=useState(''),[index,setIndex]=useState(0),input=useRef<HTMLInputElement>(null),host=useRef<HTMLDivElement>(null);
+ const rows=commandDefinitions.filter(([id,label,group])=>id!=='palette'&&[label,group,shortcut(id),aliases[id]??''].join(' ').toLowerCase().includes(q.toLowerCase().trim()));
+ useEffect(()=>{const old=document.activeElement as HTMLElement|null;input.current?.focus();return()=>{if(old?.isConnected)old.focus();};},[]);
+ useEffect(()=>{host.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({block:'nearest'});},[index,q]);
+ function run(id:CommandId){if(!reason(id))onExecute(id);}
+ return <Modal title="搜索命令" onClose={onClose} className="s-palette079"><div ref={host} onKeyDown={e=>{if(e.nativeEvent.isComposing)return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setIndex(i=>Math.max(0,Math.min(rows.length-1,i+(e.key==='ArrowDown'?1:-1))));}else if(e.key==='Enter'){e.preventDefault();if(rows[index])run(rows[index][0]);}else if(e.key==='Tab'){const nodes=Array.from(host.current?.querySelectorAll<HTMLElement>('input,button')??[]);if(nodes.length){const at=nodes.indexOf(document.activeElement as HTMLElement);e.preventDefault();nodes[(at+(e.shiftKey?-1:1)+nodes.length)%nodes.length].focus();}}}}><label className="s-field">操作名称、同义词或快捷键<input ref={input} value={q} onChange={e=>{setQ(e.target.value);setIndex(0);}} placeholder="例如：门闸、锁定、俯视"/></label><div className="s-command-results079" role="listbox" aria-label="命令结果">{rows.map(([id,label,group],i)=><button key={id} role="option" aria-selected={i===index} aria-disabled={Boolean(reason(id))} onMouseEnter={()=>setIndex(i)} onClick={()=>run(id)}><span><strong>{label}</strong><small>{reason(id)||group}</small></span><kbd>{shortcut(id)==='未设置'?'':shortcut(id)}</kbd></button>)}{!rows.length&&<p>没有匹配命令，试试更短的名称。</p>}</div><p className="s-muted">↑ ↓ 选择 · Enter 执行 · Esc 返回</p></div></Modal>;
+}

@@ -9,6 +9,6 @@ const api:EditorApi={
   objectCatalog:()=>invoke('objectCatalog'),worldPreview:w=>invoke('worldPreview',w),worldExample:()=>invoke('worldExample'),worldStudioExample:()=>invoke('worldStudioExample'),meshAsset:(n,l)=>invoke('meshAsset',n,l),textureAsset:(n,s)=>invoke('textureAsset',n,s),materialAsset:n=>invoke('materialAsset',n),assetStatus:()=>invoke('assetStatus'),
   worldCreate:()=>invoke('worldCreate'),worldValidate:w=>invoke('worldValidate',w),worldSave:(w,a)=>invoke('worldSave',w,a),worldLoad:()=>invoke('worldLoad'),worldImport:()=>invoke('worldImport'),worldPrefabs:()=>invoke('worldPrefabs'),worldBuild:w=>invoke('worldBuild',w),worldDeploy:(w,e)=>invoke('worldDeploy',w,e),worldLaunch:(w,e)=>invoke('worldLaunch',w,e),worldReset:w=>invoke('worldReset',w),
   discoverGames:()=>invoke('discoverGames'),chooseWorkspace:()=>invoke('chooseWorkspace'),preparationEstimate:()=>invoke('preparationEstimate'),
-  connect:path=>invoke('connect',path),chooseGame:()=>invoke('chooseGame'),openLevel:n=>invoke('openLevel',n),preview:p=>invoke('preview',p),
+  connect:path=>invoke('connect',path),chooseGame:()=>invoke('chooseGame'),openLevel:n=>invoke('openLevel',n),previewUpdate:r=>invoke('previewUpdate',r),preview:p=>invoke('preview',p),
   save:p=>invoke('save',p),load:()=>invoke('load'),build:p=>invoke('build',p),prepare:()=>invoke('prepare'),deploy:p=>invoke('deploy',p),launch:()=>invoke('launch'),restore:()=>invoke('restore'),reveal:()=>invoke('reveal')
 };contextBridge.exposeInMainWorld('editor',api);

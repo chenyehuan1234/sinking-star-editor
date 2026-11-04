@@ -34,7 +34,7 @@ if(lock)app.whenReady().then(async()=>{
   handle('chooseWorkspace',async()=>{if(process.env.SINKING_STAR_WORKSPACE)throw Error('启动参数已指定工作区，请修改启动参数后重启');const r=await dialog.showOpenDialog(win,{title:'选择编辑器工作区（不会搬迁原有工程）',defaultPath:service.workspace,properties:['openDirectory','createDirectory']});if(r.canceled)return null;const chosen=await fs.realpath(r.filePaths[0]);if(service.gamePath){if(directoriesOverlap(service.gamePath,chosen))throw Error('工作区不能放在游戏目录内，也不能包含游戏目录');}await fs.access(chosen,fs.constants.W_OK);preferences.workspace=chosen;await persistPreferences();const pendingRestart=Boolean(service.gamePath);if(!pendingRestart){service=new EditorService(chosen,path.join(__dirname,'asset-worker.cjs'));store=new DesignStore(chosen);}return{path:chosen,pendingRestart};},true);
   handle('preparationEstimate',()=>service.preparationEstimate());
   handle('cameraObject',(p,r)=>service.cameraObject(p,r));
-  handle('openLevel',n=>service.openLevel(n));handle('preview',p=>service.preview(p));
+  handle('previewUpdate',r=>service.previewUpdate(r));handle('openLevel',n=>service.openLevel(n));handle('preview',p=>service.preview(p));
   handle('objectCatalog',()=>service.objectCatalog());handle('worldPreview',w=>service.worldPreview(w));
   handle('levelCreateBlank',(w,h)=>service.levelCreateBlank(w,h));handle('presetPreview',k=>service.presetPreview(k));handle('thumbnailRead',k=>service.thumbnailRead(k));handle('thumbnailWrite',(k,p)=>service.thumbnailWrite(k,p));
   handle('worldExample',()=>service.worldExample());

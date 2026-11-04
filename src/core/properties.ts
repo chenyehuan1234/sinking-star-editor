@@ -4,7 +4,8 @@ export type PropertyValue=number|boolean|string|string[]|number[];
 export interface PropertySchema {id:number;name:string;kind:'float'|'int'|'bool'|'string'|'strings'|'array'|'fixed';size:number;pid?:boolean;pidArray?:boolean;signed?:boolean;count?:number;defaultRaw?:Buffer}
 export interface ParsedProperty {schema:PropertySchema;start:number;end:number;defaultRaw:Buffer;value:PropertyValue}
 export class PropertyCodec {
-  private cache=new Map<string,PropertySchema[]>();private defaults=new Map<string,Buffer>();
+  private cache=new Map<string,PropertySchema[]>();
+  private parsed=new WeakMap<Buffer,Map<string,ReturnType<PropertyCodec["parseUncached"]>>>();
   constructor(readonly reflection:ExeReflection){}
   schema(type:string):PropertySchema[]{
     const cached=this.cache.get(type);if(cached)return cached;
@@ -23,6 +24,10 @@ export class PropertyCodec {
     const result=[...base,...own];this.cache.set(type,result);return result;
   }
   parse(r:EntityRecord):{fields:ParsedProperty[];complete:boolean;tail:number}{
+    let types=this.parsed.get(r.diff);if(!types)this.parsed.set(r.diff,types=new Map());
+    let value=types.get(r.type);if(!value){value=this.parseUncached(r);types.set(r.type,value);}return value;
+  }
+  private parseUncached(r:EntityRecord):{fields:ParsedProperty[];complete:boolean;tail:number}{
     const b=r.diff,schemas=this.schema(r.type),fields:ParsedProperty[]=[];let p=0,last=-1;
     if(b.length===1&&b[0]===0xfd)return{fields,complete:true,tail:0};
     try{while(p<b.length){const boundary=p;if(p>0){if(b[p++]!==0xfd)throw Error('member boundary');if(p===b.length)return{fields,complete:true,tail:boundary};}
@@ -37,7 +42,7 @@ export class PropertyCodec {
       else if(s.kind==='fixed'){defaultRaw=Buffer.from(b.subarray(p,p+s.size));p+=s.size;value=Array.from({length:s.count!},(_,i)=>b.readFloatLE(p+i*4));p+=s.size;}
       else{if(![1,2,4,8].includes(s.size))throw Error('unsupported scalar');defaultRaw=Buffer.from(b.subarray(p,p+s.size));p+=s.size;value=scalar(p);p+=s.size;}
       if(p>b.length||p===b.length||b[p]!==0xfd)throw Error('field bounds');
-      this.defaults.set(`${r.type}:${id}`,defaultRaw);fields.push({schema:s,start,end:p,defaultRaw,value});
+      fields.push({schema:s,start,end:p,defaultRaw,value});
     }}catch{return{fields,complete:false,tail:fields.length?fields.at(-1)!.end:0};}
     return{fields,complete:false,tail:p};
   }
@@ -48,7 +53,7 @@ export class PropertyCodec {
       const s=schemas.find(s=>s.name===name);if(!s)throw new Error(`未知属性 ${r.type}.${name}`);
       const old=parsed.fields.find(f=>f.schema.id===s.id);
       if(!old&&!parsed.complete)throw new Error(`${r.type} 有未识别字段，不能添加 ${name}`);
-      const defaultRaw=old?.defaultRaw??this.defaults.get(`${r.type}:${s.id}`)??this.defaultRaw(s);
+      const defaultRaw=old?.defaultRaw??this.defaultRaw(s);
       const id=Buffer.alloc(2);id.writeUInt16LE(s.id);const raw=Buffer.concat([id,defaultRaw,this.encode(s,value)]);
       const index=parts.findIndex(f=>f.id===s.id);if(index<0)parts.push({id:s.id,raw});else parts[index]={id:s.id,raw};
     }
@@ -57,6 +62,8 @@ export class PropertyCodec {
     const result={...r,diff:Buffer.concat([...parts.flatMap((p,i)=>i?[Buffer.from([0xfd]),p.raw]:[p.raw]),tail])};
     const check=this.parse(result);for(const name of Object.keys(values))if(!check.fields.some(f=>f.schema.name===name))throw new Error(`写回属性失败：${name}`);return result;
   }
+  // Existing records retain their exact default bytes. New fields use a stable
+  // baseline, never a default learned from whichever unrelated level was read last.
   private defaultRaw(s:PropertySchema){
     if(s.kind==='string'||s.kind==='strings'||s.kind==='array')return Buffer.alloc(8);
     const b=Buffer.alloc(s.size);if(s.kind==='float'&&(/^(scale|orientation.w|tint_color_[ab])/.test(s.name)))b.writeFloatLE(1);return b;

@@ -28,3 +28,16 @@ scripts/*
 !scripts/inspect.ts
 !scripts/audit-release.mjs
 !scripts/verify-public.ts
+
+!scripts/benchmark.mjs
+!scripts/benchmark-main.ts
+!scripts/benchmark-preload.ts
+!scripts/benchmark-renderer.tsx
+!scripts/benchmark-native.ts
+
+!scripts/ui-check.mjs
+!scripts/ui-check-main.ts
+!scripts/ui-check-preload.ts
+!scripts/ui-check-renderer.tsx
+
+!docs/PERFORMANCE.md

@@ -1,3 +1,5 @@
+import type {EditorMetadata} from './editor-organization';
+import type {PreviewRequest,PreviewDelta} from './preview-delta';
 import type {NativeValue,ObjectCatalog,ObjectField} from './catalog-types';
 import type {MeshAsset,TextureAsset,MaterialAsset,AssetStatus} from './asset-types';
 export type Vec3=[number,number,number];
@@ -28,14 +30,14 @@ export interface CameraRegion {id:number;position:Vec3;extents:Vec3;kind:number;
 export interface CameraView {perScreen:boolean;screenSize:[number,number];origin:[number,number];margins:[number,number];controls:NativeCameraView[];regions:CameraRegion[];references?:{sourceId:number;field:string;targetId:number}[]}
 export interface TopologyConfig {corner:Vec3;size:Vec3;wrapping:boolean;wrappingOverride:number;forceWrappingOverride:boolean}
 export interface NativeTopologyView extends TopologyConfig {perScreen:boolean;maskCount:number}
-export interface EditorProject { format:'sinking-star-project'; version:1|2|3; sourceHash:string; sourceBuild:string; template:string; base?:ProjectBase; name:string; operations:EditOp[];camera?:CameraConfig;topology?:TopologyConfig }
+export interface EditorProject { format:'sinking-star-project'; version:1|2|3; sourceHash:string; sourceBuild:string; template:string; base?:ProjectBase; name:string; operations:EditOp[];editor?:EditorMetadata;camera?:CameraConfig;topology?:TopologyConfig }
 export interface EditableProperty {name:string;label:string;kind:'number'|'boolean'|'target';value:number|boolean;min?:number;max?:number;targets?:string[]}
 export interface EntityView {id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue}[]}
 export interface LevelView {name:string;entities:EntityView[];typeCount:number;manifest:string;camera?:CameraView;topology?:NativeTopologyView;terrain?:{x:number;y:number;z:number;id?:number}[];waters?:{id:number;x:number;y:number;z:number;width:number;height:number;cells:number[]}[]}
 export type Tile=0|1|2;
 export interface WorldEntry {id:string;title:string;levelId:string;x:number;y:number;prototype?:{template:string;sourceId:number}}
 export interface WorldLevel {id:string;title:string;project:EditorProject}
-export interface WorldProject {format:'sinking-star-world';version:1|2|3;id:string;name:string;sourceHash:string;sourceBuild:string;map:{width:number;height:number;tiles:Tile[];spawn:[number,number];entries:WorldEntry[];objects?:EditOp[]};levels:WorldLevel[]}
+export interface WorldProject {format:'sinking-star-world';version:1|2|3;id:string;name:string;sourceHash:string;sourceBuild:string;map:{width:number;height:number;tiles:Tile[];spawn:[number,number];entries:WorldEntry[];objects?:EditOp[];editor?:EditorMetadata};levels:WorldLevel[]}
 export interface WorldIssue {severity:'error'|'warning';message:string;entryId?:string;levelId?:string;entityId?:number;entityIds?:number[];category?:'reference'|'channel'|'dependency'|'native'}
 export interface PrefabView {key:string;label:string;type:string;template:string;sourceId:number;values?:Record<string,number|boolean>}
 export interface NativeLevelRegion {id:string;title:string;layer:'ground'|'underground'|'sky'|'other';levels:string[];cell?:[number,number]}
@@ -44,6 +46,7 @@ export interface GameDiscovery {installations:GameInstallation[];workspace:strin
 export interface PreparationEstimate {workspace:string;prepared:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
 export interface Catalog {gamePath:string;sourceHash:string;build:string;levels:string[];regions?:NativeLevelRegion[];workspace:string;runtimeVerified:boolean;compatibility?:string}
 export interface EditorApi {
+ previewUpdate(request:PreviewRequest):Promise<PreviewDelta>;
  cameraObject(p:EditorProject,request:CameraObjectRequest):Promise<CameraConfig>;
   regionCapture(p:EditorProject,selection:RegionSelection):Promise<RegionBundle>;
   regionPreview(bundle:RegionBundle):Promise<LevelView>;

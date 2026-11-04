@@ -7,6 +7,7 @@ await build({entryPoints:['src/main/main.ts'],bundle:true,outfile:'dist/main/mai
 await build({entryPoints:['src/main/preload.ts'],bundle:true,outfile:'dist/main/preload.cjs',platform:'node',format:'cjs',external:['electron']});
 await build({entryPoints:['src/main/asset-worker.ts'],bundle:true,outfile:'dist/main/asset-worker.cjs',platform:'node',format:'cjs'});
 await build({entryPoints:['src/main/catalog-worker.ts'],bundle:true,outfile:'dist/main/catalog-worker.cjs',platform:'node',format:'cjs'});
+await build({entryPoints:['src/main/preview-worker.ts'],bundle:true,outfile:'dist/main/preview-worker.cjs',platform:'node',format:'cjs'});
 await fs.copyFile('src/renderer/index.html','dist/renderer/index.html');
 const generatedExamples=path.resolve('dist/examples');
 if(!generatedExamples.startsWith(path.resolve('dist')+path.sep))throw Error('Invalid generated examples path');

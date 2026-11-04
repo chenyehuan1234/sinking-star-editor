@@ -1,3 +1,4 @@
+import {validateEditor,gameplayWorld,gameplayProject} from '../editor-organization';
 import { GamePackage,sha256 } from './package';
 import {parseEntities,writeEntities,type EntityFile,type EntityRecord}from './entities';
 import{PropertyCodec}from './properties';
@@ -15,7 +16,7 @@ export function newWorld(hash:string,build:string):WorldProject {
 }
 export function validateWorld(w:WorldProject){
   if(!w||w.format!=='sinking-star-world'||![1,2,3].includes(w.version)||!/^[a-f0-9]{12}$/.test(w.id)||typeof w.name!=='string'||w.name.length>100||!/^[a-f0-9]{64}$/.test(w.sourceHash)||typeof w.sourceBuild!=='string')throw new Error('大地图工程格式无效');
-  const m=w.map;if(!m||!Number.isInteger(m.width)||!Number.isInteger(m.height)||m.width<4||m.width>128||m.height<4||m.height>128||!Array.isArray(m.tiles)||m.tiles.length!==m.width*m.height||!m.tiles.every(t=>[0,1,2].includes(t)))throw new Error('地图尺寸或地形无效（4–128 格）');
+  validateEditor(w.map?.editor);const m=w.map;if(!m||!Number.isInteger(m.width)||!Number.isInteger(m.height)||m.width<4||m.width>128||m.height<4||m.height>128||!Array.isArray(m.tiles)||m.tiles.length!==m.width*m.height||!m.tiles.every(t=>[0,1,2].includes(t)))throw new Error('地图尺寸或地形无效（4–128 格）');
   if(m.objects)validateProject({format:'sinking-star-project',version:3,sourceHash:w.sourceHash,sourceBuild:w.sourceBuild,template:'mirror_1',name:'overworld',operations:m.objects});
   const point=(p:unknown)=>Array.isArray(p)&&p.length===2&&p.every(Number.isInteger)&&p[0]>=0&&p[1]>=0&&p[0]<m.width&&p[1]<m.height;
   if(!point(m.spawn)||!Array.isArray(m.entries)||m.entries.length>200||!Array.isArray(w.levels)||w.levels.length>200)throw new Error('地图出生点或关卡数量无效');
@@ -96,14 +97,14 @@ export class WorldCompiler {
     const issues=worldIssues(w);if(issues.some(i=>i.severity==='error'))throw new Error(issues.filter(i=>i.severity==='error').map(i=>i.message).join('\n'));
     const selected=quickEntry?w.map.entries.find(e=>e.id===quickEntry):undefined;if(quickEntry&&!selected)throw new Error('快速选关入口不存在');
     const spawn=selected?[selected.x,selected.y] as[number,number]:w.map.spawn;
-    const revision=(Number.parseInt(sha256('world-compiler-5'+JSON.stringify(w)).slice(0,7),16)%0x3fffffff)+1000;
+    const revision=(Number.parseInt(sha256('world-compiler-5'+JSON.stringify(gameplayWorld(w))).slice(0,7),16)%0x3fffffff)+1000;
     const changes=new Map<string,Buffer>(),resources:WorldBuild['resources']=[],levelNames:Record<string,string>={};
     for(const l of w.levels){
       const name=`ed_${w.id}_${l.id}`;levelNames[l.id]=name;const f=applyProject(this.pkg,l.project,this.codec);
       const refs=validateReferences(this.codec,f);if(refs.length)throw new Error(`「${l.title}」：${refs.join('；')}`);
       if(!f.records.some(r=>r.type==='Guy'))throw new Error(`「${l.title}」缺少主角`);
       if(l.project.base?.kind==='blank'&&!f.records.some(r=>r.type==='Door'))throw new Error(`「${l.title}」缺少出口`);
-      const localRevision=Number.parseInt(sha256('world-compiler-5'+JSON.stringify(l.project)).slice(0,7),16)+1000;
+      const localRevision=Number.parseInt(sha256('world-compiler-5'+JSON.stringify(gameplayProject(l.project))).slice(0,7),16)+1000;
       f.records=f.records.map(r=>r.type==='Settings'?this.codec.patch(r,{level_data_version:localRevision}):r);
       changes.set(`data-common/${name}.entities`,writeEntities(f));changes.set(`data-common/${name}.level_manifest`,mergeManifests(projectSources(l.project).map(t=>this.pkg.get(`data-common/${t}.level_manifest`).toString())));
       changes.set(`data/level_sets/${name}.level_set`,Buffer.from(`[1]\n${name}\n`));

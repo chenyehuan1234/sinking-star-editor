@@ -1,3 +1,6 @@
+import {PreviewWorker} from './preview-client';
+import type {PreviewRequest,PreviewDelta} from '../preview-delta';
+import {diffPreview} from '../preview-delta';
 import{directoriesOverlap}from'./game-installation';
 import{estimatePreparation}from'./disk-space';import{materializeExample}from'../core/examples';
 import{sourceCamera,newCameraClone,cameraEditConfig}from'../core/camera-objects';import type{CameraObjectRequest,Vec3}from'../shared';
@@ -37,6 +40,8 @@ export class EditorService {
   gamePath='';pkg!:GamePackage;sourceHash='';build='unknown';private stamp='';private busy=false;
   readonly testRoot:string;
   codec?:PropertyCodec;private compiler?:WorldCompiler;readonly campaigns:CampaignManager;
+  private previews?:PreviewWorker;
+  private async previewWorker(){const filename=path.join(path.dirname(this.workerFile),'preview-worker.cjs');try{await fs.access(filename);}catch{return undefined;}return this.previews??=new PreviewWorker(this.gamePath,filename);}
   assets?:NativeAssets;private objects?:Promise<ObjectCatalog>;private assetFiles:string[]=[];
   constructor(readonly workspace:string,readonly workerFile=path.resolve('dist/main/asset-worker.cjs')){this.workspace=path.resolve(workspace);this.testRoot=path.join(this.workspace,'playtest-game');this.campaigns=new CampaignManager(this.workspace);}
   async exclusive<T>(fn:()=>Promise<T>):Promise<T>{if(this.busy)throw new Error('另一项文件操作正在进行，请稍候');this.busy=true;try{return await fn();}finally{this.busy=false;}}
@@ -57,7 +62,7 @@ export class EditorService {
     await fs.mkdir(this.workspace,{recursive:true});
     try{await this.assertStopped();await this.campaigns.deactivate();}catch(e){if(!String(e).includes('请先退出沉星之序'))throw e;}
     // A failed new connection must leave the previously usable installation intact.
-    await this.assets?.dispose();this.objects=undefined;this.pkg=pkg;this.sourceHash=sourceHash;this.gamePath=root;this.stamp=`${st.size}:${st.mtimeMs}`;this.codec=codec;this.assetFiles=assetFiles;this.build=build;
+    await this.previews?.dispose();this.previews=undefined;await this.assets?.dispose();this.objects=undefined;this.pkg=pkg;this.sourceHash=sourceHash;this.gamePath=root;this.stamp=`${st.size}:${st.mtimeMs}`;this.codec=codec;this.assetFiles=assetFiles;this.build=build;
     this.assets=codec?new NativeAssets(root,this.workspace,sourceHash+codec.reflection.hash,assetFiles,materials!,this.workerFile):undefined;
     this.compiler=codec?new WorldCompiler(pkg,codec):undefined;
     let runtimeVerified=false;try{const e=JSON.parse(await fs.readFile(path.join(this.workspace,'playtest-evidence.json'),'utf8'));runtimeVerified=e.runtimeVerified===true&&e.sourceHash===this.sourceHash;}catch{}
@@ -71,7 +76,8 @@ export class EditorService {
   async checkProject(p:EditorProject){validateProject(p);await this.unchanged();if(p.sourceHash!==this.sourceHash||p.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${p.sourceBuild} / ${p.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请连接原版本游戏；本版不自动迁移原生数据。`);}
   async verifySourceHash(){await this.unchanged();if(sha256(await fs.readFile(path.join(this.gamePath,'data/levels.package')))!==this.sourceHash)throw new Error('游戏源包哈希发生变化，操作已停止');}
   async openLevel(name:string){await this.unchanged();return levelView(this.pkg,name,undefined,this.codec);}
-  async preview(p:EditorProject){await this.checkProject(p);return levelView(this.pkg,p.template,applyProject(this.pkg,p,this.codec),this.codec);}
+  async preview(p:EditorProject){await this.checkProject(p);const worker=await this.previewWorker();return worker?worker.request<import('../shared').LevelView>('preview',p):levelView(this.pkg,p.template,applyProject(this.pkg,p,this.codec),this.codec);}
+  async previewUpdate(r:PreviewRequest):Promise<PreviewDelta>{if(typeof r.scene!=='string'||r.scene.length>200||!Number.isSafeInteger(r.revision)||r.revision<0||Boolean(r.project)===Boolean(r.world))throw Error('预览请求无效');if(r.project)await this.checkProject(r.project);else await this.checkWorld(r.world!);const worker=await this.previewWorker();if(worker)return worker.request('update',r);return diffPreview(null,r.project?await this.preview(r.project):await this.worldPreview(r.world!),r);}
   async cameraObject(p:EditorProject,request:CameraObjectRequest){await this.checkProject(p);const c=this.codec;if(!c)throw Error('相机编辑需要原生类型信息');const file=applyProject(this.pkg,p,c);let edit;
    if(request.action==='delete')edit={kind:'delete' as const,ids:[request.id]};
    else if(request.action==='clone')edit=newCameraClone(c,file,file,request.id,request.offset);
@@ -89,7 +95,7 @@ export class EditorService {
       const c=await new Promise<ObjectCatalog>((resolve,reject)=>{const worker=new Worker(path.join(path.dirname(this.workerFile),'catalog-worker.cjs'));worker.once('message',m=>{void worker.terminate();m.error?reject(new Error(m.error)):resolve(m.value);});worker.once('error',reject);worker.once('exit',code=>{if(code!==0&&code!==1)reject(new Error('对象扫描线程异常退出'));});worker.postMessage({root:this.gamePath,build:this.build});});
       await atomicWrite(file,JSON.stringify(c));return c;})();
   }
-  async worldPreview(w:WorldProject){await this.checkWorld(w);if(!w.map.tiles.some(Boolean)&&!w.map.objects?.length&&!w.map.entries.length)return{name:'overworld',entities:[],typeCount:88,manifest:'',terrain:[]};return levelView(this.pkg,'overworld',this.compiler!.previewMap(w),this.codec);}
+  async worldPreview(w:WorldProject){await this.checkWorld(w);const worker=await this.previewWorker();if(worker)return worker.request<import('../shared').LevelView>('worldPreview',w);if(!w.map.tiles.some(Boolean)&&!w.map.objects?.length&&!w.map.entries.length)return{name:'overworld',entities:[],typeCount:88,manifest:'',terrain:[]};return levelView(this.pkg,'overworld',this.compiler!.previewMap(w),this.codec);}
   async buildProject(p:EditorProject){
     await this.checkProject(p);
     const source=await fs.readFile(path.join(this.gamePath,'data/levels.package'));
@@ -185,7 +191,7 @@ export class EditorService {
   async worldRecreations(){return this.exampleFile('native-replicas');}
   async worldPrefabs(){await this.unchanged();if(!this.codec)throw new Error('机关库需要反射信息');return prefabs(this.pkg,this.codec);}
   async worldValidate(w:WorldProject):Promise<WorldIssue[]>{
-    await this.checkWorld(w);const issues=worldIssues(w);
+    await this.checkWorld(w);const worker=await this.previewWorker();if(worker)return worker.request<WorldIssue[]>('validate',w);const issues=worldIssues(w);
     if(w.map.objects?.length)try{const f=this.compiler!.previewMap(w);for(const message of validateReferences(this.codec!,f))issues.push({severity:'error',message:'大地图：'+message});}catch(e){issues.push({severity:'error',message:'大地图：'+String(e)});}
     for(const l of w.levels){try{const f=applyProject(this.pkg,l.project,this.codec);issues.push(...mechanismIssues(this.codec!,f).map(i=>({...i,levelId:l.id,message:l.title+'：'+i.message})));if(!f.records.some(r=>r.type==='Guy'))issues.push({severity:'error',levelId:l.id,message:`${l.title}：缺少主角`});if(l.project.base?.kind==='blank'&&!f.records.some(r=>r.type==='Door'))issues.push({severity:'error',levelId:l.id,message:`${l.title}：缺少出口`});for(const error of validateReferences(this.codec!,f))issues.push({severity:'error',levelId:l.id,entityId:Number(error.match(/#(\d+)/)?.[1])||undefined,message:`${l.title}：${error}`});}catch(e){issues.push({severity:'error',levelId:l.id,message:`${l.title}：${String(e)}`});}}
     return issues;

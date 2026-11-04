@@ -14,7 +14,7 @@ const read=file=>{const node=entries.find(e=>e.file===file)?.node;assert(node&&!
 const forbidden=/(?:^|\/)(?:workspace|backups|playtest-game|recovery|\.git)(?:\/|$)|\.(?:package|entities|texture|compressed_mesh|anim|sokoban_status|map)$/i;
 assert(entries.every(e=>!forbidden.test(e.file)),'Private/native/generated file in app');
 assert(JSON.parse(read('/package.json')).version===version,'Packaged version mismatch');
-for(const name of['/dist/main/main.cjs','/dist/main/preload.cjs','/dist/main/asset-worker.cjs','/dist/main/catalog-worker.cjs','/dist/renderer/app.js','/dist/renderer/app.css'])assert(sum(read(name))===sum(fs.readFileSync(name.slice(1))),'Build mismatch: '+name);
+for(const name of['/dist/main/main.cjs','/dist/main/preload.cjs','/dist/main/asset-worker.cjs','/dist/main/catalog-worker.cjs','/dist/main/preview-worker.cjs','/dist/renderer/app.js','/dist/renderer/app.css'])assert(sum(read(name))===sum(fs.readFileSync(name.slice(1))),'Build mismatch: '+name);
 const recipes=entries.filter(e=>e.file.startsWith('/dist/examples/'));assert(recipes.length===6,'Unexpected examples');
 for(const{file}of recipes){const text=read(file).toString(),r=JSON.parse(text);assert(file.endsWith('.recipe.json')&&r.format==='sstar-example-recipe'&&!/"(?:diff|sourceHash|sourceBuild)"/.test(text),'Native snapshot in example '+file);}
 for(const{file}of entries.filter(e=>/\.(?:js|cjs|json|md|txt)$/.test(e.file)&&!e.file.includes('/node_modules/'))){assert(!/[A-Za-z]:[\\/](?:Users|content)[\\/]/i.test(read(file).toString()),'Personal absolute path in '+file);}

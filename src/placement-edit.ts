@@ -1,5 +1,7 @@
 import type{EditOp,EntityView,Vec3}from'./shared';
 import type{VoxelIndex,WorkPlane}from'./terrain-edit';
+import {planeRectangle} from './terrain-edit';
+export function rectangularFace(index:VoxelIndex,start:Vec3,end:Vec3,normal:Vec3):Vec3[]{const plane=normal[2]?'XY':normal[1]?'XZ':'YZ';return planeRectangle(start,end,plane).filter(p=>index.has(p)&&!index.has(facePlacement(p,normal)));}
 
 export function facePlacement(cell:Vec3,normal:Vec3,erase=false):Vec3{return cell.map((n,i)=>n+(erase?0:normal[i]))as Vec3;}
 export function faceBrush(index:VoxelIndex,center:Vec3,plane:WorkPlane,size:number,erase=false):Vec3[]{

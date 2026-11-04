@@ -1,3 +1,4 @@
+import {validateEditor,gameplayWorld,gameplayProject} from '../editor-organization';
 import{applyCharacterControl}from'./character-control';import{applyTopology,topologyView,validateTopology}from'./topology';
 import{applyStamp,validateBundle}from'./regions';
 import { GamePackage } from './package';
@@ -17,7 +18,7 @@ export function validateProject(value: unknown): asserts value is EditorProject 
   const p=value as EditorProject;
   if(!p||p.format!=='sinking-star-project'||![1,2,3].includes(p.version)||!/^[a-f0-9]{64}$/.test(p.sourceHash)||typeof p.sourceBuild!=='string'||!validName(p.template)||!validName(p.name)||!Array.isArray(p.operations)||p.operations.length>10000)throw new Error('无效的编辑工程');
   if(p.base){if(![2,3].includes(p.version)||!['blank','template'].includes(p.base.kind))throw new Error('无效的场景基础');if(p.base.kind==='blank'&&![p.base.width,p.base.height].every(n=>Number.isInteger(n)&&n>=4&&n<=128))throw new Error('空白场景尺寸无效');if(p.base.kind==='template'&&p.base.template!==p.template)throw new Error('模板基础与资源模板不一致');}
-  validateCamera(p.camera);validateTopology(p.topology);
+  validateEditor(p.editor);validateCamera(p.camera);validateTopology(p.topology);
   for(const o of p.operations){
     if(!o||!['control','stamp','transform','clone','delete','properties','prefab','terrain','profile','duplicate'].includes(o.kind)||!Number.isInteger(o.id)||o.id<0||o.id>0xffffffff)throw new Error('无效的编辑操作');
     if(o.kind==='control'&&(!Array.isArray(o.ids)||!o.ids.includes(o.id)||!o.ids.length||o.ids.length>2000||new Set(o.ids).size!==o.ids.length||o.ids.some(id=>!Number.isInteger(id)||id<1||id>0xffffffff)||o.targetId!==undefined&&(!Number.isInteger(o.targetId)||o.targetId<1||o.targetId>0xffffffff)))throw Error('原生角色控制设置无效');
