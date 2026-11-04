@@ -25,3 +25,6 @@ export function gameplayProject(p:EditorProject):EditorProject{const{editor,...r
 export function gameplayWorld(w:WorldProject):WorldProject{const{editor,...map}=w.map;return{...w,map,levels:w.levels.map(l=>({...l,project:gameplayProject(l.project)}))};}
 
 export function operationTargets(op:EditOp):number[]{return op.kind==='control'?op.ids:op.kind==='duplicate'?op.copies.map(c=>c.id):[op.id];}
+
+export function removeWorldLevel(w:WorldProject,id:string){const removed=new Set(w.map.entries.filter(e=>e.levelId===id).map(e=>entryKey(e.id)));w.levels=w.levels.filter(l=>l.id!==id);w.map.entries=w.map.entries.filter(e=>e.levelId!==id);w.map.editor=removeMembers(w.map.editor,removed);return removed.size;}
+export function reservedEntityIds(ops:EditOp[],existing:number[]=[]){const used=new Set(existing);for(const op of ops){used.add(op.id);if(op.kind==='clone')used.add(op.newId);if(op.kind==='duplicate')for(const c of op.copies)used.add(c.newId);if(op.kind==='prefab'&&op.assembly)for(let n=1;n<257;n++)used.add(op.id+n);}return used;}

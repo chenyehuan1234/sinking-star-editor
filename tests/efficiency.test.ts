@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {operationTargets,entityKey,entryKey,organizeOperations,copyGroups,removeMembers,validateEditor,gameplayWorld,type EditorMetadata} from '../src/editor-organization';
+import {removeWorldLevel,reservedEntityIds,operationTargets,entityKey,entryKey,organizeOperations,copyGroups,removeMembers,validateEditor,gameplayWorld,type EditorMetadata} from '../src/editor-organization';
 import {diffPreview,mergePreview,terrainChunk} from '../src/preview-delta';
 import {PreviewSession} from '../src/renderer/preview-session';
 import {arrayOperations,arrayOffsets} from '../src/batch-edit';
@@ -35,3 +35,5 @@ test('批量操作的锁定检查包含全部源成员',()=>{assert.deepEqual(op
 test('当前频道扩展到其他成员引用，但控制身份不是失效对象引用',()=>{const a=entity(1,'Switch'),b=entity(2,'Gate'),target=entity(3);a.nativeProperties=[{field:{name:'flavor',kind:'integer'}as any,value:42}];b.nativeProperties=[...a.nativeProperties,{field:{name:'target_id',kind:'reference'}as any,value:3}];const actor=entity(4,'Guy');actor.nativeProperties=[{field:{name:'turn_order_id',kind:'reference'}as any,value:9999}];const level={...view(),entities:[a,b,target,actor]};assert.equal(relationsFor(level,[1],'selected').references.length,0);assert.equal(relationsFor(level,[1],'channel').references.length,1);assert.equal(relations(level).references.length,1);});
 
 test('地形擦除与拉伸也检查物件级锁定，使用脚下体素坐标',()=>{const level={...view(),entities:[entity(1,'Wall_Set')],terrain:[{id:1,x:-2,y:3,z:5}]},d=defaultDisplay();d.objects={'entity:1':{locked:true}};assert.ok(terrainTouchesLocked(level,d,[{x:-2,y:3,z:4}]));assert.equal(terrainTouchesLocked(level,d,[{x:-2,y:3,z:5}]),false);});
+
+test('删除关卡同步清理关联入口分组，原快照完整保留；连续复制保留所有在途 ID',()=>{const w={map:{entries:[{id:'a',levelId:'one'},{id:'b',levelId:'two'}],editor:{groups:[{id:'g',name:'地图入口',members:[entryKey('a'),entryKey('b')]}]}},levels:[{id:'one'},{id:'two'}]}as WorldProject,before=structuredClone(w);assert.equal(removeWorldLevel(w,'one'),1);assert.deepEqual(w.map.editor!.groups[0].members,['entry:b']);assert.equal(before.map.entries.length,2);const reserved=reservedEntityIds([{kind:'duplicate',id:1,copies:[{id:1,newId:10}],offset:[0,0,0]},{kind:'prefab',id:20,template:'mirror_1',sourceId:1,position:[0,0,0],assembly:true}],[3]);assert.ok(reserved.has(10)&&reserved.has(21)&&reserved.has(276)&&reserved.has(3));});
