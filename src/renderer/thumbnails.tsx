@@ -2,6 +2,8 @@ import React,{useEffect,useState} from 'react';import * as T from 'three';
 import {ViewAssets} from './native-assets';import type {LevelView,RegionBundle} from '../shared';import type {ObjectPreset} from '../catalog-types';import {Icon} from './studio-ui';
 const views=new Map<string,Promise<LevelView>>(),images=new Map<string,Promise<string>>(),subscribers=new Map<string,number>();
 export function presetView(key:string){let p=views.get(key);if(!p){p=window.editor.presetPreview(key);views.set(key,p);if(views.size>160)views.delete(views.keys().next().value!);p.catch(()=>views.delete(key));}return p;}
+const regionViews=new WeakMap<RegionBundle,Promise<LevelView>>();
+export function cachedRegionView(bundle:RegionBundle){let view=regionViews.get(bundle);if(!view){view=window.editor.regionPreview(bundle);regionViews.set(bundle,view);view.catch(()=>regionViews.delete(bundle));}return view;}
 let renderer:T.WebGLRenderer|undefined,assets:ViewAssets|undefined,chain=Promise.resolve(),rendered=0;
 async function renderThumb(p:ObjectPreset){
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('thumbnail-v05-idle-3:'+p.key));const key=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');

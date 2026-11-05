@@ -12,3 +12,5 @@
 .s-mechanism-issue{box-sizing:border-box;height:144px;overflow:auto}.s-mechanism-issue p{overflow-wrap:anywhere}.s-inspector-scroll fieldset:disabled{opacity:.7}
 
 .s-palette079{color:#edf3f6;font-family:"Microsoft YaHei",system-ui,sans-serif}.s-palette079 input{box-sizing:border-box;width:100%;border:1px solid #61747f;border-radius:4px;background:#121b21;color:#edf3f6;padding:8px 10px;font:inherit}.s-palette079 .s-field{color:#c2d0d8}.s-palette079 .s-icon{display:grid;place-items:center;width:30px;height:30px;border:1px solid transparent;border-radius:4px;background:transparent;color:#edf3f6}.s-palette079 .s-icon:hover{background:#43535c}.s-palette079>header{color:#edf3f6;font-size:14px}.s-palette079 p{font-size:12px;color:#b1c0c8}
+
+.s-placement-modes{display:flex;gap:2px;padding:2px;background:#172027;border:1px solid #43535c;border-radius:4px}.s-placement-modes button{border:0!important}.s-placement-modes button[aria-pressed=true]{background:#685437;color:#fff1c7}

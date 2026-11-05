@@ -41,3 +41,8 @@ scripts/*
 !scripts/ui-check-renderer.tsx
 
 !docs/PERFORMANCE.md
+
+!scripts/placement-check.mjs
+!scripts/placement-check-renderer.tsx
+
+!scripts/ui-check-types.ts

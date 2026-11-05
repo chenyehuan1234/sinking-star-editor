@@ -14,7 +14,7 @@ export class ViewAssets {
       if(a.worldUV||a.tintMap){
         const tint={value:null as T.Texture|null};
         mat.onBeforeCompile=shader=>{shader.uniforms.nativeTintMap=tint;shader.uniforms.nativeTintOffset={value:new T.Vector2(...(a.tintOffset??[0,0]))};shader.uniforms.nativeTintSize={value:Math.max(.001,a.tintSize??1)};shader.uniforms.nativeUVScale={value:Math.max(.001,a.uvScale??1)};
-          shader.vertexShader='varying vec3 vNativeWorld;\n'+shader.vertexShader.replace('#include <worldpos_vertex>','#include <worldpos_vertex>\nvNativeWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+          shader.vertexShader='varying vec3 vNativeWorld;\n'+shader.vertexShader.replace('#include <worldpos_vertex>','#include <worldpos_vertex>\nvec4 nativeWorldPosition = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\nnativeWorldPosition = instanceMatrix * nativeWorldPosition;\n#endif\nvNativeWorld = (modelMatrix * nativeWorldPosition).xyz;');
           shader.fragmentShader='varying vec3 vNativeWorld;\nuniform sampler2D nativeTintMap;\nuniform vec2 nativeTintOffset;\nuniform float nativeTintSize;\nuniform float nativeUVScale;\n'+shader.fragmentShader;
           if(a.worldUV)shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>','#ifdef USE_MAP\nvec4 sampledDiffuseColor = texture2D(map, vNativeWorld.xy / nativeUVScale);\ndiffuseColor *= sampledDiffuseColor;\n#endif');
           if(a.tintMap&&tint.value)shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\nvec2 nativeTintUV=vec2(vNativeWorld.x-nativeTintOffset.x,nativeTintOffset.y-vNativeWorld.y)/nativeTintSize;\ndiffuseColor.rgb *= texture2D(nativeTintMap,nativeTintUV).rgb;');

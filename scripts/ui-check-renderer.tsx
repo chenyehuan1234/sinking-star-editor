@@ -1,5 +1,5 @@
 import React from'react';import{createRoot}from'react-dom/client';import{StudioApp}from'../src/renderer/studio-app';import{executeCommand}from'../src/renderer/commands';
-declare global{interface Window{uiCheck:{input:(v:string)=>Promise<void>;capture:(n:string)=>Promise<void>;resize:(w:number,h:number,z:number)=>Promise<void>;stats:()=>Promise<Record<string,number>>;saved:()=>Promise<any>;finish:(data:unknown)=>Promise<void>}}}
+import './ui-check-types';
 const checks:string[]=[];const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms)),frame=()=>new Promise(r=>requestAnimationFrame(r));
 function assert(ok:unknown,label:string){if(!ok)throw Error(label);checks.push(label);console.log(label);}async function until(test:()=>unknown,label:string){for(let i=0;i<200;i++){if(test())return;await wait(50);}throw Error('等待超时：'+label);}
 function click(selector:string){const el=document.querySelector<HTMLElement>(selector);if(!el)throw Error('没有控件 '+selector);el.click();}
