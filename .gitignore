@@ -46,3 +46,6 @@ scripts/*
 !scripts/placement-check-renderer.tsx
 
 !scripts/ui-check-types.ts
+
+!scripts/memory-check.mjs
+!scripts/memory-check-renderer.tsx

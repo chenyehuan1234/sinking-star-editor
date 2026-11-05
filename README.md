@@ -2,7 +2,7 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，并使用原游戏试玩自己的谜题。
 
-**[下载 v0.7.9-beta.2 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.9-beta.2)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
+**[下载 v0.7.9-beta.3 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.9-beta.3)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
 
 ## 编辑器截图
 
@@ -24,8 +24,8 @@
 
 需要 Windows x64，以及通过 Steam 安装的《沉星之序 / Order of the Sinking Star》。下载包不包含原游戏资源，不需要另装 Node.js。
 
-- **安装版**：下载 `SinkingStarEditor-0.7.9-beta.2-Setup.exe`，按向导安装。
-- **免安装版**：下载 `SinkingStarEditor-0.7.9-beta.2-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
+- **安装版**：下载 `SinkingStarEditor-0.7.9-beta.3-Setup.exe`，按向导安装。
+- **免安装版**：下载 `SinkingStarEditor-0.7.9-beta.3-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
 - GitHub 自动生成的 **Source code** 压缩包供开发者使用，不是可运行的软件下载。
 
 启动时先检查已保存的目录，再查找 Steam 默认库和其他磁盘的游戏库。只有一个有效安装时自动连接；多个安装可选择。没有找到时，点击“选择游戏文件夹”，选择包含 `sinking_star.exe` 的目录，不是 Steam 总目录。
@@ -113,3 +113,10 @@ npx tsx scripts/verify-public.ts
 物件列表的眼睛和锁只影响本机编辑视图。编辑分组随 v3 工程保存，但不改变原生存在组、角色同步或机关频道。关系默认只显示选中相关，可切换当前频道和全部关系；怪物门及特殊开关不进入普通频道图。
 
 预览和重型校验在后台线程执行，解析模板复用；提交返回实体与地形块差量。拖动期间只更新本地场景，提交后保留位置直到结果确认。性能数据、测量范围和复现方法见 [性能记录](docs/PERFORMANCE.md)。完整循环大地图、多层世界及解锁进度留待后续版本。
+
+
+## 浏览位置记忆
+
+原版关卡目录记住搜索、展开区域、辅助场景开关和滚动位置，添加后重新打开原位返回。素材各分类、收藏和最近使用分别记住搜索、变体显示及位置；折叠面板或重启仍可恢复，调整窗口和缩略图大小时保持原物件可见。重新打开工程回到上次小关，已删除时回到大地图。
+
+这些记录只保存在本机，不改变工程文件、未保存状态或撤销历史。不同游戏源包的原版目录记录隔离；主素材库和属性配置图卡的记录也分别保存。
