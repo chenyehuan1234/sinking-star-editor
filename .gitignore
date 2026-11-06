@@ -52,3 +52,8 @@ scripts/*
 
 !scripts/v0710-check.mjs
 !scripts/v0710-check-renderer.tsx
+
+!scripts/dock-check.mjs
+!scripts/dock-check-renderer.tsx
+
+!docs/screenshots/dock-workspace.png

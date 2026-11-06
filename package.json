@@ -1,6 +1,6 @@
 {
   "name": "sinking-star-editor",
-  "version": "0.7.10-beta.1",
+  "version": "0.7.11-beta.1",
   "private": true,
   "description": "沉星之序 · 本地关卡工作台",
   "type": "module",

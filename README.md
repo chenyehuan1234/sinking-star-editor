@@ -2,9 +2,13 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，并使用原游戏试玩自己的谜题。
 
-**[下载 v0.7.10-beta.1 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.10-beta.1)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
+**[下载 v0.7.11-beta.1 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.11-beta.1)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
 
 ## 编辑器截图
+
+**v0.7.11 自由停靠工作区**：关卡、物件、主画布、机关关系和游戏镜头可以独立拆分，属性及其他页面可合并为标签。
+
+![自由停靠工作区与并排镜头设置](docs/screenshots/dock-workspace.png)
 
 以下为 v0.7.6-beta.1 的实际编辑器界面，使用独立演示工程截取。
 
@@ -24,8 +28,8 @@
 
 需要 Windows x64，以及通过 Steam 安装的《沉星之序 / Order of the Sinking Star》。下载包不包含原游戏资源，不需要另装 Node.js。
 
-- **安装版**：下载 `SinkingStarEditor-0.7.10-beta.1-Setup.exe`，按向导安装。
-- **免安装版**：下载 `SinkingStarEditor-0.7.10-beta.1-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
+- **安装版**：下载 `SinkingStarEditor-0.7.11-beta.1-Setup.exe`，按向导安装。
+- **免安装版**：下载 `SinkingStarEditor-0.7.11-beta.1-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
 - GitHub 自动生成的 **Source code** 压缩包供开发者使用，不是可运行的软件下载。
 
 启动时先检查已保存的目录，再查找 Steam 默认库和其他磁盘的游戏库。只有一个有效安装时自动连接；多个安装可选择。没有找到时，点击“选择游戏文件夹”，选择包含 `sinking_star.exe` 的目录，不是 Steam 总目录。
@@ -129,3 +133,9 @@ npx tsx scripts/verify-public.ts
 地形支持拖动矩形与固定尺寸，显示实际工作面、起点、长×宽×厚。厚度 1–128 层，每笔最多 4,096 格，预览与提交共用同一份格子结果。大地图仍为 XY、一层地图格。
 
 自由视角可通过“采用当前视角”保存为单场景游戏镜头。主画布镜头编辑支持 16:9、4:3、21:9 和跟随视口的构图留边；比例不改变游戏分辨率。新空白关扩建出框只提示，不自动覆盖镜头。分屏、总览、动态引用及翻转视角保留原生限制。
+
+## v0.7.11 自由工作区
+
+顶栏“布局”提供 22 类独立面板，包括镜头、区域相机、机关关系、显示、循环、分组、阵列、原版关卡目录、设置和指南。拖动标题到边缘拆分、到中间合并标签；标题右侧可浮动、最大化或关闭。浮动面板在当前编辑器窗口内移动和缩放。
+
+双击标题最大化／恢复；Tab 聚焦主画布／恢复原布局。支持布局锁定、标准／地形编辑／机关设计预设和命名布局保存。当前布局、关闭前的停靠位置、搜索及滚动位置在本机恢复，不改变工程内容或撤销历史。部分原有窗口可通过右上角的停靠按钮转到工作区。
