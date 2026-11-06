@@ -1,3 +1,4 @@
+import{QuickSlotStore}from'./quick-slot-store';
 import{discoverInstallations,inspectInstallation,directoriesOverlap}from'./game-installation';
 import{DesignStore}from'./design-store';import{validateBundle}from'../core/regions';
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
@@ -18,7 +19,7 @@ if(lock)app.whenReady().then(async()=>{
   const config=path.join(app.getPath('userData'),'game-path.json');
   let preferences:{gamePath?:string;workspace?:string}={};try{preferences=JSON.parse(await fs.readFile(config,'utf8'));}catch{}
   let service=new EditorService(process.env.SINKING_STAR_WORKSPACE??preferences.workspace??path.join(root,'workspace'),path.join(__dirname,'asset-worker.cjs'));
-  let store=new DesignStore(service.workspace);
+  let store=new DesignStore(service.workspace);const quickSlots=new QuickSlotStore(path.join(app.getPath('userData'),'quick-slots'));
   const persistPreferences=()=>atomicWrite(config,JSON.stringify(preferences));
   const projectPaths=new Map<string,string>(),lastProject=path.join(app.getPath('userData'),'last-project.json');
   const rememberProject=async(w:WorldProject,file:string)=>{projectPaths.set(w.id,file);await atomicWrite(lastProject,JSON.stringify({file}));};
@@ -32,6 +33,8 @@ if(lock)app.whenReady().then(async()=>{
   handle('connect',connectGame,true);
   handle('chooseGame',async()=>{const r=await dialog.showOpenDialog(win,{title:'选择包含 sinking_star.exe 的原游戏文件夹',properties:['openDirectory']});if(r.canceled)return null;return connectGame(r.filePaths[0]);},true);
   handle('chooseWorkspace',async()=>{if(process.env.SINKING_STAR_WORKSPACE)throw Error('启动参数已指定工作区，请修改启动参数后重启');const r=await dialog.showOpenDialog(win,{title:'选择编辑器工作区（不会搬迁原有工程）',defaultPath:service.workspace,properties:['openDirectory','createDirectory']});if(r.canceled)return null;const chosen=await fs.realpath(r.filePaths[0]);if(service.gamePath){if(directoriesOverlap(service.gamePath,chosen))throw Error('工作区不能放在游戏目录内，也不能包含游戏目录');}await fs.access(chosen,fs.constants.W_OK);preferences.workspace=chosen;await persistPreferences();const pendingRestart=Boolean(service.gamePath);if(!pendingRestart){service=new EditorService(chosen,path.join(__dirname,'asset-worker.cjs'));store=new DesignStore(chosen);}return{path:chosen,pendingRestart};},true);
+  handle('quickSlotsRead',async()=>{if(!service.codec)throw Error('请先连接原游戏');return quickSlots.read(service.sourceHash,service.build,service.codec);});
+  handle('quickSlotsWrite',async value=>{if(!service.codec)throw Error('请先连接原游戏');return quickSlots.write(value,service.sourceHash,service.build,service.codec);});
   handle('preparationEstimate',()=>service.preparationEstimate());
   handle('cameraObject',(p,r)=>service.cameraObject(p,r));
   handle('previewUpdate',r=>service.previewUpdate(r));handle('openLevel',n=>service.openLevel(n));handle('preview',p=>service.preview(p));

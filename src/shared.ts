@@ -1,3 +1,4 @@
+import type{QuickSlotSet}from'./quick-slots';
 import type {EditorMetadata} from './editor-organization';
 import type {PreviewRequest,PreviewDelta} from './preview-delta';
 import type {NativeValue,ObjectCatalog,ObjectField} from './catalog-types';
@@ -46,6 +47,8 @@ export interface GameDiscovery {installations:GameInstallation[];workspace:strin
 export interface PreparationEstimate {workspace:string;prepared:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
 export interface Catalog {gamePath:string;sourceHash:string;build:string;levels:string[];regions?:NativeLevelRegion[];workspace:string;runtimeVerified:boolean;compatibility?:string}
 export interface EditorApi {
+ quickSlotsRead():Promise<QuickSlotSet>;
+ quickSlotsWrite(value:QuickSlotSet):Promise<QuickSlotSet>;
  previewUpdate(request:PreviewRequest):Promise<PreviewDelta>;
  cameraObject(p:EditorProject,request:CameraObjectRequest):Promise<CameraConfig>;
   regionCapture(p:EditorProject,selection:RegionSelection):Promise<RegionBundle>;

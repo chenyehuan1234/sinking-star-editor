@@ -1,7 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {commandDefinitions,shortcut,useInputPreferences,type CommandId} from './commands';
 import {Modal} from './studio-ui';
-const aliases:Partial<Record<CommandId,string>>={camera:'相机 镜头 取景',cameraRegions:'分屏 分镜 相机 区域',quickLink:'门 门闸 开关 频道 连接',groups:'组织 分组',array:'排列 批量 阵列',isolate:'隔离 单独显示',overlap:'遮挡 重叠 选择',extrude:'拉伸 挤出 削减 地面 墙',sample:'取样 吸管 复制',palette:'命令 搜索'};
+const aliases:Partial<Record<CommandId,string>>={adoptCamera:'相机 镜头 取景 自由视角 构图',terrainSize:'地面 墙体 固定尺寸 长宽厚 矩形',camera:'相机 镜头 取景',cameraRegions:'分屏 分镜 相机 区域',quickLink:'门 门闸 开关 频道 连接',groups:'组织 分组',array:'排列 批量 阵列',isolate:'隔离 单独显示',overlap:'遮挡 重叠 选择',extrude:'拉伸 挤出 削减 地面 墙',sample:'取样 吸管 复制',palette:'命令 搜索'};
 export function CommandPalette({reason,onExecute,onClose}:{reason:(id:CommandId)=>string;onExecute:(id:CommandId)=>void;onClose:()=>void}){
  useInputPreferences();const[q,setQ]=useState(''),[index,setIndex]=useState(0),input=useRef<HTMLInputElement>(null),host=useRef<HTMLDivElement>(null);
  const rows=commandDefinitions.filter(([id,label,group])=>id!=='palette'&&[label,group,shortcut(id),aliases[id]??''].join(' ').toLowerCase().includes(q.toLowerCase().trim()));

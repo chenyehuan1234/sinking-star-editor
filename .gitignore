@@ -49,3 +49,6 @@ scripts/*
 
 !scripts/memory-check.mjs
 !scripts/memory-check-renderer.tsx
+
+!scripts/v0710-check.mjs
+!scripts/v0710-check-renderer.tsx
