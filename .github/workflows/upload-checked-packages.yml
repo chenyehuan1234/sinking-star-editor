@@ -1,0 +1,70 @@
+name: Upload checked Windows packages
+on:
+  workflow_dispatch:
+    inputs:
+      checked_run:
+        description: Successful Windows checks run ID
+        required: true
+        type: string
+      release_tag:
+        description: Existing draft release tag (must target the checked commit)
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: write
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CHECKED_RUN: ${{ inputs.checked_run }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Verify checked source and draft target
+        run: |
+          [[ "$CHECKED_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$CHECKED_RUN" > checked-run.json
+          gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft,targetCommitish > draft.json
+          python3 - <<'PY'
+          import json, os
+          run=json.load(open('checked-run.json')); draft=json.load(open('draft.json'))
+          assert run['status']=='completed' and run['conclusion']=='success', 'Windows checks must pass first'
+          assert run['head_repository']['full_name']==os.environ['GH_REPO'], 'Foreign repository'
+          assert run['path']=='.github/workflows/windows.yml' and run['head_branch']=='main', 'Unexpected workflow or branch'
+          assert run['event'] in ('push','workflow_dispatch'), 'Pull request packages cannot be published'
+          assert draft['isDraft'] and draft['targetCommitish']==run['head_sha'], 'Draft must target the checked commit'
+          PY
+      - name: Download and verify audited packages
+        run: |
+          gh run download "$CHECKED_RUN" --repo "$GH_REPO" --name Windows-x64 --dir packages
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          folder=pathlib.Path('packages'); version=os.environ['RELEASE_TAG'][1:]
+          expected={f'SinkingStarEditor-{version}-Setup.exe',f'SinkingStarEditor-{version}-x64.zip','SHA256SUMS.txt'}
+          assert {p.name for p in folder.iterdir()}==expected, 'Unexpected package contents'
+          digest=lambda p:hashlib.file_digest(p.open('rb'),'sha256').hexdigest()
+          manifest={p.name:digest(p) for p in folder.iterdir()}
+          checks={}
+          for line in (folder/'SHA256SUMS.txt').read_text().splitlines():
+              value,name=line.split('  ',1); assert name not in checks; checks[name]=value
+          assert set(checks)==expected-{'SHA256SUMS.txt'}, 'Incomplete checksums'
+          assert all(manifest[name]==value for name,value in checks.items()), 'Checksum mismatch'
+          pathlib.Path('verified-manifest.json').write_text(json.dumps(manifest))
+          PY
+      - name: Upload to draft and verify GitHub digests
+        run: |
+          gh release upload "$RELEASE_TAG" packages/* --repo "$GH_REPO" --clobber
+          gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json assets,isDraft > uploaded.json
+          python3 - <<'PY'
+          import json
+          expected=json.load(open('verified-manifest.json')); release=json.load(open('uploaded.json'))
+          assert release['isDraft'], 'This workflow does not publish releases'
+          actual={a['name']:a for a in release['assets']}
+          assert set(actual)==set(expected), 'Unexpected release assets'
+          for name,value in expected.items():
+              assert actual[name]['state']=='uploaded' and actual[name]['digest']=='sha256:'+value, name
+          print('All three release assets match the audited Windows build. Release remains a draft.')
+          PY
