@@ -60,3 +60,5 @@ scripts/*
 
 !scripts/water-check.mjs
 !scripts/water-check-renderer.tsx
+
+!scripts/water-original-check-renderer.tsx

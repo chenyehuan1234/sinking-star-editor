@@ -17,7 +17,6 @@ export function validateProperties(type:string,values:Record<string,number|boole
 }
 export function transform(c:PropertyCodec,r:EntityRecord,pos?:[number,number,number],yaw?:number):EntityRecord{
   const values:Record<string,number>={};if(pos)for(const[i,axis]of['x','y','z'].entries()){values[`position.${axis}`]=pos[i];values[`visual_position.${axis}`]=pos[i];}
-  if(pos&&r.type==='Ocean_Map')for(const[i,axis]of['x','y','z'].entries())values[`grid.corner.${axis}`]=Number(c.get(r,`grid.corner.${axis}`))+pos[i]-Number(c.get(r,`position.${axis}`));
   if(yaw!==undefined){const a=yaw*Math.PI/360;Object.assign(values,{'orientation.x':0,'orientation.y':0,'orientation.z':Math.sin(a),'orientation.w':Math.cos(a),theta_current:yaw,theta_target:yaw});}
   return c.patch(r,values);
 }

@@ -1,3 +1,4 @@
+import{waterLayout}from'./water';
 import {parseEntities,type EntityFile,type EntityRecord} from './entities';
 import {GamePackage} from './package';
 import {PropertyCodec} from './properties';
@@ -29,7 +30,7 @@ export function blankFile(pkg:GamePackage,c:PropertyCodec,width:number,height:nu
 }
 export function updateBlankBounds(c:PropertyCodec,file:EntityFile){
   const categories=new Set(['character','monster','block','mechanism','terrain','world']);
-  const points=file.records.filter(r=>categories.has(OBJECT_BY_TYPE.get(r.type)?.category??'')).map(r=>{const p=['x','y','z'].map(a=>Number(c.get(r,'position.'+a)));if(r.type==='Wall_Set')return[p[0]+Number(c.get(r,'wall_data.corner.x')),p[1]+Number(c.get(r,'wall_data.corner.y')),p[2]+Number(c.get(r,'wall_data.corner.z')),Number(c.get(r,'wall_data.dimensions.x',1)),Number(c.get(r,'wall_data.dimensions.y',1)),Number(c.get(r,'wall_data.dimensions.z',1))];if(r.type==='Ocean_Map')return[...['x','y','z'].map(a=>Number(c.get(r,'grid.corner.'+a))),Number(c.get(r,'grid.squares_x',1)),Number(c.get(r,'grid.squares_y',1)),1];return[...p,1,1,1];});
+  const points=file.records.filter(r=>categories.has(OBJECT_BY_TYPE.get(r.type)?.category??'')).map(r=>{const p=['x','y','z'].map(a=>Number(c.get(r,'position.'+a)));if(r.type==='Wall_Set')return[p[0]+Number(c.get(r,'wall_data.corner.x')),p[1]+Number(c.get(r,'wall_data.corner.y')),p[2]+Number(c.get(r,'wall_data.corner.z')),Number(c.get(r,'wall_data.dimensions.x',1)),Number(c.get(r,'wall_data.dimensions.y',1)),Number(c.get(r,'wall_data.dimensions.z',1))];if(r.type==='Ocean_Map'){const w=waterLayout(c,r);return[w.x,w.y,w.gridZ,w.worldWidth,w.worldHeight,1];}return[...p,1,1,1];});
   if(!points.length)return;
   const min=[0,1,2].map(a=>Math.floor(Math.min(...points.map(p=>p[a])))-2),max=[0,1,2].map(a=>Math.ceil(Math.max(...points.map(p=>p[a]+p[a+3])))+2),size=max.map((n,i)=>n-min[i]);
   if(size[0]*size[1]*size[2]>1_000_000)throw new Error('关卡逻辑范围过大，请收拢物件或缩小地形');

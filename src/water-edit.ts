@@ -18,3 +18,11 @@ export function waterEditCells(w:WaterView,points:readonly (readonly[number,numb
 /** Integer interpolated path: fast pointer moves leave no gaps in a stroke. */
 export function waterLine(a:readonly[number,number],b:readonly[number,number]):[number,number][]{const result:[number,number][]=[];let[x,y]=a;const dx=Math.abs(b[0]-x),dy=Math.abs(b[1]-y),sx=x<b[0]?1:-1,sy=y<b[1]?1:-1;let error=dx-dy;while(true){result.push([x,y]);if(x===b[0]&&y===b[1])return result;if(result.length>4096)throw Error('一笔水域操作最多 4096 格');const e=error*2;if(e>-dy){error-=dy;x+=sx;}if(e<dx){error+=dx;y+=sy;}}}
 export function waterRectangle(a:readonly[number,number],b:readonly[number,number]):[number,number][]{const minX=Math.min(a[0],b[0]),minY=Math.min(a[1],b[1]),width=Math.abs(a[0]-b[0])+1,height=Math.abs(a[1]-b[1])+1;if(width*height>4096)throw Error('一次水域矩形最多 4096 格');return Array.from({length:width*height},(_,i)=>[minX+i%width,minY+Math.floor(i/width)]);}
+
+/** A visual cover index, never a change to the native water grid. A high bridge
+ * does not remove the water below; only terrain intersecting the surface covers it. */
+export class WaterOcclusion {
+ private source:readonly {x:number;y:number;z:number}[]|undefined;private tops=new Map<string,number[]>();revision=0;
+ update(terrain:readonly {x:number;y:number;z:number}[]|undefined){if(this.source===terrain)return false;this.source=terrain;this.tops.clear();for(const p of terrain??[]){const key=p.x+','+p.y,values=this.tops.get(key)??[];values.push(p.z);this.tops.set(key,values);}this.revision++;return true;}
+ covers(x:number,y:number,z:number){return(this.tops.get(x+','+y)??[]).some(top=>z>=top-1-1e-5&&z<=top+1e-5);}
+}
