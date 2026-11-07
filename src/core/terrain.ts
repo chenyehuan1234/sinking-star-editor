@@ -1,7 +1,7 @@
 import {parseEntities,type EntityFile,type EntityRecord}from'./entities';import{PropertyCodec}from'./properties';import{GamePackage}from'./package';import type{TerrainOp}from'../shared';
 export function applyTerrain(pkg:GamePackage,c:PropertyCodec,f:EntityFile,op:TerrainOp){
   const cells=new Map(op.cells.map(p=>[`${p.x},${p.y},${p.z}`,p]));
-  for(let j=0;j<f.records.length;j++){const r=f.records[j];if(r.type!=='Wall_Set'||!c.parse(r).complete)continue;
+  for(let j=0;j<f.records.length;j++){const r=f.records[j];if(r.type!=='Wall_Set'||!c.parse(r).complete||Number(c.get(r,'kind'))!==0)continue;
     const get=(n:string,d=0)=>Number(c.get(r,n,d)),sx=get('wall_data.dimensions.x'),sy=get('wall_data.dimensions.y'),sz=get('wall_data.dimensions.z');if(sx*sy*sz>1_000_000)throw new Error('地形体积过大');
     const origin=['x','y','z'].map(a=>get('position.'+a)+get('wall_data.corner.'+a)),slots=(c.get(r,'wall_data.bits.slots',[])as string[]).map(BigInt);let changed=false;
     for(const p of cells.values()){const ix=p.x-origin[0],iy=p.y-origin[1],iz=p.z-origin[2];if(![ix,iy,iz].every(Number.isInteger)||ix<0||iy<0||iz<0||ix>=sx||iy>=sy||iz>=sz)continue;const i=ix+iy*sx+iz*sx*sy;if(slots[i>>6]!==undefined&&(slots[i>>6]&(1n<<BigInt(i%64)))!==0n){slots[i>>6]&=~(1n<<BigInt(i%64));changed=true;}}

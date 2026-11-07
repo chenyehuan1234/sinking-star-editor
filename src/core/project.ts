@@ -1,3 +1,4 @@
+import{applyWater,waterView,validateWaterOp,WATER_TEMPLATE}from'./water';
 import {validateEditor,gameplayWorld,gameplayProject} from '../editor-organization';
 import{applyCharacterControl}from'./character-control';import{applyTopology,topologyView,validateTopology}from'./topology';
 import{applyStamp,validateBundle}from'./regions';
@@ -20,7 +21,8 @@ export function validateProject(value: unknown): asserts value is EditorProject 
   if(p.base){if(![2,3].includes(p.version)||!['blank','template'].includes(p.base.kind))throw new Error('无效的场景基础');if(p.base.kind==='blank'&&![p.base.width,p.base.height].every(n=>Number.isInteger(n)&&n>=4&&n<=128))throw new Error('空白场景尺寸无效');if(p.base.kind==='template'&&p.base.template!==p.template)throw new Error('模板基础与资源模板不一致');}
   validateEditor(p.editor);validateCamera(p.camera);validateTopology(p.topology);
   for(const o of p.operations){
-    if(!o||!['control','stamp','transform','clone','delete','properties','prefab','terrain','profile','duplicate'].includes(o.kind)||!Number.isInteger(o.id)||o.id<0||o.id>0xffffffff)throw new Error('无效的编辑操作');
+    if(!o||!['water','waterCreate','waterResize','control','stamp','transform','clone','delete','properties','prefab','terrain','profile','duplicate'].includes(o.kind)||!Number.isInteger(o.id)||o.id<0||o.id>0xffffffff)throw new Error('无效的编辑操作');
+    if(o.kind==='water'||o.kind==='waterCreate'||o.kind==='waterResize')validateWaterOp(o);
     if(o.kind==='control'&&(!Array.isArray(o.ids)||!o.ids.includes(o.id)||!o.ids.length||o.ids.length>2000||new Set(o.ids).size!==o.ids.length||o.ids.some(id=>!Number.isInteger(id)||id<1||id>0xffffffff)||o.targetId!==undefined&&(!Number.isInteger(o.targetId)||o.targetId<1||o.targetId>0xffffffff)))throw Error('原生角色控制设置无效');
     if(o.kind==='profile'&&(!validName(o.template)||!Number.isInteger(o.sourceId)||o.sourceId<0||o.sourceId>0xffffffff))throw new Error('原版配置无效');
     if(o.kind==='stamp'){if(p.version!==3)throw new Error('区域快照需要 v3 工程');validateBundle(o.bundle);if(o.bundle.sourceHash!==p.sourceHash||o.bundle.sourceBuild!==p.sourceBuild)throw Error('区域快照与工程源版本不一致');if(!Number.isInteger(o.yaw)||o.yaw%90)throw new Error('区域旋转必须为90度倍数');}
@@ -40,6 +42,7 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
   validateProject(project);
   const f=base??(project.base?.kind==='blank'?(codec?blankFile(pkg,codec,project.base.width,project.base.height):(()=>{throw new Error('空白场景需要游戏类型信息');})()):parseEntities(pkg.get(`data-common/${project.template}.entities`)));
   for(const o of project.operations){
+    if(o.kind==='water'||o.kind==='waterCreate'||o.kind==='waterResize'){if(!codec)throw Error('水流编辑需要原生类型信息');applyWater(pkg,codec,f,o);continue;}
     if(o.kind==='control'){if(!codec)throw Error('角色同步控制需要原生类型信息');applyCharacterControl(codec,f,o);continue;}
     if(o.kind==='stamp'){if(!codec)throw new Error('区域放置需要类型信息');applyStamp(pkg,codec,f,o);continue;}
     if(o.kind==='duplicate'){if(!codec)throw new Error('批量复制需要类型信息');if(o.copies.some(p=>!editableType(f.records.find(r=>r.id===p.id)?.type??'')))throw new Error('不能复制内部对象');duplicateRecords(codec,f,o);continue;}
@@ -82,7 +85,7 @@ export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:Pr
     if(sx*sy*sz>1000000||sx<1||sy<1||sz<1)continue;
     for(let i=0;i<sx*sy*sz&&terrain.length<30000;i++)if(((bits[i>>6]??0n)&(1n<<BigInt(i%64)))!==0n)terrain.push({id:r.id,x:p[0]+cx+i%sx,y:p[1]+cy+Math.floor(i/sx)%sy,z:p[2]+cz+Math.floor(i/(sx*sy))+1});
   }
-  const waters=codec?f.records.filter(r=>r.type==='Ocean_Map'&&codec.parse(r).complete).map(r=>({id:r.id,x:Number(codec.get(r,'grid.corner.x')),y:Number(codec.get(r,'grid.corner.y')),z:Number(codec.get(r,'grid.corner.z'))-Number(codec.get(r,'sink')),width:Number(codec.get(r,'grid.squares_x')),height:Number(codec.get(r,'grid.squares_y')),cells:codec.get(r,'ocean_values',[])as number[]})):[];
+  const waters=codec?f.records.filter(r=>r.type==='Ocean_Map'&&codec.parse(r).complete).map(r=>waterView(codec,f,r)):[];
   return {name,typeCount:f.types.length,terrain,waters,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
     const field=baseFields(r.diff).fields.find(f=>f.id===0x1f);
     const editable=codec?editableType(r.type)&&codec.parse(r).complete:canEdit(r);
@@ -119,4 +122,4 @@ export function buildChanges(pkg:GamePackage,p:EditorProject,codec?:PropertyCode
   const manifest=sources.length===1?pkg.get(`data-common/${p.template}.level_manifest`):mergeManifests(sources.map(n=>pkg.get(`data-common/${n}.level_manifest`).toString()));
   return new Map([[`data-common/${p.name}.entities`,writeEntities(f)],[`data-common/${p.name}.level_manifest`,manifest]]);
 }
-export function projectSources(p:EditorProject){return[...new Set([p.template,...(p.camera?.edits??[]).flatMap(e=>e.kind==='clone'&&e.sourceTemplate?[e.sourceTemplate]:[]),...p.operations.flatMap(o=>o.kind==='stamp'?o.bundle.sources:o.kind==='prefab'||o.kind==='profile'?[o.template]:o.kind==='properties'&&o.sourceTemplate?[o.sourceTemplate]:[]),...p.base?.kind==='blank'||p.operations.some(o=>o.kind==='terrain'||o.kind==='stamp')?['3d_intro_heroes','heroes1_1']:[]])];}
+export function projectSources(p:EditorProject){return[...new Set([p.template,...(p.camera?.edits??[]).flatMap(e=>e.kind==='clone'&&e.sourceTemplate?[e.sourceTemplate]:[]),...p.operations.flatMap(o=>o.kind==='waterCreate'?['mirror_1',WATER_TEMPLATE]:o.kind==='stamp'?o.bundle.sources:o.kind==='prefab'||o.kind==='profile'?[o.template]:o.kind==='properties'&&o.sourceTemplate?[o.sourceTemplate]:[]),...p.base?.kind==='blank'||p.operations.some(o=>o.kind==='terrain'||o.kind==='stamp')?['3d_intro_heroes','heroes1_1']:[]])];}

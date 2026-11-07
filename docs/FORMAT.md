@@ -90,3 +90,11 @@ map.objects 为可选原生对象操作列表；大地图 hub/intro 和预览应
 内部 `previewUpdate` 请求携带 `scene/revision/baseRevision` 和工程；结果包含全量初始化或 `entities/removed/chunks/fields` 差量。地形为 16×16×16 分块，负坐标向下取整。只有匹配的场景与基线可应用，错误基线返回全量；原完整预览接口仍保留。预览会话不写入工程。
 
 原生字段解析缓存以不可变 diff Buffer 身份区分。已有字段保留原始默认字节；新增字段使用稳定基线，不再借用上一个读取关卡的默认编码，避免仅改变编辑组织时发生无关二进制变动。
+
+## v0.7.12 水域与逐格水流（兼容 v3）
+
+新增操作：`waterCreate {id, position:[x,y,z], width, height}`、`waterResize {id, position, width, height}`、`water {id, mode, direction, cells:[[x,y],…]}`。模式为 `flow/still/water/hole`；方向为原生 `0 静水、1 东、2 北、3 西、4 南`，flow 需 1–4。创建和调整最多 128×128 且总面积不超过 4096；一笔最多 4096 个整数 XY 格。
+
+普通水域使用已验证的原生模板外观创建，独立 ID、清除外部引用，不带入原谜题。逐格修改写入 Ocean_Map.ocean_values，保留无关位；编辑自动孔洞水域时先保留显式水格与关联孔洞，再转为 detect_holes=false 的独立格子。未编辑的原生记录不改写。旋转区域复制同步旋转四向流向，不改垂直或未知编码。
+
+LevelView.waters 增加可选 gridZ/kind/detectHoles/name/error；编辑绘制、方向、笔画与箭头开关只存本机，水域及笔画操作进入工程与撤销历史。预览使用同一份改格结果，拖动时无原生请求，提交后复用现有预览会话。

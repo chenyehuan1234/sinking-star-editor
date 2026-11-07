@@ -1,3 +1,4 @@
+import type{WaterDirection,WaterPaintMode}from'./water-edit';
 import type{QuickSlotSet}from'./quick-slots';
 import type {EditorMetadata} from './editor-organization';
 import type {PreviewRequest,PreviewDelta} from './preview-delta';
@@ -11,6 +12,10 @@ export interface ControlOp {kind:'control';id:number;ids:number[];targetId?:numb
 export interface PropertiesOp {kind:'properties';id:number;values:Record<string,NativeValue>;sourceTemplate?:string}
 export interface PrefabOp {kind:'prefab';id:number;template:string;sourceId:number;position:Vec3;values?:Record<string,NativeValue>;assembly?:boolean}
 export interface TerrainOp {kind:'terrain';id:number;cells:{x:number;y:number;z:number;solid:boolean}[]}
+export interface WaterCreateOp {kind:'waterCreate';id:number;position:Vec3;width:number;height:number}
+export interface WaterResizeOp {kind:'waterResize';id:number;position:Vec3;width:number;height:number}
+export interface WaterPaintOp {kind:'water';id:number;mode:WaterPaintMode;direction:WaterDirection;cells:[number,number][]}
+export interface WaterView {id:number;x:number;y:number;z:number;width:number;height:number;cells:number[];gridZ?:number;kind?:number;detectHoles?:boolean;name?:string;error?:string}
 export interface ProfileOp {kind:'profile';id:number;template:string;sourceId:number}
 export interface DuplicateOp {kind:'duplicate';id:number;copies:{id:number;newId:number}[];offset:Vec3;associations?:'independent'|'shared'}
 export interface RegionBundle {format:"sstar-region";version:1;sourceHash:string;sourceBuild:string;name:string;sources:string[];records:{id:number;type:string;diff:string}[];terrain:Vec3[];warnings:string[];associations?:'independent'|'shared'}
@@ -19,7 +24,7 @@ export interface StampOp {kind:"stamp";id:number;bundle:RegionBundle;position:Ve
 export interface RunRequest {mode:"world"|"single"|"subset";levelIds:string[]}
 export interface RecoveryItem {id:string;name:string;at:string;kind:"auto"|"manual";summary:string;recoverable?:boolean}
 export interface AssemblyItem {id:string;name:string;at:string;bundle:RegionBundle}
-export type EditOp=ControlOp|StampOp|TransformOp|CloneOp|DeleteOp|PropertiesOp|PrefabOp|TerrainOp|ProfileOp|DuplicateOp;
+export type EditOp=WaterCreateOp|WaterResizeOp|WaterPaintOp|ControlOp|StampOp|TransformOp|CloneOp|DeleteOp|PropertiesOp|PrefabOp|TerrainOp|ProfileOp|DuplicateOp;
 export type ProjectBase={kind:'template';template:string}|{kind:'blank';width:number;height:number};
 export interface CameraOverride {id:number;position?:Vec3;target?:Vec3;upDistance?:number;southDistance?:number;fov?:number;panRate?:number;yaw?:number}
 export type CameraObjectKind='play'|'overview'|'height-lock'|'limiter'|'overview-region';
@@ -34,7 +39,7 @@ export interface NativeTopologyView extends TopologyConfig {perScreen:boolean;ma
 export interface EditorProject { format:'sinking-star-project'; version:1|2|3; sourceHash:string; sourceBuild:string; template:string; base?:ProjectBase; name:string; operations:EditOp[];editor?:EditorMetadata;camera?:CameraConfig;topology?:TopologyConfig }
 export interface EditableProperty {name:string;label:string;kind:'number'|'boolean'|'target';value:number|boolean;min?:number;max?:number;targets?:string[]}
 export interface EntityView {id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue}[]}
-export interface LevelView {name:string;entities:EntityView[];typeCount:number;manifest:string;camera?:CameraView;topology?:NativeTopologyView;terrain?:{x:number;y:number;z:number;id?:number}[];waters?:{id:number;x:number;y:number;z:number;width:number;height:number;cells:number[]}[]}
+export interface LevelView {name:string;entities:EntityView[];typeCount:number;manifest:string;camera?:CameraView;topology?:NativeTopologyView;terrain?:{x:number;y:number;z:number;id?:number}[];waters?:WaterView[]}
 export type Tile=0|1|2;
 export interface WorldEntry {id:string;title:string;levelId:string;x:number;y:number;prototype?:{template:string;sourceId:number}}
 export interface WorldLevel {id:string;title:string;project:EditorProject}

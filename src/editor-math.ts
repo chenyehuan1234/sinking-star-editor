@@ -1,5 +1,5 @@
 import type {EntityView,Vec3,LevelView,NativeCameraView,EditOp} from './shared';
-export type EditorTool='select'|'translate'|'rotate'|'scale'|'marquee'|'deleteRect'|'stampRect'|'floor'|'wall'|'erase'|'spawn'|'entry'|'copyRegion'|'extrude';
+export type EditorTool='water'|'select'|'translate'|'rotate'|'scale'|'marquee'|'deleteRect'|'stampRect'|'floor'|'wall'|'erase'|'spawn'|'entry'|'copyRegion'|'extrude';
 export const cameraDragThreshold=(x:number,y:number,atX:number,atY:number)=>Math.hypot(atX-x,atY-y)>5;
 export const isScenery=(e:EntityView)=>['Inanimate','Decal','Animating','Procedurally_Animating','Outline_Override'].includes(e.type);
 export const isAdded=(e:EntityView)=>!e.generatedSurface&&[899,900].includes(e.id>>>20);

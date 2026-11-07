@@ -57,3 +57,6 @@ scripts/*
 !scripts/dock-check-renderer.tsx
 
 !docs/screenshots/dock-workspace.png
+
+!scripts/water-check.mjs
+!scripts/water-check-renderer.tsx

@@ -1,3 +1,4 @@
+import{waterWet}from'../water-edit';
 import * as T from 'three';
 import type {LevelView} from '../shared';
 import {chunkTerrain} from '../preview-delta';
@@ -12,7 +13,7 @@ export class TerrainChunks {
    mesh!.visible=water?d.categories.water.visible:(design||collision)&&d.categories.terrain.visible;mesh!.userData.support=!faded&&!(water?d.categories.water.locked:d.categories.terrain.locked);mesh!.userData.faded=faded;
   };
   for(const[key,cells]of chunkTerrain(level?.terrain??[]))for(const faded of[false,true]){const shown=cells.filter(c=>heightVisibility(c.z,d,layer)===(faded?'faded':'visible'));if(shown.length)put(key+':'+faded,shown,shown.map(c=>new T.Vector3(c.x,c.y,c.z-.5)),false,faded);}
-  for(const w of level?.waters??[]){const vis=heightVisibility(w.z,d,layer);if(vis==='hidden')continue;const positions=w.cells.flatMap((v,i)=>v?[new T.Vector3(w.x+i%w.width,w.y+Math.floor(i/w.width),w.z)]:[]);if(positions.length)put('water:'+w.id,[w],positions,true,vis==='faded');}
+  for(const w of level?.waters??[]){if(d.objects?.[`entity:${w.id}`]?.hidden)continue;const vis=heightVisibility(w.z,d,layer);if(vis==='hidden')continue;const positions=w.cells.flatMap((v,i)=>waterWet(v)?[new T.Vector3(w.x+i%w.width,w.y+Math.floor(i/w.width),w.z)]:[]);if(positions.length)put('water:'+w.id,[w],positions,true,vis==='faded');}
   for(const key of this.cached.keys())if(!keep.has(key))this.remove(key);
  }
  private remove(key:string){const v=this.cached.get(key);if(!v)return;this.root.remove(v.mesh);v.mesh.dispose();v.mesh.geometry.dispose();(v.mesh.material as T.Material).dispose();this.cached.delete(key);}
