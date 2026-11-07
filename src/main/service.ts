@@ -1,3 +1,5 @@
+import{inspectTestCopy,freshTestState,writeCopyMarker,promoteTestCopy,managedPath,type CopySource,type TestState}from'./playtest-copy';
+export type{TestState}from'./playtest-copy';
 import {PreviewWorker} from './preview-client';
 import type {PreviewRequest,PreviewDelta} from '../preview-delta';
 import {diffPreview} from '../preview-delta';
@@ -35,9 +37,9 @@ export async function atomicWrite(file:string,data:Buffer|string):Promise<void>{
   const temp=file+`.${process.pid}.${Date.now()}.tmp`;
   try{await fs.writeFile(temp,data,{flag:'wx'});await fs.rename(temp,file);}catch(e){await fs.rm(temp,{force:true});throw e;}
 }
-export interface TestState {version:1;sourceHash:string;deployedHash:string;pendingHash?:string;aux:string[];template?:string;name?:string;world?:{id:string;revision:number;quickEntry?:string}}
+
 export class EditorService {
-  gamePath='';pkg!:GamePackage;sourceHash='';build='unknown';private stamp='';private busy=false;
+  gamePath='';pkg!:GamePackage;sourceHash='';private exeHash='';build='unknown';private stamp='';private busy=false;
   readonly testRoot:string;
   codec?:PropertyCodec;private compiler?:WorldCompiler;readonly campaigns:CampaignManager;
   private previews?:PreviewWorker;
@@ -62,7 +64,7 @@ export class EditorService {
     await fs.mkdir(this.workspace,{recursive:true});
     try{await this.assertStopped();await this.campaigns.deactivate();}catch(e){if(!String(e).includes('请先退出沉星之序'))throw e;}
     // A failed new connection must leave the previously usable installation intact.
-    await this.previews?.dispose();this.previews=undefined;await this.assets?.dispose();this.objects=undefined;this.pkg=pkg;this.sourceHash=sourceHash;this.gamePath=root;this.stamp=`${st.size}:${st.mtimeMs}`;this.codec=codec;this.assetFiles=assetFiles;this.build=build;
+    await this.previews?.dispose();this.previews=undefined;await this.assets?.dispose();this.objects=undefined;this.pkg=pkg;this.sourceHash=sourceHash;this.exeHash=sha256(exe);this.gamePath=root;this.stamp=`${st.size}:${st.mtimeMs}`;this.codec=codec;this.assetFiles=assetFiles;this.build=build;
     this.assets=codec?new NativeAssets(root,this.workspace,sourceHash+codec.reflection.hash,assetFiles,materials!,this.workerFile):undefined;
     this.compiler=codec?new WorldCompiler(pkg,codec):undefined;
     let runtimeVerified=false;try{const e=JSON.parse(await fs.readFile(path.join(this.workspace,'playtest-evidence.json'),'utf8'));runtimeVerified=e.runtimeVerified===true&&e.sourceHash===this.sourceHash;}catch{}
@@ -111,32 +113,28 @@ export class EditorService {
     if(/"sinking_star\.exe"/i.test(result.stdout))throw new Error('请先退出沉星之序，再修改测试副本');
   }
   private statePath(){return path.join(this.workspace,'playtest-state.json');}
+  private copySource():CopySource{return{workspace:this.workspace,gamePath:this.gamePath,testRoot:this.testRoot,sourceHash:this.sourceHash,sourceBuild:this.build,exeHash:this.exeHash};}
   private async readState():Promise<TestState>{
-    const s=JSON.parse(await fs.readFile(this.statePath(),'utf8')) as TestState;
-    if(s.version!==1||s.sourceHash!==this.sourceHash||!Array.isArray(s.aux)||!s.aux.every(s=>/^data-(common|pc)\/[a-zA-Z0-9_.-]+$/.test(s)))throw new Error('测试副本备份与当前游戏不匹配');
-    const actual=sha256(await fs.readFile(path.join(this.testRoot,'data/levels.package')));
-    if(actual!==s.deployedHash&&actual!==s.pendingHash)throw new Error('测试包已被外部改动，停止覆盖；请保留副本后重新准备');
-    if(actual===s.pendingHash){s.deployedHash=actual;delete s.pendingHash;await atomicWrite(this.statePath(),JSON.stringify(s,null,2));}
-    return s;
+    const copy=await inspectTestCopy(this.copySource());if(!copy.prepared||!copy.state)throw Error(copy.requiresRefresh?'试玩副本属于旧游戏版本，请重新准备试玩':'请先准备试玩副本');const s=copy.state;
+    if(s.pendingHash){const actual=sha256(await fs.readFile(path.join(this.testRoot,'data/levels.package')));if(actual===s.pendingHash){s.deployedHash=actual;delete s.pendingHash;await atomicWrite(this.statePath(),JSON.stringify(s,null,2));}}
+    if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(s,null,2));return s;
   }
-  async preparationEstimate(){await this.unchanged();let prepared=false;try{await this.readState();prepared=true;}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}return estimatePreparation(this.gamePath,this.workspace,prepared);}
+  async preparationEstimate():Promise<import('../shared').PreparationEstimate>{await this.unchanged();const copy=await inspectTestCopy(this.copySource());return{...await estimatePreparation(this.gamePath,this.workspace,copy.prepared),requiresRefresh:copy.requiresRefresh};}
   async prepare(){
-    await this.unchanged();await this.assertStopped();
-    try{await fs.access(this.testRoot);await this.readState();return this.testRoot;}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
-    // Never adopt or overwrite an unmarked existing directory.
-    try{await fs.access(this.testRoot);throw new Error('发现未登记的测试目录，请先将其移到其他位置');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
+    await this.unchanged();await this.assertStopped();const source=this.copySource(),copy=await inspectTestCopy(source);
+    if(copy.prepared){if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(copy.state,null,2));return this.testRoot;}
     const estimate=await this.preparationEstimate();if(!estimate.canPrepare)throw Error(`工作区磁盘空间不足：需约 ${(estimate.requiredBytes/2**30).toFixed(1)} GB，可用 ${(estimate.availableBytes/2**30).toFixed(1)} GB。请在工程菜单更换工作区并重启。`);
-    const building=path.join(this.workspace,`preparing-${Date.now()}`);
+    const building=path.join(this.workspace,`preparing-${Date.now()}-${process.pid}`);await managedPath(this.workspace,building);
     await fs.cp(this.gamePath,building,{recursive:true,filter:s=>!s.split(path.sep).includes('logs'),force:false,errorOnExist:true});
-    if(sha256(await fs.readFile(path.join(building,'data/levels.package')))!==this.sourceHash)throw new Error('复制期间游戏源包已变化，请重新连接');
-    await fs.writeFile(path.join(building,'steam_appid.txt'),'499170');
-    await fs.rename(building,this.testRoot);
-    const backup=path.join(this.workspace,'backups',this.sourceHash+'.package');
-    await fs.mkdir(path.dirname(backup),{recursive:true});
+    if(sha256(await fs.readFile(path.join(building,'data/levels.package')))!==this.sourceHash||sha256(await fs.readFile(path.join(building,'sinking_star.exe')))!==this.exeHash)throw Error('复制期间游戏源文件已变化，请重新连接');
+    await this.verifySourceHash();await this.assertStopped();
+    const backup=path.join(this.workspace,'backups',this.sourceHash+'.package');await managedPath(this.workspace,backup);await fs.mkdir(path.dirname(backup),{recursive:true});
     try{await fs.writeFile(backup,this.pkg.buffer,{flag:'wx'});}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;}
-    if(sha256(await fs.readFile(backup))!==this.sourceHash)throw new Error('备份包损坏');
-    await atomicWrite(this.statePath(),JSON.stringify({version:1,sourceHash:this.sourceHash,deployedHash:this.sourceHash,aux:[]} satisfies TestState,null,2));
-    return this.testRoot;
+    if(sha256(await fs.readFile(backup))!==this.sourceHash)throw Error('备份包损坏');
+    const state=freshTestState(source);await fs.writeFile(path.join(building,'steam_appid.txt'),'499170');await writeCopyMarker(building,state,copy.state);
+    // Recheck the registered package before moving anything, after the potentially long copy.
+    const final=await inspectTestCopy(source);if(final.prepared)throw Error('试玩副本已由另一项操作更新，请重试');
+    await promoteTestCopy(source,building,final);await atomicWrite(this.statePath(),JSON.stringify(state,null,2));return this.testRoot;
   }
   private async restoreAux(s:TestState){
     for(const rel of s.aux){const source=path.join(this.gamePath,rel),target=path.join(this.testRoot,rel);
@@ -170,7 +168,7 @@ export class EditorService {
     if(sha256(original)!==s.sourceHash)throw new Error('原包备份哈希不匹配，恢复已停止');
     s.pendingHash=this.sourceHash;await atomicWrite(this.statePath(),JSON.stringify(s,null,2));
     await this.restoreAux(s);await atomicWrite(path.join(this.testRoot,'data/levels.package'),original);
-    await atomicWrite(this.statePath(),JSON.stringify({version:1,sourceHash:this.sourceHash,deployedHash:this.sourceHash,aux:[]} satisfies TestState,null,2));
+    await atomicWrite(this.statePath(),JSON.stringify(freshTestState(this.copySource()),null,2));
     return '测试副本的关卡包和辅助资源已恢复；Steam 安装目录未改动。';
   }
   async launch(){
@@ -198,7 +196,7 @@ export class EditorService {
   }
   async worldBuild(w:WorldProject){await this.checkWorld(w);await this.verifySourceHash();const b=this.compiler!.build(w),output=this.pkg.rebuild(b.changes),name=`world-${w.id}-${Date.now()}`,out=path.join(this.workspace,'exports',name+'.package');await atomicWrite(out,output);await atomicWrite(path.join(this.workspace,'exports',name+'.sstar-world.json'),JSON.stringify(w,null,2));return{path:out,hash:sha256(output)};}
   async worldDeploy(w:WorldProject,quickEntry?:string){
-    await this.checkWorld(w);await this.verifySourceHash();await this.assertStopped();await this.campaigns.deactivate();await this.prepare();
+    await this.checkWorld(w);await this.verifySourceHash();await this.assertStopped();await this.prepare();await this.campaigns.deactivate();
     const built=this.compiler!.build(w,quickEntry),output=this.pkg.rebuild(built.changes),s=await this.readState();await this.restoreAux(s);
     const generated=new Map<string,Buffer>();const emptyPaint=Buffer.alloc(16);emptyPaint.write('allp');emptyPaint.writeUInt32LE(6,4);const emptyLight=Buffer.alloc(8);emptyLight.writeUInt32LE(3);
     for(const name of['overworld','intro']){generated.set(`data-common/${name}.all_paint_data`,emptyPaint);generated.set(`data-common/${name}.all_lightmap_data`,emptyLight);}

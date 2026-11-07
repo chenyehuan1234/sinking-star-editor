@@ -2,7 +2,9 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，并使用原游戏试玩自己的谜题。
 
-**[下载 v0.7.12-beta.2 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.12-beta.2)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
+**[下载 v0.7.12-beta.3 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.12-beta.3)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
+
+**v0.7.12-beta.3 修复游戏更新后的试玩准备**：自动保留已登记的旧版副本，校验后重新复制当前游戏；新建单关无需手动清理旧副本。
 
 **v0.7.12-beta.2 修正原版水域坐标、上下层水位及地形遮挡**。水域保留完整底层，地形覆盖水面，箭头仅显示露出的水面。
 
@@ -32,15 +34,15 @@
 
 需要 Windows x64，以及通过 Steam 安装的《沉星之序 / Order of the Sinking Star》。下载包不包含原游戏资源，不需要另装 Node.js。
 
-- **安装版**：下载 `SinkingStarEditor-0.7.12-beta.2-Setup.exe`，按向导安装。
-- **免安装版**：下载 `SinkingStarEditor-0.7.12-beta.2-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
+- **安装版**：下载 `SinkingStarEditor-0.7.12-beta.3-Setup.exe`，按向导安装。
+- **免安装版**：下载 `SinkingStarEditor-0.7.12-beta.3-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
 - GitHub 自动生成的 **Source code** 压缩包供开发者使用，不是可运行的软件下载。
 
 启动时先检查已保存的目录，再查找 Steam 默认库和其他磁盘的游戏库。只有一个有效安装时自动连接；多个安装可选择。没有找到时，点击“选择游戏文件夹”，选择包含 `sinking_star.exe` 的目录，不是 Steam 总目录。
 
 首次设置与工程菜单可查看工作区位置、选择其他磁盘。默认工作区在系统“文档”文件夹的 `SinkingStarEditor/workspace`；游戏目录和设置保存在当前 Windows 用户的应用数据目录。连接后更换工作区在重启时生效，旧工程不会自动搬迁。安装版与免安装版共用本机设置。
 
-首次试玩会在工作区复制一份完整游戏，并保留原包备份。所需空间取决于游戏版本，准备前会计算并检查可用空间；空间不足时可更换工作区。原安装保持只读，试玩使用专用测试战役。游戏运行时不部署副本或切换战役，编辑器不会替你关闭游戏。
+首次试玩会在工作区复制一份完整游戏，并保留原包备份。游戏更新后会重新计算空间，先准备并校验新版，再将旧试玩副本及登记文件保留到工作区 backups/test-copy-*，最后切换副本。估算阶段不改文件；准备副本不会修改工程或激活测试战役。所需空间取决于游戏版本，准备前会计算并检查可用空间；空间不足时可更换工作区。原安装保持只读，试玩使用专用测试战役。游戏运行时不部署副本或切换战役，编辑器不会替你关闭游戏。
 
 当前安装程序与可执行文件未做代码签名。请从本仓库 Releases 下载，并核对同页的 `SHA256SUMS.txt`；Windows 可能显示未知发布者提示。
 

@@ -49,7 +49,7 @@ export interface PrefabView {key:string;label:string;type:string;template:string
 export interface NativeLevelRegion {id:string;title:string;layer:'ground'|'underground'|'sky'|'other';levels:string[];cell?:[number,number]}
 export interface GameInstallation {path:string;build:string;directoryValid:boolean;compatibility:'unchecked'|'data-checked'|'unverified';reason?:string;saved?:boolean}
 export interface GameDiscovery {installations:GameInstallation[];workspace:string;workspaceLocked:boolean;pendingWorkspace?:string}
-export interface PreparationEstimate {workspace:string;prepared:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
+export interface PreparationEstimate {workspace:string;prepared:boolean;requiresRefresh?:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
 export interface Catalog {gamePath:string;sourceHash:string;build:string;levels:string[];regions?:NativeLevelRegion[];workspace:string;runtimeVerified:boolean;compatibility?:string}
 export interface EditorApi {
  quickSlotsRead():Promise<QuickSlotSet>;
