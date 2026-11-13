@@ -1,9 +1,11 @@
+import {PLAYTEST_SUSPENSION} from './playtest-policy';
 import{commandDefinitions,prettyChord,type CommandId,type Bindings,type MousePreferences}from'./input-config';
 export interface GuideTopic{id:string;title:string;purpose:string;entry:string;steps:string[];notes:string[];commands:CommandId[];keywords:string[]}
 export interface GuideChapter{id:string;title:string;intro:string;topics:GuideTopic[]}
 const t=(id:string,title:string,purpose:string,entry:string,steps:string[],notes:string[]=[],commands:CommandId[]=[],keywords:string[]=[]):GuideTopic=>({id,title,purpose,entry,steps,notes,commands,keywords});
 export const guideChapters:GuideChapter[]=[
- {id:'start',title:'快速入门',intro:'第一次使用时，先做一关能保存、能试玩的小谜题，再逐步增加机关。',topics:[
+ {id:'start',title:'快速入门',intro:PLAYTEST_SUSPENSION,topics:[
+  t('shared-save-risk','为什么暂时无法试玩','避免正式战役的大地图历史被试玩覆盖。','顶栏试玩按钮；命令搜索；所有新旧启动接口。',['当前版本已暂停游戏试玩启动。仍可编辑、保存、重新打开、校验和导出工程。','此前专用测试战役与正式战役位于同一存档根目录。在试玩游戏中载入正式战役，会将正式存档应用到已修改的大地图并可能写回。','不要手动运行旧版试玩副本。正式存档的恢复结果应在 Steam 原版游戏中检查。','只有验证试玩无法读取、载入或写入正式战役后，才重新开放启动。'],['其余章节的试玩步骤描述原有流程，当前暂停期间不能执行。如恢复后遇到 Steam 云同步冲突，保留已核对的本地恢复文件，避免旧云端覆盖。'],['run','runGroup'],['存档','大地图重置','恢复','试玩暂停','正式战役']),
   t('first-connection','首次启动：连接 Steam 游戏与工作区','安装后自动查找原游戏，找不到时手动选择。','首次启动设置页；工程菜单。',['先在 Steam 安装沉星之序。编辑器不附带原游戏，模型、材质和关卡均从本机安装读取。','启动时先检查已保存的目录，再读取 Steam 游戏库。多个安装可选择其中一个；未找到时点击选择游戏文件夹，选择包含 sinking_star.exe 的目录。','工作区用于工程、缓存与试玩副本。首次设置或工程菜单可更换位置；已连接后更换在下次启动生效，旧工程不会被搬迁或删除。','第一次试玩会复制一份完整游戏，准备前显示预计大小并检查磁盘空间。Steam 游戏更新后，旧版副本先完整保留，再准备当前版本，不需要手动删除旧副本。准备不激活战役，关卡校验和部署成功后才进入试玩。ZIP 版必须完整解压，不要只移动 exe。'],['游戏目录有效性与版本兼容性分开检查；结构解析不代表机制已实测。','来源指纹用于检查资源依赖。跨版本仅在依赖与结构验证通过时适配，原文件保留。','编辑器不需要另装 Node.js。安装版与免安装版使用同一份本机设置。'],['help','helpSearch'],['Steam','安装','目录','工作区','文件夹','下载','首次','连接','版本','空间']),
   t('first-puzzle','制作第一关：开关控制门闸','走完新建、放置、关联、保存和试玩的完整流程。','左侧“关卡”标题右侧的 ＋；底部素材栏；右侧属性栏。',[
    '点击 ＋ 新建空白关。默认已有 16×16 地面和一名战士，先保留这名主角。双击左侧关卡名，将它改成“我的第一关”。',

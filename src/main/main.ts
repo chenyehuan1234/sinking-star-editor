@@ -1,4 +1,5 @@
 import{Updates}from'./updates';
+import {assertPlaytestCommand} from '../playtest-policy';
 import{QuickSlotStore}from'./quick-slot-store';
 import{discoverInstallations,inspectInstallation,directoriesOverlap}from'./game-installation';
 import{DesignStore}from'./design-store';import{validateBundle}from'../core/regions';
@@ -28,6 +29,7 @@ if(lock)app.whenReady().then(async()=>{
   const readWorldFile=async(file:string)=>{const stat=await fs.stat(file);if(stat.size>20_000_000)throw new Error('工程文件超过 20 MB');const original=JSON.parse(await fs.readFile(file,'utf8')),w=await service.adaptWorld(original);await service.checkWorld(w);if(w===original)await rememberProject(w,file);else{projectPaths.delete(w.id);adaptedPaths.set(w.id,path.resolve(file));}return service.upgradeWorldEntries(upgradeWorld(w));};
   const handle=(method:string,fn:(...args:any[])=>Promise<unknown>,exclusive=false)=>ipcMain.handle(`editor:${method}`,async(event,...args)=>{
     if(event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame)throw new Error('无效的编辑器来源');
+    assertPlaytestCommand(method);
     return exclusive?service.exclusive(()=>fn(...args)):fn(...args);
   });
   const updates=new Updates();handle('updateCheck',()=>updates.check());handle('updateDownload',()=>updates.fetch());handle('updateInstall',()=>updates.install(win));

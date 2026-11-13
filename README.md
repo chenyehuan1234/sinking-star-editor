@@ -1,10 +1,12 @@
+> **v0.7.15-beta.2 存档保护修复**：暂停全部游戏试玩启动入口。旧版试玩副本与原游戏共用存档目录，在试玩游戏中载入正式战役会覆盖大地图历史。编辑、保存、原生校验与导出可继续使用；完成存档隔离实测前不会重新开放启动。
+
 > **v0.7.15-beta.1 测试版**：全目录素材归组，点击小箭头在素材栏内展开／收起变体图卡；新增地形表面格线、右键单格擦除、实时倒角方向立方体和镜头三轴控制器。详见 [本轮验收记录](docs/V0715-ACCEPTANCE.md)。
 
 # 沉星之序 · 关卡工作台
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，并使用原游戏试玩自己的谜题。
 
-**[下载 v0.7.15-beta.1 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.15-beta.1)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
+**[下载 v0.7.15-beta.2 存档保护修复版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.15-beta.2)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
 
 **v0.7.12-beta.3 修复游戏更新后的试玩准备**：自动保留已登记的旧版副本，校验后重新复制当前游戏；新建单关无需手动清理旧副本。
 
@@ -36,8 +38,8 @@
 
 需要 Windows x64，以及通过 Steam 安装的《沉星之序 / Order of the Sinking Star》。下载包不包含原游戏资源，不需要另装 Node.js。
 
-- **安装版**：下载 `SinkingStarEditor-0.7.12-beta.3-Setup.exe`，按向导安装。
-- **免安装版**：下载 `SinkingStarEditor-0.7.12-beta.3-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
+- **安装版**：下载 `SinkingStarEditor-0.7.15-beta.2-Setup.exe`，按向导安装。
+- **免安装版**：下载 `SinkingStarEditor-0.7.15-beta.2-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
 - GitHub 自动生成的 **Source code** 压缩包供开发者使用，不是可运行的软件下载。
 
 启动时先检查已保存的目录，再查找 Steam 默认库和其他磁盘的游戏库。只有一个有效安装时自动连接；多个安装可选择。没有找到时，点击“选择游戏文件夹”，选择包含 `sinking_star.exe` 的目录，不是 Steam 总目录。

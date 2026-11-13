@@ -1,3 +1,4 @@
+import {PLAYTEST_SUSPENSION} from '../playtest-policy';
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Catalog,EditorProject,EditOp,EntityView,LevelView,Vec3} from '../shared';
@@ -93,7 +94,7 @@ function App(){
         <div className="project-settings"><div className="section-caption">关卡工程</div><label className="field">导出名称<input value={project?.name??''} disabled={!project||busy} onChange={e=>{if(project){setProject({...project,name:e.target.value});setDirty(true);}}} onBlur={()=>{if(project&&!/^[a-zA-Z0-9_-]{1,100}$/.test(project.name))setError('导出名称仅允许英文字母、数字、下划线与短横线');}}/></label><p className="hint">修改名称即可从模板另存新关卡。试玩统一使用副本首关入口。</p></div>
       </aside>
     </main>
-    <section className="playtest-bar"><div><span className="eyebrow">原游戏试玩</span><p>部署 → 启动 → 开始新战役<span>地形、碰撞与胜负以原游戏为准</span></p></div><button disabled={busy||!catalog} onClick={()=>void task(async()=>setStatus(await api.restore()),'正在校验并恢复副本…')}>恢复测试副本</button><button disabled={busy||!catalog} onClick={()=>void task(async()=>setStatus(await api.launch()),'正在备份存档并启动…')}>▷ 启动游戏副本</button></section>
+    <section className="playtest-bar"><div><span className="eyebrow">原游戏试玩</span><p>部署 → 启动 → 开始新战役<span>地形、碰撞与胜负以原游戏为准</span></p></div><button disabled={busy||!catalog} onClick={()=>void task(async()=>setStatus(await api.restore()),'正在校验并恢复副本…')}>恢复测试副本</button><button disabled title={PLAYTEST_SUSPENSION}>试玩已暂停</button></section>
     <footer className={error?'status error':'status'} role="status" aria-live="polite"><span className={busy?'working':'status-light'}>●</span><span>{error||status}</span><span className="status-right">{level?.entities.length??0} 实体 · {level?.entities.filter(e=>e.editable).length??0} 可编辑</span></footer>
   </div>;
 }

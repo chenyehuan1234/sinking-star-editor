@@ -11,8 +11,8 @@ import{mechanismIssues}from'../core/mechanism-check';
 import{scopedWorld}from'../core/runs';import{captureRegion,validateBundle}from'../core/regions';import{projectSources}from'../core/project';import type{RegionSelection,RegionBundle,RunRequest}from'../shared';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
-import { spawn, execFile } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import {blockPlaytest} from '../playtest-policy';
 import { promisify } from 'node:util';
 import { GamePackage, sha256 } from '../core/package';
 import { applyProject, buildChanges, levelView, renameSettings, validateProject } from '../core/project';
@@ -177,15 +177,7 @@ export class EditorService {
     await atomicWrite(this.statePath(),JSON.stringify(freshTestState(this.copySource()),null,2));
     return '测试副本的关卡包和辅助资源已恢复；Steam 安装目录未改动。';
   }
-  async launch(){
-    await this.unchanged();await this.assertStopped();await this.readState();
-    const saves=path.join(os.homedir(),'Saved Games','Order of the Sinking Star'),snapshot=path.join(this.workspace,'backups',`saves-${Date.now()}`);
-    try{await fs.cp(saves,snapshot,{recursive:true,errorOnExist:true,force:false});}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
-    await atomicWrite(path.join(snapshot,'_editor-snapshot.json'),JSON.stringify({createdAt:new Date().toISOString(),source:saves,reason:'before-playtest'},null,2));
-    const child=spawn(path.join(this.testRoot,'sinking_star.exe'),['-windowed','-size','1280','720'],{cwd:this.testRoot,stdio:'ignore',detached:true,windowsHide:false});
-    await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});child.unref();
-    return `试玩已启动。存档快照：${snapshot}。请新建测试战役；工具不会自动覆盖后续存档。`;
-  }
+  async launch():Promise<string>{return blockPlaytest();}
   async checkWorld(w:WorldProject){validateWorld(w);await this.unchanged();if(w.sourceHash!==this.sourceHash||w.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${w.sourceBuild} / ${w.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请通过打开工程执行兼容检查；原生结构或依赖变化时需使用来源版本。`);if(!this.compiler||!this.codec)throw new Error('当前游戏缺少已验证的类型信息');}
   async worldCreate(){await this.unchanged();return newWorld(this.sourceHash,this.build);}
   async upgradeWorldEntries(w:WorldProject){await this.checkWorld(w);return w.map.objects?.length?migrateEntrances(w,this.compiler!.previewMap(w),this.codec!):w;}
@@ -215,21 +207,10 @@ export class EditorService {
     await atomicWrite(path.join(this.workspace,'projects',`${w.id}.last-deployed.sstar-world.json`),JSON.stringify(w,null,2));
     return `已整体部署 ${w.levels.length} 个小关卡和 ${w.map.entries.length} 个入口。所有入口可直接进入。`;
   }
-  async worldLaunch(w:WorldProject,quickEntry?:string,initialLevel?:string,fresh=false){
-    await this.assertStopped();await this.worldDeploy(w,quickEntry);
-    const snapshot=path.join(this.workspace,'backups',`saves-${Date.now()}`);try{await fs.cp(this.campaigns.saves,snapshot,{recursive:true});}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
-    if(fresh)await this.campaigns.reset(w.id,this.sourceHash);
-    const dir=await this.campaigns.activate(w.id,this.sourceHash,initialLevel);
-    try{
-      const child=spawn(path.join(this.testRoot,'sinking_star.exe'),['-windowed','-size','1280','720'],{cwd:this.testRoot,stdio:'ignore',detached:true,windowsHide:false});
-      await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
-      child.once('exit',()=>{void this.campaigns.deactivate().catch(async e=>{await atomicWrite(path.join(this.workspace,'campaign-recovery-error.txt'),String(e));});});child.unref();
-    }catch(e){await this.campaigns.deactivate();throw e;}
-    return `已启动专用测试战役 ${path.basename(dir)}。直接在大地图选择入口，退出游戏后保留关卡完成状态。`;
-  }
+  async worldLaunch(_w:WorldProject,_quickEntry?:string,_initialLevel?:string,_fresh=false):Promise<string>{return blockPlaytest();}
   async regionCapture(p:EditorProject,selection:RegionSelection){await this.checkProject(p);return captureRegion(this.codec!,applyProject(this.pkg,p,this.codec),p,selection,projectSources(p));}
   async regionPreview(bundle:RegionBundle){validateBundle(bundle);if(bundle.sourceHash!==this.sourceHash||bundle.sourceBuild!==this.build)throw Error('组合与当前游戏版本不一致');const source=parseEntities(this.pkg.get('data-common/mirror_1.entities')),file={...source,records:[]};const p:EditorProject={format:'sinking-star-project',version:3,sourceHash:this.sourceHash,sourceBuild:this.build,template:'mirror_1',name:'region_preview',operations:[{kind:'stamp',id:900*0x100000+1,bundle,position:[0,0,0],yaw:0}]};return levelView(this.pkg,'mirror_1',applyProject(this.pkg,p,this.codec,file),this.codec);}
   async runValidate(w:WorldProject,r:RunRequest){const scoped=scopedWorld(w,r);await this.checkWorld(scoped);const issues=await this.worldValidate(scoped);if(r.mode!=='world')for(const l of scoped.levels){const f=applyProject(this.pkg,l.project,this.codec);for(const e of f.records.filter(e=>e.type==='Door'))for(const field of ['target_level','switch_to_level_set']){const name=String(this.codec!.get(e,field,''));if(name&&!['intro','overworld'].includes(name)&&!scoped.levels.some(t=>[t.id,t.project.name,t.project.template,'ed_'+scoped.id+'_'+t.id].includes(name)))issues.push({severity:'error',levelId:l.id,entityId:e.id,message:l.title+'：出口依赖范围外关卡 '+name+'，请加入测试组或修改出口'});}}return issues;}
-  async runLaunch(w:WorldProject,r:RunRequest){const issues=await this.runValidate(w,r);if(issues.some(i=>i.severity==='error'))throw Error(issues.filter(i=>i.severity==='error').map(i=>i.message).join('；'));const scoped=scopedWorld(w,r);if(r.mode!=='world')for(const l of scoped.levels){const f=applyProject(this.pkg,l.project,this.codec);for(const e of f.records.filter(e=>e.type==='Door')){const values:Record<string,string>={};for(const field of ['target_level','switch_to_level_set']){const name=String(this.codec!.get(e,field,'')),target=scoped.levels.find(t=>[t.id,t.project.name,t.project.template].includes(name));if(target)values[field]='ed_'+scoped.id+'_'+target.id;}if(Object.keys(values).length)l.project.operations.push({kind:'properties',id:e.id,values});}}await this.worldLaunch(scoped,undefined,r.mode==='single'?'ed_'+scoped.id+'_'+scoped.levels[0].id:undefined,r.mode!=='world');return r.mode==='single'?'已直接进入当前关卡。通关或返回主世界后进入本关测试返回区。':r.mode==='subset'?'已启动临时关卡组，仅包含 '+scoped.levels.length+' 关；在测试地图自由选择入口。':'已启动完整工程专用测试战役。';}
+  async runLaunch(_w:WorldProject,_r:RunRequest):Promise<string>{return blockPlaytest();}
   async worldReset(w:WorldProject){await this.checkWorld(w);await this.assertStopped();await this.campaigns.deactivate();const archive=await this.campaigns.reset(w.id,this.sourceHash);return `本工程测试进度已重置，旧数据保留在 ${archive}`;}
 }
