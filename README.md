@@ -1,10 +1,10 @@
-> **v0.7.13-beta.1 测试版**：新增地形左右键矩形操作、相机轴向对齐与正交视图、简洁模式、浅色主题和更新入口。试玩继续使用专用测试副本。跨版本不再只看整体哈希，但仅在工程保存的原生结构与依赖记录匹配时适配，缺少记录或依赖已改变的旧工程仍不能自动迁移。详见 [本轮验收记录](docs/V0713-ACCEPTANCE.md)。
+> **v0.7.13-beta.2 测试版**：新增地形左右键矩形操作、相机轴向对齐与正交视图、简洁模式、浅色主题和更新入口。试玩继续使用专用测试副本。跨版本不再只看整体哈希，但仅在工程保存的原生结构与依赖记录匹配时适配，缺少记录或依赖已改变的旧工程仍不能自动迁移。详见 [本轮验收记录](docs/V0713-ACCEPTANCE.md)。
 
 # 沉星之序 · 关卡工作台
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，并使用原游戏试玩自己的谜题。
 
-**[下载 v0.7.13-beta.1 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.13-beta.1)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
+**[下载 v0.7.13-beta.2 测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.7.13-beta.2)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
 
 **v0.7.12-beta.3 修复游戏更新后的试玩准备**：自动保留已登记的旧版副本，校验后重新复制当前游戏；新建单关无需手动清理旧副本。
 
