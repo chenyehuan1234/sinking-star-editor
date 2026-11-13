@@ -36,14 +36,14 @@ export interface CameraRegion {id:number;position:Vec3;extents:Vec3;kind:number;
 export interface CameraView {perScreen:boolean;screenSize:[number,number];origin:[number,number];margins:[number,number];controls:NativeCameraView[];regions:CameraRegion[];references?:{sourceId:number;field:string;targetId:number}[]}
 export interface TopologyConfig {corner:Vec3;size:Vec3;wrapping:boolean;wrappingOverride:number;forceWrappingOverride:boolean}
 export interface NativeTopologyView extends TopologyConfig {perScreen:boolean;maskCount:number}
-export interface EditorProject { format:'sinking-star-project'; version:1|2|3; sourceHash:string; sourceBuild:string; template:string; base?:ProjectBase; name:string; operations:EditOp[];editor?:EditorMetadata;camera?:CameraConfig;topology?:TopologyConfig }
+export interface EditorProject {sourceEvidence?:import('./core/compatibility').SourceEvidence; format:'sinking-star-project'; version:1|2|3; sourceHash:string; sourceBuild:string; template:string; base?:ProjectBase; name:string; operations:EditOp[];editor?:EditorMetadata;camera?:CameraConfig;topology?:TopologyConfig }
 export interface EditableProperty {name:string;label:string;kind:'number'|'boolean'|'target';value:number|boolean;min?:number;max?:number;targets?:string[]}
 export interface EntityView {id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue}[]}
 export interface LevelView {name:string;entities:EntityView[];typeCount:number;manifest:string;camera?:CameraView;topology?:NativeTopologyView;terrain?:{x:number;y:number;z:number;id?:number}[];waters?:WaterView[]}
 export type Tile=0|1|2;
 export interface WorldEntry {id:string;title:string;levelId:string;x:number;y:number;prototype?:{template:string;sourceId:number}}
 export interface WorldLevel {id:string;title:string;project:EditorProject}
-export interface WorldProject {format:'sinking-star-world';version:1|2|3;id:string;name:string;sourceHash:string;sourceBuild:string;map:{width:number;height:number;tiles:Tile[];spawn:[number,number];entries:WorldEntry[];objects?:EditOp[];editor?:EditorMetadata};levels:WorldLevel[]}
+export interface WorldProject {sourceEvidence?:import('./core/compatibility').SourceEvidence;format:'sinking-star-world';version:1|2|3;id:string;name:string;sourceHash:string;sourceBuild:string;map:{width:number;height:number;tiles:Tile[];spawn:[number,number];entries:WorldEntry[];objects?:EditOp[];editor?:EditorMetadata};levels:WorldLevel[]}
 export interface WorldIssue {severity:'error'|'warning';message:string;entryId?:string;levelId?:string;entityId?:number;entityIds?:number[];category?:'reference'|'channel'|'dependency'|'native'}
 export interface PrefabView {key:string;label:string;type:string;template:string;sourceId:number;values?:Record<string,number|boolean>}
 export interface NativeLevelRegion {id:string;title:string;layer:'ground'|'underground'|'sky'|'other';levels:string[];cell?:[number,number]}
@@ -52,6 +52,10 @@ export interface GameDiscovery {installations:GameInstallation[];workspace:strin
 export interface PreparationEstimate {workspace:string;prepared:boolean;requiresRefresh?:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
 export interface Catalog {gamePath:string;sourceHash:string;build:string;levels:string[];regions?:NativeLevelRegion[];workspace:string;runtimeVerified:boolean;compatibility?:string}
 export interface EditorApi {
+ inspectCompatibility:()=>Promise<{name:string;build:string;hash:string;levels:{name:string;template:string;operations:number}[];issues:string[]}|null>;
+
+ updateCheck:()=>Promise<import('./update-version').ReleaseUpdate|null>;updateDownload:()=>Promise<{file:string;installer:boolean}>;updateInstall:()=>Promise<void>;
+
  quickSlotsRead():Promise<QuickSlotSet>;
  quickSlotsWrite(value:QuickSlotSet):Promise<QuickSlotSet>;
  previewUpdate(request:PreviewRequest):Promise<PreviewDelta>;

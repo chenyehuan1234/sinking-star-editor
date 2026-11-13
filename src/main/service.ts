@@ -1,3 +1,4 @@
+import{dependencyEvidence,schemaFingerprint,forwardBuild,verifyEvidence,rebindSource}from'../core/compatibility';
 import{inspectTestCopy,freshTestState,writeCopyMarker,promoteTestCopy,managedPath,type CopySource,type TestState}from'./playtest-copy';
 export type{TestState}from'./playtest-copy';
 import {PreviewWorker} from './preview-client';
@@ -66,7 +67,7 @@ export class EditorService {
     // A failed new connection must leave the previously usable installation intact.
     await this.previews?.dispose();this.previews=undefined;await this.assets?.dispose();this.objects=undefined;this.pkg=pkg;this.sourceHash=sourceHash;this.exeHash=sha256(exe);this.gamePath=root;this.stamp=`${st.size}:${st.mtimeMs}`;this.codec=codec;this.assetFiles=assetFiles;this.build=build;
     this.assets=codec?new NativeAssets(root,this.workspace,sourceHash+codec.reflection.hash,assetFiles,materials!,this.workerFile):undefined;
-    this.compiler=codec?new WorldCompiler(pkg,codec):undefined;
+    this.schemaCache='';this.compiler=codec?new WorldCompiler(pkg,codec):undefined;
     let runtimeVerified=false;try{const e=JSON.parse(await fs.readFile(path.join(this.workspace,'playtest-evidence.json'),'utf8'));runtimeVerified=e.runtimeVerified===true&&e.sourceHash===this.sourceHash;}catch{}
     return {gamePath:root,sourceHash:this.sourceHash,build:this.build,workspace:this.workspace,compatibility:((this.sourceHash==='d747e5d9b8f540c9c6b90e8e987bd74a8c7f8f2f0672fce189403128f1f3117c'&&this.codec?.reflection.hash==='d802098b7cb85eadfc733b88d1554042fad950c572e916febea3f669a474a549')||(this.sourceHash==='408aba3676925faea0c823f8c231e30844feffe9c32ae42644d273ef31863589'&&this.codec?.reflection.hash==='0ae10a513dae25286fe93d0db4fa8a2df9a473bc07e1734e12bc1ad30166db1c'))?'数据回归版本；游戏内运行仍需实测':'当前版本未经回归；已通过结构解析，试玩需实测',levels:pkg.entries.filter(e=>e.name.endsWith('.entities')).map(e=>path.basename(e.name,'.entities')),regions,runtimeVerified};
   }
@@ -75,7 +76,12 @@ export class EditorService {
     const st=await fs.stat(path.join(this.gamePath,'data/levels.package'));
     if(`${st.size}:${st.mtimeMs}`!==this.stamp)throw new Error('游戏源包发生变化，请重新连接并核对兼容性');
   }
-  async checkProject(p:EditorProject){validateProject(p);await this.unchanged();if(p.sourceHash!==this.sourceHash||p.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${p.sourceBuild} / ${p.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请连接原版本游戏；本版不自动迁移原生数据。`);}
+  private schemaCache='';
+  evidence(p:EditorProject|WorldProject){if(!this.codec)throw Error('当前安装缺少原生类型信息');this.schemaCache ||= schemaFingerprint(this.codec);return dependencyEvidence(this.pkg,p,this.schemaCache);}
+  async adaptProject(p:EditorProject){validateProject(p);await this.unchanged();if(p.sourceHash===this.sourceHash&&p.sourceBuild===this.build)return p;forwardBuild(p.sourceBuild,this.build);const evidence=this.evidence(p);verifyEvidence(p.sourceEvidence,evidence);const adapted=rebindSource(p,this.sourceHash,this.build,evidence);await this.checkProject(adapted);applyProject(this.pkg,adapted,this.codec);return adapted;}
+  async adaptWorld(w:WorldProject){validateWorld(w);await this.unchanged();if(w.sourceHash===this.sourceHash&&w.sourceBuild===this.build)return w;forwardBuild(w.sourceBuild,this.build);const evidence=this.evidence(w);verifyEvidence(w.sourceEvidence,evidence);const adapted=rebindSource(w,this.sourceHash,this.build,evidence);await this.checkWorld(adapted);this.compiler!.build(adapted);return adapted;}
+
+  async checkProject(p:EditorProject){validateProject(p);await this.unchanged();if(p.sourceHash!==this.sourceHash||p.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${p.sourceBuild} / ${p.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请通过打开工程执行兼容检查；原生结构或依赖变化时需使用来源版本。`);}
   async verifySourceHash(){await this.unchanged();if(sha256(await fs.readFile(path.join(this.gamePath,'data/levels.package')))!==this.sourceHash)throw new Error('游戏源包哈希发生变化，操作已停止');}
   async openLevel(name:string){await this.unchanged();return levelView(this.pkg,name,undefined,this.codec);}
   async preview(p:EditorProject){await this.checkProject(p);const worker=await this.previewWorker();return worker?worker.request<import('../shared').LevelView>('preview',p):levelView(this.pkg,p.template,applyProject(this.pkg,p,this.codec),this.codec);}
@@ -180,7 +186,7 @@ export class EditorService {
     await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});child.unref();
     return `试玩已启动。存档快照：${snapshot}。请新建测试战役；工具不会自动覆盖后续存档。`;
   }
-  async checkWorld(w:WorldProject){validateWorld(w);await this.unchanged();if(w.sourceHash!==this.sourceHash||w.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${w.sourceBuild} / ${w.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请连接原版本游戏；本版不自动迁移原生数据。`);if(!this.compiler||!this.codec)throw new Error('当前游戏缺少已验证的类型信息');}
+  async checkWorld(w:WorldProject){validateWorld(w);await this.unchanged();if(w.sourceHash!==this.sourceHash||w.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${w.sourceBuild} / ${w.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请通过打开工程执行兼容检查；原生结构或依赖变化时需使用来源版本。`);if(!this.compiler||!this.codec)throw new Error('当前游戏缺少已验证的类型信息');}
   async worldCreate(){await this.unchanged();return newWorld(this.sourceHash,this.build);}
   async upgradeWorldEntries(w:WorldProject){await this.checkWorld(w);return w.map.objects?.length?migrateEntrances(w,this.compiler!.previewMap(w),this.codec!):w;}
   private async exampleFile(name:string){await this.unchanged();if(!this.codec)throw Error('示例需要可解析的原游戏');const recipe=JSON.parse(await fs.readFile(path.join(path.dirname(this.workerFile),'../examples',name+'.recipe.json'),'utf8'));const w=materializeExample(recipe,this.pkg,this.codec,this.sourceHash,this.build);this.compiler!.build(w);return w;}

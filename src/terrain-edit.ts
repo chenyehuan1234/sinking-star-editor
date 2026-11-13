@@ -1,5 +1,5 @@
 import type{Vec3}from'./shared';
-import{Box3,Ray,Vector3}from'three';
+import{Box3,Ray,Vector3,Plane}from'three';
 export type WorkPlane='XY'|'XZ'|'YZ';export type PlaneChoice='auto'|WorkPlane;
 const axes:Record<WorkPlane,[number,number,number]>={XY:[0,1,2],XZ:[0,2,1],YZ:[1,2,0]};
 export function choosePlane(direction:Vec3,previous:WorkPlane='XY'):WorkPlane{const scores={XY:Math.abs(direction[2]),XZ:Math.abs(direction[1]),YZ:Math.abs(direction[0])},best=(Object.keys(scores)as WorkPlane[]).sort((a,b)=>scores[b]-scores[a])[0];return scores[best]-scores[previous]<.08?previous:best;}
@@ -18,3 +18,13 @@ export interface TerrainRectSpec {start:Vec3;end:Vec3;plane:WorkPlane;normal:Vec
 export function terrainRectSize(spec:TerrainRectSpec):[number,number,number]{const[u,v]=axes[spec.plane];return[Math.abs(Math.round(spec.end[u])-Math.round(spec.start[u]))+1,Math.abs(Math.round(spec.end[v])-Math.round(spec.start[v]))+1,spec.thickness];}
 export function fixedTerrainEnd(start:Vec3,plane:WorkPlane,prefs:TerrainPreferences):Vec3{const[u,v]=axes[plane],end=[...start]as Vec3;end[u]+=(prefs.size[0]-1)*prefs.directions[0];end[v]+=(prefs.size[1]-1)*prefs.directions[1];return end;}
 export function terrainRectCells(spec:TerrainRectSpec,exists:(p:Vec3)=>boolean=()=>true):Vec3[]{if(![...spec.start,...spec.end].every(n=>Number.isInteger(n)&&Math.abs(n)<=10000))throw Error('地形坐标须为整数且不能超出 10000 格');const size=terrainRectSize(spec);if(!Number.isInteger(spec.thickness)||spec.thickness<1||spec.thickness>128)throw Error('厚度为 1–128 层');if(size.reduce((a,b)=>a*b,1)>4096)throw Error('一次最多编辑 4096 格，请缩小长宽或厚度');const normal=planeNormal(spec.plane).toArray();if(spec.normal.some((n,i)=>n!==normal[i]&&n!==-normal[i])||Math.abs(spec.normal.reduce((a,b)=>a+b,0))!==1)throw Error('工作面法线无效');const cells:Vec3[]=[];for(const p of planeRectangle(spec.start,spec.end,spec.plane))for(let n=0;n<spec.thickness;n++){const at=p.map((v,i)=>v+spec.normal[i]*n*(spec.erase?-1:1))as Vec3;if(!spec.erase||exists(at))cells.push(at);}return cells;}
+
+export interface TerrainFaceFrame {plane:WorkPlane;normal:Vec3;start:Vec3;empty:boolean}
+/** Surface mode follows the picked face. Empty space starts with ground whose top is Z=0. */
+export function terrainSurfaceFrame(index:VoxelIndex,ray:Ray,choice:PlaneChoice='auto',erase=false):TerrainFaceFrame|null {
+ const hit=index.hit(ray);
+ if(!hit){if(erase)return null;const at=ray.intersectPlane(new Plane(new Vector3(0,0,1),0),new Vector3());if(!at)return null;return{plane:'XY',normal:[0,0,1],start:[Math.round(at.x),Math.round(at.y),-1],empty:true};}
+ const plane=choice==='auto'?(hit.normal[2]?'XY':hit.normal[1]?'XZ':'YZ'):choice;
+ const normal=choice==='auto'?[...hit.normal]as Vec3:planeNormal(plane).multiplyScalar(planeNormal(plane).dot(ray.direction)>0?-1:1).toArray()as Vec3;
+ return{plane,normal,start:hit.cell.map((n,i)=>n+(erase?0:normal[i]))as Vec3,empty:false};
+}

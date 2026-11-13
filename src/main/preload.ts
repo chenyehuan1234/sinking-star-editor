@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { EditorApi } from '../shared';
 const invoke=(method:string,...args:unknown[])=>ipcRenderer.invoke(`editor:${method}`,...args);
-const api:EditorApi={
+const api:EditorApi={inspectCompatibility:()=>invoke('inspectCompatibility'),updateCheck:()=>invoke('updateCheck'),updateDownload:()=>invoke('updateDownload'),updateInstall:()=>invoke('updateInstall'),
  quickSlotsRead:()=>invoke('quickSlotsRead'),quickSlotsWrite:v=>invoke('quickSlotsWrite',v),
  cameraObject:(p,r)=>invoke('cameraObject',p,r),
  regionCapture:(p,s)=>invoke("regionCapture",p,s),regionPreview:b=>invoke("regionPreview",b),assemblyList:()=>invoke("assemblyList"),assemblySave:b=>invoke("assemblySave",b),assemblyRemove:id=>invoke("assemblyRemove",id),assemblyImport:()=>invoke("assemblyImport"),assemblyExport:b=>invoke("assemblyExport",b),recoveryWrite:w=>invoke("recoveryWrite",w),recoveryList:w=>invoke("recoveryList",w),recoveryRestore:(w,id)=>invoke("recoveryRestore",w,id),runValidate:(w,r)=>invoke("runValidate",w,r),runLaunch:(w,r)=>invoke("runLaunch",w,r),

@@ -62,3 +62,8 @@ scripts/*
 !scripts/water-check-renderer.tsx
 
 !scripts/water-original-check-renderer.tsx
+
+!scripts/v0713-check.mjs
+!scripts/v0713-check-renderer.tsx
+
+!docs/V0713-ACCEPTANCE.md
