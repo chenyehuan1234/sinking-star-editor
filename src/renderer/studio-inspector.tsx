@@ -1,3 +1,4 @@
+import {assetFamilies} from '../asset-variants';
 import {channelHue} from './scene-display';
 import{CharacterControlInspector}from'./character-control';
 import{shouldCommitBufferedValue}from'../camera-changes';
@@ -11,7 +12,7 @@ const profileCache=new WeakMap<ObjectCatalog,Map<string,ObjectPreset[]>>();
 export function StudioInspector({entities,all,catalog,onApply,onDraft,onPick,picking,busy,onSelectGroup,onCloneControl,onEditWater}:{entities:EntityView[];all:EntityView[];catalog:ObjectCatalog|null;onApply:(ops:EditOp[])=>void;onDraft:(ops:EditOp[])=>void;onPick:(field:string,ids:number[])=>void;picking:string|null;busy:boolean;onSelectGroup?:(ids:number[])=>void;onCloneControl?:()=>void;onEditWater?:()=>void}){
   const live=useRef(entities);useEffect(()=>{live.current=entities;},[entities]);const[profileOpen,setProfileOpen]=useState(false),[referenceOptions,setReferenceOptions]=useState(false),[showProfiles,setShowProfiles]=useState(false);const entity=entities[0],sameType=entities.every(e=>e.type===entity?.type),key=entities.map(e=>e.id).join(',');
   useEffect(()=>{setProfileOpen(false);setReferenceOptions(false);setShowProfiles(false);},[key]);
-  const presets=useMemo(()=>{if(!catalog||!sameType||!entity)return[];let byType=profileCache.get(catalog);if(!byType)profileCache.set(catalog,byType=new Map());const cached=byType.get(entity.type);if(cached)return cached;const found=new Set<string>();const result=catalog.presets.filter(p=>{if(!sameType||p.type!==entity?.type||!p.parsed)return false;const key=JSON.stringify([p.mesh,p.materials.map(m=>m.replace(/~[^~]+$/,'~level')),...(PROFILE_FIELDS[p.type]??[]).map(k=>p.signature[k]??p.values[k]??0)]);if(found.has(key))return false;found.add(key);return true;});byType.set(entity.type,result);return result;},[catalog,entity?.type,sameType]);
+  const presets=useMemo(()=>{if(!catalog||!sameType||!entity)return[];let byType=profileCache.get(catalog);if(!byType)profileCache.set(catalog,byType=new Map());const cached=byType.get(entity.type);if(cached)return cached;const result=assetFamilies(catalog).filter(f=>f.type===entity.type).flatMap(f=>f.variants.map(v=>v.preset));byType.set(entity.type,result);return result;},[catalog,entity?.type,sameType]);
   if(!entity)return <div className="s-empty"><Icon name="select" size={30}/><strong>选择物件</strong><span>拖入素材开始设计，或点击场景中的角色与机关。</span></div>;
   function values(name:string){return common(entities,e=>e.nativeProperties?.find(p=>p.field.name===name)?.value??'');}
   function property(name:string,value:NativeValue){onApply(entities.map(e=>({kind:'properties',id:e.id,values:{[name]:value}})));}

@@ -67,3 +67,11 @@ scripts/*
 !scripts/v0713-check-renderer.tsx
 
 !docs/V0713-ACCEPTANCE.md
+
+!scripts/v0714-check.mjs
+!scripts/v0714-check-renderer.tsx
+!docs/V0714-ACCEPTANCE.md
+
+!scripts/v0715-check.mjs
+!scripts/v0715-check-renderer.tsx
+!docs/V0715-ACCEPTANCE.md
