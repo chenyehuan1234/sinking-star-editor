@@ -3,12 +3,12 @@ import type{PropertyCodec}from'./properties';
 import type{ControlOp}from'../shared';
 
 /** Control keys are identities, even when the original anchor no longer exists. */
-export function copiedControlValues(c:PropertyCodec,records:EntityRecord[],ids:Map<number,number>,independent:boolean){
+export function copiedControlValues(c:PropertyCodec,records:EntityRecord[],ids:Map<number,number>,independent:boolean,preserve=false){
  const field=(r:EntityRecord)=>r.type==='Guy'?'turn_order_id':r.type==='Rock'?'transmute_stashed_turn_order_id':undefined;
  const groups=new Map<number,EntityRecord[]>();
  for(const r of records){const name=field(r);if(!name)continue;const key=Number(c.get(r,name,0))||(r.type==='Guy'?r.id:0);if(!key)continue;const list=groups.get(key)??[];list.push(r);groups.set(key,list);}
  const values=new Map<number,Record<string,number>>();
- for(const[key,members]of groups){const target=ids.get(key)??(independent?ids.get(members[0].id)!:key);for(const r of members)values.set(r.id,{[field(r)!]:target});}
+ for(const[key,members]of groups){const target=preserve?key:ids.get(key)??(independent?ids.get(members[0].id)!:key);for(const r of members)values.set(r.id,{[field(r)!]:target});}
  return values;
 }
 

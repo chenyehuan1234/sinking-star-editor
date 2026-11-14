@@ -8,5 +8,5 @@ export function arrayOffsets(spec:ArraySpec,sourceCount:number):Vec3[]{
 export function arrayOperations(entities:EntityView[],allIds:number[],firstId:number,spec:ArraySpec):DuplicateOp[]{
  if(entities.some(e=>!e.cloneable||!e.position||['Wall_Set','Ocean_Map','Level_Entry','Group','Inanimate','Decal'].includes(e.type)||/Camera|Marker/.test(e.type)))throw Error('阵列仅支持可复制的玩法物件');
  const offsets=arrayOffsets(spec,entities.length),used=new Set(allIds);let next=firstId;
- return offsets.map(offset=>({kind:'duplicate',id:entities[0].id,offset,associations:spec.associations,copies:entities.map(e=>{if(e.position!.some((n,i)=>Math.abs(n+offset[i])>=10000))throw Error('阵列超出坐标范围');while(used.has(next))next++;if(next>0xffffffff)throw Error('物件标识已用尽');const newId=next++;used.add(newId);return{id:e.id,newId};})}));
+ return offsets.map(offset=>({kind:'duplicate',id:entities[0].id,offset,associations:spec.associations,copyPolicy:spec.associations==='shared'?'preserve':'independent',copies:entities.map(e=>{if(e.position!.some((n,i)=>Math.abs(n+offset[i])>=10000))throw Error('阵列超出坐标范围');while(used.has(next))next++;if(next>0xffffffff)throw Error('物件标识已用尽');const newId=next++;used.add(newId);return{id:e.id,newId};})}));
 }

@@ -1,8 +1,9 @@
+import {gateVisual,gateShape,gateShapeLabel} from './gate-config';
 import type {ObjectCatalog,ObjectPreset,NativeValue} from './catalog-types';
 import {CHARACTER_LABELS,OBJECT_BY_TYPE} from './core/object-definitions';
 
 export interface AssetVariant {preset:ObjectPreset;aliases:ObjectPreset[];label:string;details:string;searchText:string}
-export interface AssetFamily {id:string;label:string;type:string;category:string;variants:AssetVariant[]}
+export interface AssetFamily {id:string;label:string;type:string;category:string;variants:AssetVariant[];unavailable?:string}
 const cache=new WeakMap<ObjectCatalog,AssetFamily[]>();
 const bool=(v:NativeValue|undefined)=>Boolean(v);
 export function normalizedMaterials(materials:string[]){const result=[...materials];while(result.at(-1)==='')result.pop();return result;}
@@ -20,7 +21,7 @@ export function variantIdentity(p:ObjectPreset,catalog:ObjectCatalog){
 export function assetFamilyId(p:ObjectPreset){
  let kind='';if(p.type==='Guy')kind=p.mesh.replace(/_alt$/,'');
  else if(p.type==='Monster')kind=Number(p.signature.constant_flags)&2?'dragon':'goblin';
- else if(p.type==='Gate')kind=bool(p.signature.is_monster_gate)?'monster':'ordinary';
+ else if(p.type==='Gate')kind=gateVisual(p)+':'+gateShape(p);
  else if(p.type==='Rock')kind=Number(p.signature.properties)&2?'skipping':/Boulder/i.test(p.mesh)?'rolling':'block';
  else if(p.type==='Ocean_Map')kind=String(Number(p.values.kind??0));
  else if(p.type==='Fence')kind=bool(p.signature.is_floor??p.values.is_floor)?'floor':'fence';
@@ -31,7 +32,7 @@ export function assetFamilyId(p:ObjectPreset){
 function familyLabel(p:ObjectPreset){
  if(p.type==='Guy')return CHARACTER_LABELS[p.mesh.replace(/_alt$/,'')]??p.label;
  if(p.type==='Monster')return Number(p.signature.constant_flags)&2?'敌对龙':'哥布林';
- if(p.type==='Gate')return bool(p.signature.is_monster_gate)?'怪物门闸':'门闸';
+ if(p.type==='Gate'){const style=p.mesh.match(/Glyph_(Monster_A|Promesst_A|[A-D])/)?.[1]??'原生';return(bool(p.signature.is_monster_gate)?'怪物门闸':'门闸')+' · '+style.replace('Monster_A','怪物纹').replace('Promesst_A','光束纹')+' · '+gateShapeLabel(gateShape(p));}
  if(p.type==='Rock')return Number(p.signature.properties)&2?'飞石':/Boulder/i.test(p.mesh)?'滚石':'方块';
  if(p.type==='Ocean_Map')return Number(p.values.kind??0)===1?'阻挡水域':'普通水域';
  if(p.type==='Fence')return bool(p.signature.is_floor??p.values.is_floor)?'薄地板':'栅栏';
@@ -78,6 +79,7 @@ export function assetFamilies(catalog:ObjectCatalog){
   for(const list of descriptions.values())if(list.length>1)list.forEach((v,i)=>v.label+=' · 配置 '+(i+1));
   for(const v of family.variants){const p=v.preset;v.details=[family.label,v.label,...p.tags,p.type==='Gate'?'height 为原生参数，具体用途尚待实机核实，不表示已验证的跨层阻挡高度':'',p.type==='Switch'&&Number(p.signature.special_type)?'特殊原生行为，需原版场景验证':'',p.placement==='assembly'?'需要原生关联或场景环境':'',p.mesh?'原生模型：'+p.mesh:'',normalizedMaterials(p.materials).some(Boolean)?'原生材质：'+normalizedMaterials(p.materials).join('、'):'',...v.aliases.map(a=>'来源：'+a.template),v.aliases.length>1?'已合并 '+v.aliases.length+' 条相同配置来源':''].filter(Boolean).join('\n');v.searchText=[family.label,v.label,v.details,...v.aliases.flatMap(a=>[a.label,a.type,a.mesh,a.template,...a.materials,...a.tags])].join(' ').toLowerCase();}
  }
+ const gateGroups=new Map<string,ObjectPreset>();for(const p of catalog.presets)if(p.type==='Gate'&&p.parsed)gateGroups.set(gateVisual(p),p);for(const [visual,p] of gateGroups)for(const shape of ['short','tall','side']as const){const id='Gate:'+visual+':'+shape;if(!families.has(id)){const display={...p,signature:{...p.signature,sideways:shape==='side',height:shape==='tall'?1.5:1}};families.set(id,{id,label:familyLabel(display),type:'Gate',category:p.category,variants:[{preset:p,aliases:[p],label:gateShapeLabel(shape),details:'此外观没有已验证的原生结构',searchText:'门闸 '+gateShapeLabel(shape)}],unavailable:'此外观没有已验证的原生结构'});}}
  const result=[...families.values()];cache.set(catalog,result);return result;
 }
 export function variantMatches(family:AssetFamily,variant:AssetVariant,query:string){const terms=query.trim().toLowerCase();return !terms||terms.split(/\s+/).every(term=>variant.searchText.includes(term));}

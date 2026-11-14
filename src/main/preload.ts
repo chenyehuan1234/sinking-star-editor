@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { EditorApi } from '../shared';
 const invoke=(method:string,...args:unknown[])=>ipcRenderer.invoke(`editor:${method}`,...args);
 const api:EditorApi={
+onPlaytestProgress:callback=>{const listener=(_event:unknown,text:string)=>callback(String(text));ipcRenderer.on('editor:playtest-progress',listener);return()=>{ipcRenderer.removeListener('editor:playtest-progress',listener);};},
 exportDesign:r=>invoke('exportDesign',r),
 storageScan:(...args:any[])=>invoke('storageScan',...args),
 storageClean:(...args:any[])=>invoke('storageClean',...args),

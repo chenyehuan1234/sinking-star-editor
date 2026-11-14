@@ -132,3 +132,10 @@ v4 文件独立保存，覆盖前保留 `.previous.bak`。导出 `.package` 与�
 新增 runPlan/nativeRunPlan 和带 PlaytestChoice 的 runLaunch/nativeRunLaunch。选择包含 profileId 或明确的新档名称，互斥；计划返回上下文、兼容／不兼容档、支持状态与空间估算。元数据仍在本机，不改变 v3/v4 工程格式。
 
 新受管运行程序只调整已检查的等长存档目录常量，SavedGames 下 SStar_Editor_档案ID 为受验证联接，指向 test-profiles/id/saves。原安装及正式存档路径不改动。旧共享启动与重置入口仍拒绝执行。保存历史不再每次清空。原始测试程序改为 .disabled，副本检查同时接受旧原始文件与禁用源文件；已登记同版本副本缺源程序时仅修复源程序，不另复制整套游戏。
+
+
+## alpha.4 复制策略与门闸放置
+
+工程版本保持 v3／v4。新 `duplicate.copyPolicy` 可选 `preserve`（原样频道、名称、有效控制身份）或 `independent`；缺省继续使用旧操作语义。`RegionBundle.copyPolicy` 与可选 `origin`、`StampOp.context` 区分同关与跨关；内部引用始终重映射，跨关清除外部对象引用并重分控制身份，标量频道原样保留。新快捷槽保存完整参数而不保留原关外部引用或控制身份；已有旧快照保持旧语义。
+
+门闸放置通过 `PrefabOp.values` 存储显式原生参数，旋转单独使用既有 transform。仅本机素材配置键携带来源与参数，不写入工程来源标识。频道以有符号64位整数文本存储。颜色与普通／怪物身份来自原生预设；不因频道值改变外观。开合向量使用竖向局部 −Z 或横向局部 −X，应用反向标记后经物件四元数变换。

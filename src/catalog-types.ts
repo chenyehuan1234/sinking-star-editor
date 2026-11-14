@@ -7,7 +7,7 @@ export interface ObjectField {
 }
 export interface ObjectDefinition {type:string;label:string;category:ObjectCategory;description:string;fields:Record<string,string>;dependencies:string[];tests:string[];placement:'single'|'assembly'|'terrain'|'internal'|'excluded';}
 export interface ObjectTypeView extends Omit<ObjectDefinition,'fields'> {fields:ObjectField[];instances:number;completeInstances:number;presetCount:number;}
-export interface ObjectPreset {
+export interface ObjectPreset {placementValues?:Record<string,NativeValue>;placementYaw?:number;
   key:string;label:string;type:string;category:ObjectCategory;template:string;sourceId:number;mesh:string;materials:string[];
   signature:Record<string,NativeValue>;values:Record<string,NativeValue>;tags:string[];parsed:boolean;placement:ObjectDefinition['placement'];
   verification:'native-data'|'runtime-smoke';

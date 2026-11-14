@@ -17,10 +17,11 @@ export interface WaterResizeOp {kind:'waterResize';id:number;position:Vec3;width
 export interface WaterPaintOp {kind:'water';id:number;mode:WaterPaintMode;direction:WaterDirection;cells:[number,number][]}
 export interface WaterView {id:number;x:number;y:number;z:number;width:number;height:number;cells:number[];gridZ?:number;kind?:number;detectHoles?:boolean;name?:string;error?:string}
 export interface ProfileOp {kind:'profile';id:number;template:string;sourceId:number}
-export interface DuplicateOp {kind:'duplicate';id:number;copies:{id:number;newId:number}[];offset:Vec3;associations?:'independent'|'shared'}
-export interface RegionBundle {format:"sstar-region";version:1;sourceHash:string;sourceBuild:string;name:string;sources:string[];records:{id:number;type:string;diff:string}[];terrain:Vec3[];warnings:string[];associations?:'independent'|'shared'}
-export interface RegionSelection {ids:number[];bounds?:{min:Vec3;max:Vec3};includeBackground?:boolean;associations?:'independent'|'shared';single?:boolean}
-export interface StampOp {kind:"stamp";id:number;bundle:RegionBundle;position:Vec3;yaw:number}
+export type CopyPolicy='preserve'|'independent';
+export interface DuplicateOp {copyPolicy?:CopyPolicy;kind:'duplicate';id:number;copies:{id:number;newId:number}[];offset:Vec3;associations?:'independent'|'shared'}
+export interface RegionBundle {copyPolicy?:CopyPolicy;origin?:string;format:"sstar-region";version:1;sourceHash:string;sourceBuild:string;name:string;sources:string[];records:{id:number;type:string;diff:string}[];terrain:Vec3[];warnings:string[];associations?:'independent'|'shared'}
+export interface RegionSelection {copyPolicy?:CopyPolicy;origin?:string;ids:number[];bounds?:{min:Vec3;max:Vec3};includeBackground?:boolean;associations?:'independent'|'shared';single?:boolean}
+export interface StampOp {context?:string;kind:"stamp";id:number;bundle:RegionBundle;position:Vec3;yaw:number}
 export interface RunRequest {mode:"world"|"single"|"subset";levelIds:string[]}
 export interface RecoveryItem {id:string;name:string;at:string;kind:"auto"|"manual";summary:string;recoverable?:boolean}
 export interface AssemblyItem {id:string;name:string;at:string;bundle:RegionBundle}
@@ -52,6 +53,7 @@ export interface GameDiscovery {installations:GameInstallation[];workspace:strin
 export interface PreparationEstimate {workspace:string;prepared:boolean;requiresRefresh?:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
 export interface Catalog {gamePath:string;sourceHash:string;build:string;levels:string[];regions?:NativeLevelRegion[];workspace:string;runtimeVerified:boolean;compatibility?:string}
 export interface EditorApi {
+  onPlaytestProgress?(callback:(text:string)=>void):()=>void;
   exportDesign(r:import('./export-types').ExportRequest):Promise<import('./export-types').ExportResult|null>;
  storageScan():Promise<import('./v08-types').StorageScan>;
  storageClean(token:string,ids:string[]):Promise<{reclaimed:number}>;
