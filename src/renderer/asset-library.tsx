@@ -1,6 +1,6 @@
 import {gateForm,gateFormLabel,gatePreferenceKey,gateLibraryGroup,gateLibraryLabel} from '../gate-library';
 import {GatePlacementPopover} from './gate-controls';
-import {gateDraft,gateVisual,configureGate,resolveGate,decodeGateKey,type GateDraft} from '../gate-config';
+import {gateDraft,gateLibraryDraft,gateVisual,configureGate,resolveGate,decodeGateKey,type GateDraft} from '../gate-config';
 import {assetFamilyId} from '../asset-variants';
 import {layoutAssets,rememberAssetScroll,restoreAssetScroll} from '../asset-layout';
 import{recentPlacement}from'../recent-assets';
@@ -21,7 +21,7 @@ function AssetBrowser({onTerrain,catalog,selected,onChoose,onDragEnd,filterType,
  const[expanded,getExpanded,saveExpanded]=useLocalMemory('assetExpanded0715:'+(catalog?.sourceHash??'loading'),v=>Object.fromEntries(Object.entries(v&&typeof v==='object'?v:{}).filter(([,v])=>v===true))as Record<string,boolean>);
  const[gatePrefs,setGatePrefs]=useState<Record<string,GateDraft>>(()=>readPref('gatePlacementAlpha4:'+(catalog?.sourceHash??''),{})),[gatePopup,setGatePopup]=useState<{family:AssetFamily;preset:ObjectPreset;anchor:DOMRect}|null>(null);
  const selectedBase=selected?decodeGateKey(selected)?.key??selected:undefined;
- function gateSettings(p:ObjectPreset){if(p.placementValues)return gateDraft(p);const legacy=gatePrefs['Gate:'+gateVisual(p)+':'+(gateForm(p)==='up'?'short':gateForm(p))];return gatePrefs[gatePreferenceKey(p)]??(legacy?{...legacy,appearance:gateForm(p)==='up'?'up' as const:'down' as const}:gateDraft(p));}
+ function gateSettings(p:ObjectPreset){if(p.placementValues)return gateDraft(p);const legacy=gatePrefs['Gate:'+gateVisual(p)+':'+(gateForm(p)==='up'?'short':gateForm(p))];return gateLibraryDraft(catalog!,p,gatePrefs[gatePreferenceKey(p)]??(legacy?{...legacy,appearance:gateForm(p)==='up'?'up' as const:'down' as const}:undefined));}
  function preparedGate(family:AssetFamily,p:ObjectPreset){if(p.type!=='Gate'||!catalog||mode!=='all')return p;try{return configureGate(catalog,p,gateSettings(p));}catch{return p;}}
  function gateChanged(draft:GateDraft){if(!catalog||!gatePopup)return;const p=configureGate(catalog,gatePopup.preset,draft),next={...gatePrefs,[gatePreferenceKey(p)]:draft};setGatePrefs(next);writePref('gatePlacementAlpha4:'+catalog.sourceHash,next);const active=catalog.presets.find(p=>p.key===selectedBase);if(active?.type==='Gate'&&gateLibraryGroup(active)===gateLibraryGroup(gatePopup.preset))onChoose(p,false);}
  const active=browse.active,category=browse.category,mode=['recent','favorites'].includes(active)?active:'all',tab=browse.tabs[active]??emptyAssetTab(),{query}=tab;

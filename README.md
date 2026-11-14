@@ -2,13 +2,15 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，按区域编辑完整原版世界。支持独立测试存档试玩，原安装保持只读。
 
-**[下载 v0.8.0-alpha.5 阶段测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.8.0-alpha.5)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
+**[下载 v0.8.0-alpha.6 阶段测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.8.0-alpha.6)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
 
 > **v0.8.0-alpha.2 恢复独立试玩**：存档试玩先明确选择或新建命名测试档，默认复用兼容档；临时试玩从初始进度直接启动。受管启动器使用独立存档目录，载入菜单只列测试档内战役。当前已检查的 Steam Build 26466613 可用；其他游戏程序若尚未检查隔离路径，继续阻止启动。不要手动运行旧共享存档副本。
 
 单关、临时关卡组、整个工程及 v4 原版世界均有独立试玩入口。原版世界循环、跨层与进度机制的完整通关验收仍未完成。
 
-本版更新（[alpha.5 说明与验收](docs/RELEASE-V08-ALPHA5.md)）：
+本版更新（[alpha.6 说明与验收](docs/RELEASE-V08-ALPHA6.md)）：
+
+- **门闸颜色修复**：同色四款绑定相同的原生染色参数，修复紫色朝上偏金色、绿色朝上偏蓝色等问题。缩略图、虚像与新放置数据一致；已放错色可在属性中“恢复素材颜色”，只改颜色。
 
 - **临时试玩直接启动**：不弹选档确认窗；状态栏显示检查、准备、构建和启动，隔离进度退出清理。存档试玩保留选档窗口。
 - **门闸六向开合与预配置**：按类型再按颜色排列，每色一张可折叠卡，展开为1格外观朝下、1格外观朝上、1.5格外观朝下、水平横向门；不可用项隐藏。卡片齿轮预设频道等参数，外观模型与开合方向分开，反转不换模型。
@@ -23,6 +25,10 @@
 入口：工程菜单 → **导入／编辑原版三层世界**；工程菜单或完整世界顶栏 → **存储空间与试玩管理／管理**。完整世界工作区仍为早期版本，常规工作台的快捷素材槽、多选分组和水流笔刷尚未迁入。详见 [v0.8 验收与限制](docs/V08-ACCEPTANCE.md)。
 
 ## 编辑器截图
+
+**门闸四款外观与颜色回归对照**（使用编辑器原生预览渲染）：
+
+![门闸各颜色与四款外观对照](docs/screenshots/gate-color-variants.png)
 
 **v0.8 原版完整世界分区编辑**：图中为天空层“防护与支撑”附近，当前与相邻分区按需加载。
 
@@ -50,8 +56,8 @@
 
 需要 Windows x64，以及通过 Steam 安装的《沉星之序 / Order of the Sinking Star》。下载包不包含原游戏资源，不需要另装 Node.js。
 
-- **安装版**：下载 `SinkingStarEditor-0.8.0-alpha.5-Setup.exe`，按向导安装。
-- **免安装版**：下载 `SinkingStarEditor-0.8.0-alpha.5-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
+- **安装版**：下载 `SinkingStarEditor-0.8.0-alpha.6-Setup.exe`，按向导安装。
+- **免安装版**：下载 `SinkingStarEditor-0.8.0-alpha.6-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
 - GitHub 自动生成的 **Source code** 压缩包供开发者使用，不是可运行的软件下载。
 
 启动时先检查已保存的目录，再查找 Steam 默认库和其他磁盘的游戏库。只有一个有效安装时自动连接；多个安装可选择。没有找到时，点击“选择游戏文件夹”，选择包含 `sinking_star.exe` 的目录，不是 Steam 总目录。

@@ -1,4 +1,5 @@
-import type {ObjectPreset} from './catalog-types';
+import type {ObjectCatalog,ObjectPreset} from './catalog-types';
+import type {EditOp,EntityView} from './shared';
 
 export const gateForms=['short','up','tall','side'] as const;
 export type GateForm=typeof gateForms[number];
@@ -13,3 +14,10 @@ export function gateLibraryLabel(p:ObjectPreset){const color=({A:'金色',B:'蓝
 export function gateLibraryOrder(p:ObjectPreset){const style=gateStem(p).match(/Glyph_(.+)$/)?.[1]??'',order=['A','B','C','D','Promesst_A','Monster_A'].indexOf(style);return Number(Boolean(p.signature.is_monster_gate??p.values.is_monster_gate))*100+(order<0?20:order);}
 
 export function gateDisplayName(p:ObjectPreset){const form=gateForm(p),height=Number(p.signature.height??p.values.height??1);return gateLibraryLabel(p)+' · '+(gateStandardForm(p)?gateFormLabel(form):form==='side'?`水平横向门 · 高度${height}`:`${height}格 · 外观${form==='up'?'朝上':'朝下'}`);}
+
+const colorFields=['a','b'].flatMap(t=>['x','y','z','w'].map(axis=>`tint_color_${t}.${axis}`));
+export const gateColors=(p:ObjectPreset)=>colorFields.map(field=>Number(p.values[field]??1));
+export const gateColorValues=(colors:number[])=>Object.fromEntries(colorFields.map((field,i)=>[field,colors[i]]));
+/** Use a native color reference for the whole library family, independent of the shape's level-specific tint. */
+export function gateLibraryColors(catalog:ObjectCatalog,p:ObjectPreset){const group=gateLibraryGroup(p),reference=catalog.presets.filter(v=>v.type==='Gate'&&v.parsed&&gateLibraryGroup(v)===group&&gateForm(v)==='short'&&gateStandardForm(v)).sort((a,b)=>Number(Boolean(a.signature.notted))-Number(Boolean(b.signature.notted))||a.key.localeCompare(b.key))[0];return gateColors(reference??p);}
+export function gateColorCorrections(catalog:ObjectCatalog,entities:EntityView[]):EditOp[]{return entities.flatMap<EditOp>(entity=>{if(entity.type!=='Gate'||!entity.editable)return[];const monster=Boolean(entity.nativeProperties?.find(p=>p.field.name==='is_monster_gate')?.value),source=catalog.presets.find(p=>p.type==='Gate'&&p.parsed&&p.mesh===entity.mesh&&Boolean(p.signature.is_monster_gate??p.values.is_monster_gate)===monster&&gateLibraryGroup({...p,materials:entity.materials??p.materials})===gateLibraryGroup(p));if(!source)return[];const colors=gateLibraryColors(catalog,source);return entity.tint?.every((n,i)=>Math.abs(n-colors[i])<.00001)?[]:[{kind:'properties',id:entity.id,values:gateColorValues(colors)}];});}
