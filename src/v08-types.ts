@@ -5,7 +5,7 @@ export interface TestProfile {id:string;name:string;projectId:string;scope:strin
 export interface LegacyTestProfile {id:string;sourceHash:string;name:string;path:string}
 export interface PlayPreferences {settings:'original'|'independent';cacheLimitBytes:number}
 export interface TestContext {projectId:string;scope:RunRequest;revision:string;sourceHash:string}
-export interface PlaytestChoice {profileId?:string;newProfileName?:string;resetProfileId?:string}
+export interface PlaytestChoice {temporary?:boolean;profileId?:string;newProfileName?:string;resetProfileId?:string}
 export interface PlaytestPlan {context:TestContext;compatible:TestProfile[];incompatible:TestProfile[];supported:boolean;reason:string;preparation?:import('./shared').PreparationEstimate}
 export type NativeLayer='ground'|'underground'|'sky';
 export interface NativeRegionAssignment {layer:NativeLayer;cell:[number,number];areaId:string}

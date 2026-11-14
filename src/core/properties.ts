@@ -54,7 +54,7 @@ export class PropertyCodec {
       const s=schemas.find(s=>s.name===name);if(!s)throw new Error(`未知属性 ${r.type}.${name}`);
       const old=parsed.fields.find(f=>f.schema.id===s.id);
       if(!old&&!parsed.complete)throw new Error(`${r.type} 有未识别字段，不能添加 ${name}`);
-      const defaultRaw=old?.defaultRaw??this.defaultRaw(s);
+      const defaultRaw=old?.defaultRaw??this.defaultRaw(s,r.type);
       const id=Buffer.alloc(2);id.writeUInt16LE(s.id);const raw=Buffer.concat([id,defaultRaw,this.encode(s,value)]);
       const index=parts.findIndex(f=>f.id===s.id);if(index<0)parts.push({id:s.id,raw});else parts[index]={id:s.id,raw};
     }
@@ -65,9 +65,9 @@ export class PropertyCodec {
   }
   // Existing records retain their exact default bytes. New fields use a stable
   // baseline, never a default learned from whichever unrelated level was read last.
-  private defaultRaw(s:PropertySchema){
+  private defaultRaw(s:PropertySchema,type:string){
     if(s.kind==='string'||s.kind==='strings'||s.kind==='array')return Buffer.alloc(8);
-    const b=Buffer.alloc(s.size);if(s.kind==='float'&&(/^(scale|orientation.w|tint_color_[ab])/.test(s.name)))b.writeFloatLE(1);return b;
+    const b=Buffer.alloc(s.size);if(type==='Gate'&&s.name==='height')b.writeFloatLE(1);if(s.kind==='float'&&(/^(scale|orientation.w|tint_color_[ab])/.test(s.name)))b.writeFloatLE(1);return b;
   }
   private encode(s:PropertySchema,value:PropertyValue):Buffer{
     if(s.kind==='string'){if(typeof value!=='string'||Buffer.byteLength(value)>4096)throw new Error('字符串属性无效');const h=Buffer.alloc(8);h.writeBigUInt64LE(BigInt(Buffer.byteLength(value)));return Buffer.concat([h,Buffer.from(value)]);}

@@ -6,7 +6,7 @@ const regionViews=new WeakMap<RegionBundle,Promise<LevelView>>(),regionCache=new
 export function cachedRegionView(bundle:RegionBundle){let view=regionViews.get(bundle);if(!view){const key=JSON.stringify(bundle);view=regionCache.get(key);if(!view){view=window.editor.regionPreview(bundle);regionCache.set(key,view);if(regionCache.size>32)regionCache.delete(regionCache.keys().next().value!);view.catch(()=>regionCache.delete(key));}regionViews.set(bundle,view);view.catch(()=>regionViews.delete(bundle));}return view;}
 let renderer:T.WebGLRenderer|undefined,assets:ViewAssets|undefined,chain=Promise.resolve(),rendered=0;
 async function renderThumb(p:ObjectPreset){
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('thumbnail-v05-idle-3:'+p.key));const key=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('thumbnail-alpha3-native-4:'+p.key));const key=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
   const cached=await window.editor.thumbnailRead(key);if(cached)return cached;
   renderer??=new T.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true});renderer.setSize(128,128,false);renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.3;
   if(rendered++%32===0&&assets){assets.dispose();assets=undefined;}assets??=new ViewAssets(()=>{},()=>{});const level=await presetView(p.key),scene=new T.Scene(),root=new T.Group();scene.add(root);scene.background=new T.Color('#242a30');

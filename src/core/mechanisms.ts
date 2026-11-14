@@ -8,7 +8,7 @@ const RULES:Record<string,ReturnType<typeof property>[]>={
   Gate:[property('flavor','门闸频道'),property('notted','反向响应','boolean'),property('sideways','横向门闸','boolean'),property('height','门闸高度','number',.25,4)],
   Teleporter:[property('target_id','传送目标','target',0,0xffffffff,['Teleporter','Marker']),property('discovered','已发现','boolean'),property('enabled_t_target','启用程度','number',0,1)],
 };
-export function mechanismProperties(c:PropertyCodec,r:EntityRecord):EditableProperty[]{return(RULES[r.type]??[]).map(p=>({...p,value:c.get(r,p.name,p.kind==='boolean'?false:p.name==='height'?2:p.name==='enabled_t_target'?1:0)as number|boolean}));}
+export function mechanismProperties(c:PropertyCodec,r:EntityRecord):EditableProperty[]{return(RULES[r.type]??[]).map(p=>({...p,value:c.get(r,p.name,p.kind==='boolean'?false:p.name==='height'?1:p.name==='enabled_t_target'?1:0)as number|boolean}));}
 export function validateProperties(type:string,values:Record<string,number|boolean>){
   if(!values||typeof values!=='object'||Object.keys(values).length>16)throw new Error('机关属性无效');
   for(const[name,value]of Object.entries(values)){const p=RULES[type]?.find(p=>p.name===name);if(!p)throw new Error(`尚未开放属性 ${type}.${name}`);
@@ -19,6 +19,14 @@ export function transform(c:PropertyCodec,r:EntityRecord,pos?:[number,number,num
   const values:Record<string,number>={};if(pos)for(const[i,axis]of['x','y','z'].entries()){values[`position.${axis}`]=pos[i];values[`visual_position.${axis}`]=pos[i];}
   if(yaw!==undefined){const a=yaw*Math.PI/360;Object.assign(values,{'orientation.x':0,'orientation.y':0,'orientation.z':Math.sin(a),'orientation.w':Math.cos(a),theta_current:yaw,theta_target:yaw});}
   return c.patch(r,values);
+}
+export function rotationValues(type:string,q:number[]):Record<string,number>{
+ const values:Record<string,number>={};q.forEach((v,i)=>values['orientation.'+'xyzw'[i]]=v);
+ if(['Gate','Guy','Monster','Rock','Mirror','Switch','Teleporter','Fence','Rover','Wardrobe','Promesst_Light'].includes(type)){
+  const[x,y,z,w]=q,yaw=(Math.atan2(2*(w*z+x*y),1-2*(y*y+z*z))*180/Math.PI+360)%360;
+  values.theta_current=yaw;values.theta_target=yaw;
+ }
+ return values;
 }
 export function validateReferences(c:PropertyCodec,f:EntityFile,options:{transient?:boolean;nativeWorld?:boolean}={}):string[]{
  const ids=new Map(f.records.map(r=>[r.id,r])),groups=new Map(f.records.filter(r=>r.type==='Group').map(r=>[r.id,r])),parents=new Map<number,number>(),fields=new Map<string,ReturnType<typeof objectFields>>(),errors:string[]=[],groupErrors:string[]=[];

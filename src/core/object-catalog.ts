@@ -5,7 +5,7 @@ import{OBJECT_BY_TYPE,CHARACTER_LABELS}from'./object-definitions';
 import type{NativeValue,ObjectCatalog,ObjectDefinition,ObjectField,ObjectPreset,ObjectTypeView}from'../catalog-types';
 const COMMON:Record<string,string>={entity_name:'名称',group_id:'所属组合／存在组',mesh:'模型',materials:'材质',...Object.fromEntries(['position','scale','orientation','tint_color_a','tint_color_b'].flatMap(n=>['x','y','z',...(n.startsWith('tint')||n==='orientation'?['w']:[])].map(a=>[n+'.'+a,n==='position'?'位置 '+a.toUpperCase():n==='scale'?'缩放 '+a.toUpperCase():n==='orientation'?'旋转四元数 '+a:'颜色 '+n.slice(-1).toUpperCase()+'.'+a])))};
 const SIGNATURES:Record<string,string[]>={Guy:['skill_flags','inventory_flags'],Monster:['constant_flags','accessory_mask'],Rock:['properties','speed_mod'],Mirror:['is_magic','is_vertical','is_vertical_downward','mirrorable'],Switch:['special_type'],Gate:['is_monster_gate','notted','sideways','negate_direction','height'],Teleporter:['teleporter_type'],Promesst_Light:['color','reflected_vertically','vertical_down','vertical_up'],Fence:['is_floor','blocking'],Rover:['mirrorable'],Lily:['nonmoving'],Wardrobe:['skill_flags','inventory_flags'],Artifact:['kind','p3_wand_flags']};
-const FALLBACKS:Record<string,NativeValue>={'Mirror.is_magic':true,'Gate.height':2,'Fence.blocking':true,'Teleporter.enabled_t_target':1};
+const FALLBACKS:Record<string,NativeValue>={'Mirror.is_magic':true,'Gate.height':1,'Fence.blocking':true,'Teleporter.enabled_t_target':1};
 export function nativeFieldDefault(type:string,name:string,kind:string):NativeValue{return FALLBACKS[type+'.'+name]??(kind==='boolean'?false:kind==='resource'||kind==='string'?'':kind==='array'?[]:/^tint_color_/.test(name)?1:0);}
 const fieldCache=new WeakMap<PropertyCodec,Map<string,ObjectField[]>>();
 export function objectFields(codec:PropertyCodec,type:string):ObjectField[]{
@@ -47,7 +47,8 @@ export function buildObjectCatalog(pkg:GamePackage,codec:PropertyCodec,build:str
       const signature=nativeSignature(codec,r,raw);
       // Material overrides for the same mesh can be selected from their original prototypes.
       const matKey=materials.map(m=>m.replace(/~[^~]+$/,'~level'));
-      const key=sha256(JSON.stringify([r.type,mesh,matKey,signature])).slice(0,24);
+      const identity=r.type==='Gate'&&raw.height===undefined?{...signature,height:2}:signature;
+      const key=sha256(JSON.stringify([r.type,mesh,matKey,identity])).slice(0,24);
       const previous=presets.get(key);if(previous?.parsed||previous&&!parsed.complete)continue;
       const values=Object.fromEntries(Object.entries(raw).filter(([k])=>def.fields[k]!==undefined||COMMON[k]!==undefined));
       const tags=Object.entries(signature).filter(([,v])=>Boolean(v)).map(([k,v])=>`${def.fields[k]??k}: ${v}`);
@@ -58,7 +59,7 @@ export function buildObjectCatalog(pkg:GamePackage,codec:PropertyCodec,build:str
   }
   const list=[...presets.values()].sort((a,b)=>a.type.localeCompare(b.type)||a.label.localeCompare(b.label)||a.key.localeCompare(b.key));
   const typeViews:ObjectTypeView[]=types.map(type=>{const def=OBJECT_BY_TYPE.get(type)!;return{...def,fields:objectFields(codec,type),...(counts.get(type)??{instances:0,completeInstances:0}),presetCount:list.filter(p=>p.type===type).length};});
-  return{version:1,schemaRevision:2,sourceHash:sha256(pkg.buffer),exeHash:codec.reflection.hash,build,generatedAt:new Date().toISOString(),types:typeViews,presets:list,totals:{levels:levels.length,entities,types:types.length,meshes:assetFiles.filter(n=>n.endsWith('.compressed_mesh')).length,textures:assetFiles.filter(n=>n.endsWith('.texture')).length,presets:list.length}};
+  return{version:1,schemaRevision:3,sourceHash:sha256(pkg.buffer),exeHash:codec.reflection.hash,build,generatedAt:new Date().toISOString(),types:typeViews,presets:list,totals:{levels:levels.length,entities,types:types.length,meshes:assetFiles.filter(n=>n.endsWith('.compressed_mesh')).length,textures:assetFiles.filter(n=>n.endsWith('.texture')).length,presets:list.length}};
 }
 export function validateNativeProperties(codec:PropertyCodec,type:string,values:Record<string,NativeValue>){
   if(!values||typeof values!=='object'||Array.isArray(values)||Object.keys(values).length>128)throw new Error('对象属性无效');

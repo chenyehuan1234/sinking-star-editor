@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { EditorApi } from '../shared';
 const invoke=(method:string,...args:unknown[])=>ipcRenderer.invoke(`editor:${method}`,...args);
 const api:EditorApi={
+exportDesign:r=>invoke('exportDesign',r),
 storageScan:(...args:any[])=>invoke('storageScan',...args),
 storageClean:(...args:any[])=>invoke('storageClean',...args),
 playPreferences:(...args:any[])=>invoke('playPreferences',...args),

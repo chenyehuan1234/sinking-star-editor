@@ -90,3 +90,7 @@ scripts/*
 !scripts/playtest-check.mjs
 !scripts/playtest-check-renderer.tsx
 !docs/PLAYTEST-ISOLATION.md
+
+!scripts/alpha3-check.mjs
+!scripts/alpha3-check-renderer.tsx
+!docs/RELEASE-V08-ALPHA3.md

@@ -6,7 +6,7 @@ import { GamePackage } from './package';
 import { baseFields, canEdit, EDITABLE, parseEntities, patchTransform, position, writeEntities, yawOf, type EntityFile } from './entities';
 import type { EditorProject, LevelView, Vec3 } from '../shared';
 import{PropertyCodec}from'./properties';
-import{MECHANISM_TYPES,REMOVABLE_TYPES,mechanismProperties,validateProperties,transform}from'./mechanisms';
+import{MECHANISM_TYPES,REMOVABLE_TYPES,mechanismProperties,validateProperties,transform,rotationValues}from'./mechanisms';
 import {editableType,placeNative} from './placement';
 import {objectFields,validateNativeProperties,nativeFieldDefault} from './object-catalog';
 import {applyTerrain} from './terrain';
@@ -56,7 +56,7 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
     if(o.kind==='profile'){if(!codec)throw new Error('配置切换需要类型信息');f.records[index]=applyProfile(pkg,codec,r,o);}
     else if(o.kind==='transform'){
       let out=codec?transform(codec,r,o.position,o.yaw):patchTransform(r,o.position,o.yaw);
-      if(codec&&(o.rotation||o.scale)){const values:Record<string,number>={};o.rotation?.forEach((v,i)=>values['orientation.'+'xyzw'[i]]=v);o.scale?.forEach((v,i)=>values['scale.'+'xyz'[i]]=v);out=codec.patch(out,values);}f.records[index]=out;
+      if(codec&&(o.rotation||o.scale)){const values:Record<string,number>={};if(o.rotation)Object.assign(values,rotationValues(r.type,o.rotation));o.scale?.forEach((v,i)=>values['scale.'+'xyz'[i]]=v);out=codec.patch(out,values);}f.records[index]=out;
     }
     else if(o.kind==='properties'){
       if(!codec)throw new Error('属性编辑需要反射信息');validateNativeProperties(codec,r.type,o.values);f.records[index]=codec.patch(r,o.values);
@@ -92,7 +92,7 @@ export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:Pr
     const editable=codec?editableType(r.type)&&codec.parse(r).complete:canEdit(r);
     const raw=codec?Object.fromEntries(codec.parse(r).fields.map(f=>[f.schema.name,f.value])):{};
     const vector=(n:string,d:number)=>['x','y','z'].map(a=>Number(raw[n+'.'+a]??d))as[number,number,number];
-    const nativeProperties=codec&&editable?objectFields(codec,r.type).filter(f=>f.access==='design'&&!/^(position|orientation|scale|visual_position|tint_color_[ab])\./.test(f.name)).map(field=>({field,value:raw[field.name]??nativeFieldDefault(r.type,field.name,field.kind)})):undefined;
+    const nativeProperties=codec&&editable?objectFields(codec,r.type).filter(f=>f.access==='design'&&!/^(position|orientation|scale|visual_position|tint_color_[ab])\./.test(f.name)).map(field=>({field,value:raw[field.name]??nativeFieldDefault(r.type,field.name,field.kind),defaulted:raw[field.name]===undefined})):undefined;
     return {id:r.id,type:r.type,position:position(r),yaw:yawOf(r),editable,bytes:r.diff.length,mesh:codec?String(raw.mesh??''):field?r.diff.toString('utf8',field.value,field.end):'',cloneable:editable&&(codec?editableType(r.type):['Mirror','Rock'].includes(r.type)),properties:codec?mechanismProperties(codec,r):[],scale:vector('scale',1),rotation:[...vector('orientation',0),Number(raw['orientation.w']??1)]as[number,number,number,number],tint:vector('tint_color_a',1),materials:Array.isArray(raw.materials)?raw.materials as string[]:[],accessoryMask:r.type==='Monster'?Number(raw.accessory_mask??0):undefined,generatedSurface:['Inanimate','Wall_Set'].includes(r.type)&&String(raw.entity_name??'').startsWith('editor_voxel_'),nativeProperties};
   })};
 }

@@ -12,7 +12,7 @@ export function variantIdentity(p:ObjectPreset,catalog:ObjectCatalog){
  const fields=catalog.types.find(t=>t.type===p.type)?.fields??[],values={...p.values,...p.signature},normalized:Record<string,unknown>={};
  for(const key of [...new Set([...fields.filter(f=>f.access==='design').map(f=>f.name),...Object.keys(values)])].sort()){
   if(ignored(key)||['mesh','materials'].includes(key))continue;const field=fields.find(f=>f.name===key);if(field?.kind==='reference')continue;
-  const fallback=key.startsWith('tint_color_')||key.startsWith('scale.')?1:key==='height'&&p.type==='Gate'?2:field?.kind==='string'||field?.kind==='resource'?'':field?.kind==='array'?[]:0;
+  const fallback=key.startsWith('tint_color_')||key.startsWith('scale.')?1:key==='height'&&p.type==='Gate'?1:field?.kind==='string'||field?.kind==='resource'?'':field?.kind==='array'?[]:0;
   const v=values[key]??fallback;normalized[key]=field?.kind==='boolean'?bool(v):v;
  }
  return JSON.stringify([p.type,p.mesh,normalizedMaterials(p.materials),normalized,p.placement==='assembly'?[p.template,p.sourceId]:null]);
@@ -47,7 +47,7 @@ function variantName(p:ObjectPreset,catalog:ObjectCatalog){
   if(style)result.push('样式 '+style);result.push(bool(s.notted)?'反向响应':'正常响应');
   result.push(bool(s.sideways)?'横向安装':p.mesh.includes('_Down')?'下置款':'竖向安装');
   if(p.mesh.includes('_Short'))result.push('短款');if(bool(s.negate_direction))result.push('开合方向反转');
-  result.push('高度参数 '+(s.height??2));
+  result.push('高度参数 '+(s.height??1));
  }else if(p.type==='Rock'){
   if(style)result.push('样式 '+style);else{const style=p.mesh.match(/_([A-D])$/)?.[1];if(style)result.push('样式 '+style);}
   if(p.mesh.includes('_Taller'))result.push('高款');else if(p.mesh.includes('_Tall'))result.push('中高款');
@@ -73,7 +73,7 @@ export function assetFamilies(catalog:ObjectCatalog){
   const variant:AssetVariant={preset:p,aliases:[p],label:variantName(p,catalog),details:'',searchText:''};family.variants.push(variant);identities.get(id)!.set(identity,variant);
  }
  for(const family of families.values()){
-  const rank=(p:ObjectPreset)=>p.type==='Gate'?Number(bool(p.signature.notted))*10+Number(bool(p.signature.sideways))*4+Number(bool(p.signature.negate_direction))+(p.mesh.includes('_Down')?2:0)+(p.mesh.includes('_Short')?1:0)+(Number(p.signature.height??2)===2?0:.25):p.type==='Guy'?Number(p.mesh.endsWith('_alt'))+Number(p.signature.inventory_flags??0)*2:p.type==='Switch'?Number(p.signature.special_type)*10:p.type==='Monster'?Number(p.signature.accessory_mask)>>>0:0;family.variants.sort((a,b)=>rank(a.preset)-rank(b.preset)||a.preset.mesh.localeCompare(b.preset.mesh)||a.preset.key.localeCompare(b.preset.key));
+  const rank=(p:ObjectPreset)=>p.type==='Gate'?Number(bool(p.signature.notted))*10+Number(bool(p.signature.sideways))*4+Number(bool(p.signature.negate_direction))+(p.mesh.includes('_Down')?2:0)+(p.mesh.includes('_Short')?1:0)+(Number(p.signature.height??1)===1?0:.25):p.type==='Guy'?Number(p.mesh.endsWith('_alt'))+Number(p.signature.inventory_flags??0)*2:p.type==='Switch'?Number(p.signature.special_type)*10:p.type==='Monster'?Number(p.signature.accessory_mask)>>>0:0;family.variants.sort((a,b)=>rank(a.preset)-rank(b.preset)||a.preset.mesh.localeCompare(b.preset.mesh)||a.preset.key.localeCompare(b.preset.key));
   const descriptions=new Map<string,AssetVariant[]>();for(const v of family.variants){const list=descriptions.get(v.label)??[];list.push(v);descriptions.set(v.label,list);}
   for(const list of descriptions.values())if(list.length>1)list.forEach((v,i)=>v.label+=' · 配置 '+(i+1));
   for(const v of family.variants){const p=v.preset;v.details=[family.label,v.label,...p.tags,p.type==='Gate'?'height 为原生参数，具体用途尚待实机核实，不表示已验证的跨层阻挡高度':'',p.type==='Switch'&&Number(p.signature.special_type)?'特殊原生行为，需原版场景验证':'',p.placement==='assembly'?'需要原生关联或场景环境':'',p.mesh?'原生模型：'+p.mesh:'',normalizedMaterials(p.materials).some(Boolean)?'原生材质：'+normalizedMaterials(p.materials).join('、'):'',...v.aliases.map(a=>'来源：'+a.template),v.aliases.length>1?'已合并 '+v.aliases.length+' 条相同配置来源':''].filter(Boolean).join('\n');v.searchText=[family.label,v.label,v.details,...v.aliases.flatMap(a=>[a.label,a.type,a.mesh,a.template,...a.materials,...a.tags])].join(' ').toLowerCase();}

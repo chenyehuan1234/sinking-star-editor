@@ -38,7 +38,7 @@ export interface TopologyConfig {corner:Vec3;size:Vec3;wrapping:boolean;wrapping
 export interface NativeTopologyView extends TopologyConfig {perScreen:boolean;maskCount:number}
 export interface EditorProject {sourceEvidence?:import('./core/compatibility').SourceEvidence; format:'sinking-star-project'; version:1|2|3; sourceHash:string; sourceBuild:string; template:string; base?:ProjectBase; name:string; operations:EditOp[];editor?:EditorMetadata;camera?:CameraConfig;topology?:TopologyConfig }
 export interface EditableProperty {name:string;label:string;kind:'number'|'boolean'|'target';value:number|boolean;min?:number;max?:number;targets?:string[]}
-export interface EntityView {id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue}[]}
+export interface EntityView {id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue;defaulted?:boolean}[]}
 export interface LevelView {name:string;entities:EntityView[];typeCount:number;manifest:string;camera?:CameraView;topology?:NativeTopologyView;terrain?:{x:number;y:number;z:number;id?:number}[];waters?:WaterView[]}
 export type Tile=0|1|2;
 export interface WorldEntry {id:string;title:string;levelId:string;x:number;y:number;prototype?:{template:string;sourceId:number}}
@@ -52,6 +52,7 @@ export interface GameDiscovery {installations:GameInstallation[];workspace:strin
 export interface PreparationEstimate {workspace:string;prepared:boolean;requiresRefresh?:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
 export interface Catalog {gamePath:string;sourceHash:string;build:string;levels:string[];regions?:NativeLevelRegion[];workspace:string;runtimeVerified:boolean;compatibility?:string}
 export interface EditorApi {
+  exportDesign(r:import('./export-types').ExportRequest):Promise<import('./export-types').ExportResult|null>;
  storageScan():Promise<import('./v08-types').StorageScan>;
  storageClean(token:string,ids:string[]):Promise<{reclaimed:number}>;
  playPreferences():Promise<import('./v08-types').PlayPreferences>;
