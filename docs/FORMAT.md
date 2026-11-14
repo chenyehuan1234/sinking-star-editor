@@ -112,3 +112,16 @@ LevelView.waters 增加可选 gridZ/kind/detectHoles/name/error；编辑绘制�
 工作区的 playtest-state.json 仍为 version=1，新增可选 sourceBuild、exeHash；旧版登记继续读取。sourceHash、程序或已记录的 Build 变化时，估算返回 requiresRefresh=true，prepared=false，不改写登记或游戏文件。复制、原始备份与空间校验成功后，旧副本和原登记保存在 backups/test-copy-*，再提升新副本。所有移动路径须位于真实工作区内，不采用目录链接。
 
 新副本在提升前写入 _editor-test-copy.json，包含来源与前一份登记的指纹。目录切换成功但外部登记写入中断时，只在新副本哈希、程序哈希、版本及原登记指纹全部对应后恢复登记。此标记不绕过当前部署包的外部修改保护。准备和估算不处理测试存档；部署中的战役停用在副本准备成功之后执行。
+
+
+## v0.8 原版完整世界（独立 v4）
+
+`format: sinking-star-native-world, version: 4`。字段为 `id/name/sourceHash/sourceBuild/base:overworld`、`edits`（按 layer:x:y 分区登记 EditOp）、`levelEdits`（按原生小关名登记 EditOp）及 `assignments`（人工确认的区域归属元数据）。v3 工程保持原样，不就地升级或搬迁。
+
+工程仅引用原版基础与修改，不附带原生记录、个人通关存档或资源。实体与引用沿用原生 ID；新增对象使用命名空间 900。构建保留原包全部未修改文件，原版世界先保留原记录再应用操作，不经过 v3 二维世界重建器。没有原生修改时返回原包字节。新增跨模板物件合并所需资源清单。构建会检查未加载分区的新失效引用，既有原版异常不因此重写。
+
+`nativeRegion` 携带项目会话、修订和分区；界面用请求票据拒绝旧结果。后台缓存索引和已应用修改，每次仅返回当前及相邻分区的视图，地形先按范围裁剪再展开。后台构建结果以可转移缓冲区返回，未修改导出复用原包缓冲区。
+
+v4 文件独立保存，覆盖前保留 `.previous.bak`。导出 `.package` 与同名 `.sstar-native-world.json` 两个文件。来源不匹配时停止相关操作，原文件保留。区域归属、工程名不会改变原生构建内容。编辑视角按工程和场景保存在本机。
+
+存储扫描使用短期令牌与目录快照，清理前重新核对依赖、运行状态、真实路径和内容变化，不跟随链接。隔离档位于 `test-profiles/<stable-id>`，只有归属元数据通过验证的档案才能管理。`prepareSettings` 只复制两个已知 menu_state 设置文件；运行时存档隔离尚未验证，所有启动、准备、部署与旧共享进度重置 IPC 继续封锁。

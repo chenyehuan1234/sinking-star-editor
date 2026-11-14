@@ -10,7 +10,7 @@ export class ViewAssets {
   material(name:string){let p=this.materials.get(name);if(!p){p=window.editor.materialAsset(name||'default').then(async a=>{const mat=new T.MeshStandardMaterial({name,color:new T.Color(...a.color.slice(0,3)as[number,number,number]),roughness:a.roughness,metalness:/metal/i.test(a.shader)?.35:0,side:a.doubleSided?T.DoubleSide:T.FrontSide,transparent:a.color[3]<1,opacity:a.color[3]});
       if(/crystal|glass/i.test(a.shader)){mat.transparent=true;mat.opacity=.78;mat.roughness=.22;}
       if(/masked|foliage|decal/i.test(a.shader))mat.alphaTest=.35;
-      mat.userData.mask=a.mask??'0';
+      mat.userData.mask=a.mask??'0';mat.userData.nativeTextureNames=[a.map,a.alphaMap,a.tintMap].filter(Boolean);
       if(a.worldUV||a.tintMap){
         const tint={value:null as T.Texture|null};
         mat.onBeforeCompile=shader=>{shader.uniforms.nativeTintMap=tint;shader.uniforms.nativeTintOffset={value:new T.Vector2(...(a.tintOffset??[0,0]))};shader.uniforms.nativeTintSize={value:Math.max(.001,a.tintSize??1)};shader.uniforms.nativeUVScale={value:Math.max(.001,a.uvScale??1)};
@@ -27,5 +27,17 @@ export class ViewAssets {
       if(this.disposed)mat.dispose();return mat;
     }).catch(e=>{this.failed(name+': '+String(e));return new T.MeshStandardMaterial({color:'#c87b51',roughness:.9,wireframe:true});});this.materials.set(name,p);}return p;}
   async entity(e:EntityView){const a=e.type==='Decal'?{geometry:this.decalGeometry??=new T.PlaneGeometry(1,1),materials:e.materials?.length?e.materials:['default']}:await this.geometry(e.mesh,['Guy','Monster'].includes(e.type));const names=a.materials.map((name,i)=>e.materials?.[i]||name);const materials=await Promise.all(names.map(n=>this.material(n)));const tinted=materials.map(m=>{if(!e.tint||e.tint.every(v=>v===1))return m;const key=m.name+':'+e.tint.join(',');let v=this.variants.get(key);if(!v){v=m.clone();v.color.multiply(new T.Color(...e.tint));v.onBeforeCompile=m.onBeforeCompile;v.customProgramCacheKey=m.customProgramCacheKey;this.variants.set(key,v);}return v;});const visibility=e.accessoryMask,inventory=Number(e.nativeProperties?.find(p=>p.field.name==='inventory_flags')?.value??0);const filtered=tinted.map(m=>{const mask=Number(m.userData.mask??0)>>>0;if(visibility!==undefined&&mask&&(mask&(visibility>>>0))===0||e.type==='Guy'&&(/prom_wand/.test(m.name)&&!(inventory&1024)||/prom_torc/.test(m.name)&&!(inventory&2048)||/prom_prism/.test(m.name)&&!(inventory&4096))){const key='hidden:'+m.uuid;let hidden=this.variants.get(key);if(!hidden){hidden=m.clone();hidden.visible=false;this.variants.set(key,hidden);}return hidden;}return m;});const mesh=new T.Mesh(a.geometry,filtered);if(e.type==='Decal')mesh.position.z=.015;return mesh;}
+  async prune(root:T.Object3D,geometryBudget=128*2**20,textureBudget=256*2**20){
+    const usedGeometry=new Set<T.BufferGeometry>(),usedMaterial=new Set<T.Material>(),usedTexture=new Set<T.Texture>(),usedTextureNames=new Set<string>();
+    root.traverse(o=>{const mesh=o as T.Mesh;if(!mesh.isMesh)return;usedGeometry.add(mesh.geometry);for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material]){usedMaterial.add(material);for(const name of material.userData.nativeTextureNames??[])if(typeof name==='string')usedTextureNames.add(name);for(const v of Object.values(material))if(v instanceof T.Texture)usedTexture.add(v);}});
+    await Promise.all([...usedTextureNames].map(name=>this.textures.get(name)?.then(t=>usedTexture.add(t)).catch(()=>{})));
+    const geometries=await Promise.all([...this.geometries].map(async([key,p])=>{try{const{geometry}=await p;const bytes=Object.values(geometry.attributes).reduce((n,a)=>n+a.array.byteLength,geometry.index?.array.byteLength??0);return{key,geometry,bytes};}catch{return null;}}));let geometryBytes=geometries.reduce((n,g)=>n+(g?.bytes??0),0);
+    for(const g of geometries)if(g&&geometryBytes>geometryBudget&&!usedGeometry.has(g.geometry)){this.geometries.delete(g.key);g.geometry.dispose();geometryBytes-=g.bytes;}
+    const textures=await Promise.all([...this.textures].map(async([key,p])=>{try{const texture=await p;return{key,texture,bytes:(texture.image as {data?:{byteLength:number}})?.data?.byteLength??0};}catch{return null;}}));let textureBytes=textures.reduce((n,t)=>n+(t?.bytes??0),0);
+    for(const t of textures)if(t&&textureBytes>textureBudget&&!usedTexture.has(t.texture)){this.textures.delete(t.key);t.texture.dispose();textureBytes-=t.bytes;}
+    if(this.materials.size>400)for(const[key,p]of this.materials){const material=await p.catch(()=>null);if(material&&!usedMaterial.has(material)){material.dispose();this.materials.delete(key);}}
+    if(this.variants.size>400)for(const[key,m]of this.variants)if(!usedMaterial.has(m)){m.dispose();this.variants.delete(key);}
+    return{geometryBytes,textureBytes,budgetExceeded:geometryBytes>geometryBudget||textureBytes>textureBudget};
+  }
   dispose(){this.disposed=true;this.decalGeometry?.dispose();for(const p of this.geometries.values())void p.then(a=>a.geometry.dispose()).catch(()=>{});for(const p of this.materials.values())void p.then(m=>m.dispose()).catch(()=>{});for(const p of this.textures.values())void p.then(t=>t.dispose()).catch(()=>{});for(const m of this.variants.values())m.dispose();}
 }

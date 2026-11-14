@@ -7,5 +7,5 @@ export function blockPlaytest(): never {
 }
 
 export function assertPlaytestCommand(method: string): void {
-  if (method === 'launch' || method === 'worldLaunch' || method === 'runLaunch') blockPlaytest();
+  if (['launch','worldLaunch','runLaunch','prepare','deploy','worldDeploy','worldReset'].includes(method)) blockPlaytest();
 }

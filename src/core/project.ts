@@ -4,7 +4,7 @@ import{applyCharacterControl}from'./character-control';import{applyTopology,topo
 import{applyStamp,validateBundle}from'./regions';
 import { GamePackage } from './package';
 import { baseFields, canEdit, EDITABLE, parseEntities, patchTransform, position, writeEntities, yawOf, type EntityFile } from './entities';
-import type { EditorProject, LevelView } from '../shared';
+import type { EditorProject, LevelView, Vec3 } from '../shared';
 import{PropertyCodec}from'./properties';
 import{MECHANISM_TYPES,REMOVABLE_TYPES,mechanismProperties,validateProperties,transform}from'./mechanisms';
 import {editableType,placeNative} from './placement';
@@ -75,7 +75,7 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
   if(codec){applyCamera(codec,f,project.camera,pkg);applyTopology(codec,f,project.topology);}
   return f;
 }
-export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:PropertyCodec):LevelView {
+export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:PropertyCodec,bounds?:{min:Vec3;max:Vec3}):LevelView {
   if(!validName(name))throw new Error('无效关卡名称');
   const f=file??parseEntities(pkg.get(`data-common/${name}.entities`));
   const terrain:{x:number;y:number;z:number;id?:number}[]=[];
@@ -83,7 +83,8 @@ export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:Pr
     const parsed=codec.parse(r),values=new Map(parsed.fields.map(f=>[f.schema.name,f.value]));if(!parsed.complete||Number(values.get('kind')??0)!==0)continue;const get=(s:string,d=0)=>Number(values.get(s)??d),p=position(r)??[0,0,0];
     const sx=get('wall_data.dimensions.x'),sy=get('wall_data.dimensions.y'),sz=get('wall_data.dimensions.z'),slots=(values.get('wall_data.bits.slots')??[])as string[];const cx=get('wall_data.corner.x'),cy=get('wall_data.corner.y'),cz=get('wall_data.corner.z'),bits=slots.map(v=>BigInt(v));
     if(sx*sy*sz>1000000||sx<1||sy<1||sz<1)continue;
-    for(let i=0;i<sx*sy*sz&&terrain.length<30000;i++)if(((bits[i>>6]??0n)&(1n<<BigInt(i%64)))!==0n)terrain.push({id:r.id,x:p[0]+cx+i%sx,y:p[1]+cy+Math.floor(i/sx)%sy,z:p[2]+cz+Math.floor(i/(sx*sy))+1});
+    const terrainLimit=bounds?Infinity:30000,corner=[p[0]+cx,p[1]+cy,p[2]+cz+1],dims=[sx,sy,sz],lo=dims.map((_,i)=>bounds?Math.max(0,Math.ceil(bounds.min[i]-corner[i])):0),hi=dims.map((n,i)=>bounds?Math.min(n-1,Math.floor(bounds.max[i]-corner[i])):n-1);
+    for(let z=lo[2];z<=hi[2]&&terrain.length<terrainLimit;z++)for(let y=lo[1];y<=hi[1]&&terrain.length<terrainLimit;y++)for(let x=lo[0];x<=hi[0]&&terrain.length<terrainLimit;x++){const i=(z*sy+y)*sx+x;if(((bits[i>>6]??0n)&(1n<<BigInt(i%64)))!==0n)terrain.push({id:r.id,x:corner[0]+x,y:corner[1]+y,z:corner[2]+z});}
   }
   const waters=codec?f.records.filter(r=>r.type==='Ocean_Map'&&codec.parse(r).complete).map(r=>waterView(codec,f,r)):[];
   return {name,typeCount:f.types.length,terrain,waters,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{

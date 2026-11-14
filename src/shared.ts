@@ -46,12 +46,30 @@ export interface WorldLevel {id:string;title:string;project:EditorProject}
 export interface WorldProject {sourceEvidence?:import('./core/compatibility').SourceEvidence;format:'sinking-star-world';version:1|2|3;id:string;name:string;sourceHash:string;sourceBuild:string;map:{width:number;height:number;tiles:Tile[];spawn:[number,number];entries:WorldEntry[];objects?:EditOp[];editor?:EditorMetadata};levels:WorldLevel[]}
 export interface WorldIssue {severity:'error'|'warning';message:string;entryId?:string;levelId?:string;entityId?:number;entityIds?:number[];category?:'reference'|'channel'|'dependency'|'native'}
 export interface PrefabView {key:string;label:string;type:string;template:string;sourceId:number;values?:Record<string,number|boolean>}
-export interface NativeLevelRegion {id:string;title:string;layer:'ground'|'underground'|'sky'|'other';levels:string[];cell?:[number,number]}
+export interface NativeLevelRegion {id:string;title:string;layer:'ground'|'underground'|'sky'|'other';levels:string[];cell?:[number,number];cells?:[number,number][];subregions?:{cell:[number,number];levels:string[]}[];nameSource?:'native-volume'|'overlap'|'unmarked';areaKey?:string}
 export interface GameInstallation {path:string;build:string;directoryValid:boolean;compatibility:'unchecked'|'data-checked'|'unverified';reason?:string;saved?:boolean}
 export interface GameDiscovery {installations:GameInstallation[];workspace:string;workspaceLocked:boolean;pendingWorkspace?:string}
 export interface PreparationEstimate {workspace:string;prepared:boolean;requiresRefresh?:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
 export interface Catalog {gamePath:string;sourceHash:string;build:string;levels:string[];regions?:NativeLevelRegion[];workspace:string;runtimeVerified:boolean;compatibility?:string}
 export interface EditorApi {
+ storageScan():Promise<import('./v08-types').StorageScan>;
+ storageClean(token:string,ids:string[]):Promise<{reclaimed:number}>;
+ playPreferences():Promise<import('./v08-types').PlayPreferences>;
+ playPreferencesSave(value:import('./v08-types').PlayPreferences):Promise<import('./v08-types').PlayPreferences>;
+ testLegacyProfiles():Promise<import('./v08-types').LegacyTestProfile[]>;
+ testProfileImport(id:string):Promise<import('./v08-types').TestProfile>;
+ testProfiles():Promise<import('./v08-types').TestProfile[]>;
+ testProfileSelect(context:import('./v08-types').TestContext):Promise<{compatible:import('./v08-types').TestProfile[];incompatible:import('./v08-types').TestProfile[]}>;
+ testProfileCreate(context:import('./v08-types').TestContext,name:string):Promise<import('./v08-types').TestProfile>;
+ testProfileChange(id:string,action:'rename'|'archive'|'delete'|'reset',name?:string):Promise<void>;
+ nativeSearch(project:import('./v08-types').NativeWorldProject,query:string):Promise<{id:number;type:string;name:string;position:Vec3;cellId:string}[]>;
+ nativeIndex(project?:import('./v08-types').NativeWorldProject):Promise<import('./v08-types').NativeWorldIndex>;
+ nativeCreate():Promise<import('./v08-types').NativeWorldProject>;
+ nativeRegion(request:import('./v08-types').NativeRegionRequest):Promise<import('./v08-types').NativeRegionResult>;
+ nativeBuild(project:import('./v08-types').NativeWorldProject):Promise<{path:string;hash:string;changed:string[]}>;
+ nativeSave(project:import('./v08-types').NativeWorldProject,saveAs?:boolean):Promise<string|null>;
+ nativeLoad():Promise<import('./v08-types').NativeWorldProject|null>;
+
  inspectCompatibility:()=>Promise<{name:string;build:string;hash:string;levels:{name:string;template:string;operations:number}[];issues:string[]}|null>;
 
  updateCheck:()=>Promise<import('./update-version').ReleaseUpdate|null>;updateDownload:()=>Promise<{file:string;installer:boolean}>;updateInstall:()=>Promise<void>;

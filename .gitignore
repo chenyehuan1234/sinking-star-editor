@@ -75,3 +75,14 @@ scripts/*
 !scripts/v0715-check.mjs
 !scripts/v0715-check-renderer.tsx
 !docs/V0715-ACCEPTANCE.md
+
+!scripts/regions-check.mjs
+!scripts/regions-check-renderer.tsx
+
+!scripts/v08-check.mjs
+!scripts/v08-check-renderer.tsx
+!docs/V08-ACCEPTANCE.md
+
+!scripts/v08-benchmark.ts
+
+!docs/screenshots/native-world-v08.png

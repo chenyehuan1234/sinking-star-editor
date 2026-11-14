@@ -1,3 +1,6 @@
+import {queueCacheTrim} from './storage';
+import {validateNativeWorld} from '../core/native-world';
+import type {NativeWorldProject,NativeWorldIndex,NativeRegionRequest,NativeRegionResult} from '../v08-types';
 import{dependencyEvidence,schemaFingerprint,forwardBuild,verifyEvidence,rebindSource}from'../core/compatibility';
 import{inspectTestCopy,freshTestState,writeCopyMarker,promoteTestCopy,managedPath,type CopySource,type TestState}from'./playtest-copy';
 export type{TestState}from'./playtest-copy';
@@ -52,6 +55,7 @@ export class EditorService {
     const root=await fs.realpath(gamePath);
     await fs.access(path.join(root,'sinking_star.exe'));
     const source=path.join(root,'data/levels.package'),buffer=await fs.readFile(source),pkg=new GamePackage(buffer),st=await fs.stat(source);
+    if(directoriesOverlap(await fs.realpath(this.campaigns.saves).catch(()=>this.campaigns.saves),await fs.realpath(this.workspace).catch(()=>this.workspace)))throw Error('工作区不能包含正式存档目录，也不能位于正式存档目录内');
     if(directoriesOverlap(root,await fs.realpath(this.workspace).catch(()=>this.workspace)))throw new Error('请选择 Steam 原始游戏目录，工作区与原游戏目录不能互相包含');
     const sourceHash=sha256(buffer),exe=await fs.readFile(path.join(root,'sinking_star.exe')),codec=exe.length>64?new PropertyCodec(new ExeReflection(exe)):undefined;
     let assetFiles:string[]=[],materials:GamePackage|undefined,regions:Catalog['regions'],build='unknown';
@@ -63,7 +67,7 @@ export class EditorService {
     }
     try{const acf=await fs.readFile(path.resolve(root,'../../appmanifest_499170.acf'),'utf8');build=acf.match(/"buildid"\s+"(\d+)"/)?.[1]??'unknown';}catch{}
     await fs.mkdir(this.workspace,{recursive:true});
-    try{await this.assertStopped();await this.campaigns.deactivate();}catch(e){if(!String(e).includes('请先退出沉星之序'))throw e;}
+    // Connecting and browsing are read-only toward the game's save directory.
     // A failed new connection must leave the previously usable installation intact.
     await this.previews?.dispose();this.previews=undefined;await this.assets?.dispose();this.objects=undefined;this.pkg=pkg;this.sourceHash=sourceHash;this.exeHash=sha256(exe);this.gamePath=root;this.stamp=`${st.size}:${st.mtimeMs}`;this.codec=codec;this.assetFiles=assetFiles;this.build=build;
     this.assets=codec?new NativeAssets(root,this.workspace,sourceHash+codec.reflection.hash,assetFiles,materials!,this.workerFile):undefined;
@@ -95,8 +99,8 @@ export class EditorService {
   async levelCreateBlank(width=16,height=16){await this.unchanged();return createBlank(this.sourceHash,this.build,width,height);}
   async presetPreview(key:string){const catalog=await this.objectCatalog(),p=catalog.presets.find(p=>p.key===key&&p.parsed);if(!p)throw new Error('预设不存在');const source=parseEntities(this.pkg.get(`data-common/${p.template}.entities`));const file={prefix:source.prefix,types:source.types,records:[]};placeNative(this.pkg,this.codec!,file,{kind:'prefab',id:900*0x100000+1,template:p.template,sourceId:p.sourceId,position:[0,0,0],assembly:p.placement==='assembly'});return levelView(this.pkg,p.template,file,this.codec);}
   private thumbnailPath(key:string){if(typeof key!=='string'||!/^[a-f0-9]{16,128}$/.test(key))throw new Error('缩略图标识无效');return path.join(this.workspace,'cache','thumbnails-v04',this.sourceHash,key+'.png');}
-  async thumbnailRead(key:string){try{return'data:image/png;base64,'+(await fs.readFile(this.thumbnailPath(key))).toString('base64');}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return null;throw e;}}
-  async thumbnailWrite(key:string,png:string){const file=this.thumbnailPath(key);if(typeof png!=='string'||!png.startsWith('data:image/png;base64,')||png.length>2_000_000)throw new Error('缩略图数据无效');const data=Buffer.from(png.slice(22),'base64');if(data.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw new Error('缩略图必须是 PNG');await atomicWrite(file,data);}
+  async thumbnailRead(key:string){try{const file=this.thumbnailPath(key),data=await fs.readFile(file);await fs.utimes(file,new Date(),new Date()).catch(()=>{});return'data:image/png;base64,'+data.toString('base64');}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return null;throw e;}}
+  async thumbnailWrite(key:string,png:string){const file=this.thumbnailPath(key);if(typeof png!=='string'||!png.startsWith('data:image/png;base64,')||png.length>2_000_000)throw new Error('缩略图数据无效');const data=Buffer.from(png.slice(22),'base64');if(data.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw new Error('缩略图必须是 PNG');await atomicWrite(file,data);queueCacheTrim(this.workspace);}
   async objectCatalog():Promise<ObjectCatalog>{
     await this.unchanged();if(!this.codec)throw new Error('对象目录需要游戏类型信息');
     return this.objects??=(async()=>{const file=path.join(this.workspace,'cache',`catalog-${this.sourceHash}-${this.codec!.reflection.hash}.json`);try{const c=JSON.parse(await fs.readFile(file,'utf8'))as ObjectCatalog;if(c.version===1&&c.schemaRevision===2&&c.sourceHash===this.sourceHash&&c.exeHash===this.codec!.reflection.hash)return c;}catch{}
@@ -179,6 +183,10 @@ export class EditorService {
   }
   async launch():Promise<string>{return blockPlaytest();}
   async checkWorld(w:WorldProject){validateWorld(w);await this.unchanged();if(w.sourceHash!==this.sourceHash||w.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${w.sourceBuild} / ${w.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请通过打开工程执行兼容检查；原生结构或依赖变化时需使用来源版本。`);if(!this.compiler||!this.codec)throw new Error('当前游戏缺少已验证的类型信息');}
+  async nativeSearch(project:NativeWorldProject,query:string):Promise<{id:number;type:string;name:string;position:Vec3;cellId:string}[]>{await this.unchanged();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-search',{project,query,build:this.build});}
+  async nativeIndex(project?:NativeWorldProject):Promise<NativeWorldIndex>{await this.unchanged();if(project){validateNativeWorld(project);if(project.sourceHash!==this.sourceHash||project.sourceBuild!==this.build)throw Error('原版世界来源不匹配');}const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-index',{project,build:this.build});}
+  async nativeRegion(r:NativeRegionRequest):Promise<NativeRegionResult>{await this.unchanged();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-region',{...r,build:this.build});}
+  async nativeBuild(project:NativeWorldProject){await this.unchanged();await this.verifySourceHash();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');validateNativeWorld(project);if(project.sourceHash!==this.sourceHash||project.sourceBuild!==this.build)throw Error('世界来源不匹配');const result=Object.values(project.edits).some(ops=>ops.length)||Object.values(project.levelEdits).some(ops=>ops.length)?await worker.request<{buffer:Uint8Array;changed:string[]}>('native-build',{project,build:this.build}):{buffer:this.pkg.buffer,changed:[]},file=path.join(this.workspace,'exports','native-world-'+project.id+'-'+Date.now()+'.package');const buffer=Buffer.from(result.buffer.buffer,result.buffer.byteOffset,result.buffer.byteLength);await atomicWrite(file,buffer);await atomicWrite(path.join(path.dirname(file),path.basename(file,'.package')+'.sstar-native-world.json'),JSON.stringify(project,null,2));return{path:file,hash:sha256(buffer),changed:result.changed};}
   async worldCreate(){await this.unchanged();return newWorld(this.sourceHash,this.build);}
   async upgradeWorldEntries(w:WorldProject){await this.checkWorld(w);return w.map.objects?.length?migrateEntrances(w,this.compiler!.previewMap(w),this.codec!):w;}
   private async exampleFile(name:string){await this.unchanged();if(!this.codec)throw Error('示例需要可解析的原游戏');const recipe=JSON.parse(await fs.readFile(path.join(path.dirname(this.workerFile),'../examples',name+'.recipe.json'),'utf8'));const w=materializeExample(recipe,this.pkg,this.codec,this.sourceHash,this.build);this.compiler!.build(w);return w;}

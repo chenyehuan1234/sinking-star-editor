@@ -27,6 +27,7 @@ export class PropertyCodec {
     let types=this.parsed.get(r.diff);if(!types)this.parsed.set(r.diff,types=new Map());
     let value=types.get(r.type);if(!value){value=this.parseUncached(r);types.set(r.type,value);}return value;
   }
+  parseTransient(r:EntityRecord){return this.parseUncached(r);}
   private parseUncached(r:EntityRecord):{fields:ParsedProperty[];complete:boolean;tail:number}{
     const b=r.diff,schemas=this.schema(r.type),fields:ParsedProperty[]=[];let p=0,last=-1;
     if(b.length===1&&b[0]===0xfd)return{fields,complete:true,tail:0};

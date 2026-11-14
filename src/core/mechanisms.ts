@@ -20,13 +20,15 @@ export function transform(c:PropertyCodec,r:EntityRecord,pos?:[number,number,num
   if(yaw!==undefined){const a=yaw*Math.PI/360;Object.assign(values,{'orientation.x':0,'orientation.y':0,'orientation.z':Math.sin(a),'orientation.w':Math.cos(a),theta_current:yaw,theta_target:yaw});}
   return c.patch(r,values);
 }
-export function validateReferences(c:PropertyCodec,f:EntityFile):string[]{
-  const groups=new Map(f.records.filter(r=>r.type==='Group').map(r=>[r.id,r]));
-  const groupErrors:string[]=[];
-  for(const r of f.records){const group=Number(c.get(r,'group_id'));if(group&&!groups.has(group))groupErrors.push(`${r.type} #${r.id} 的组合 #${group} 不存在`);}
-  for(const r of groups.values()){const seen=new Set<number>([r.id]);let id=Number(c.get(r,'group_id'));while(id&&groups.has(id)){if(seen.has(id)){groupErrors.push(`组合 #${r.id} 存在循环关联`);break;}seen.add(id);id=Number(c.get(groups.get(id)!,'group_id'));}}
-  const errors:string[]=[];for(const r of f.records){if(r.type==='Teleporter'){const target=Number(c.get(r,'target_id'));if(!target||!f.records.some(e=>e.id===target&&['Teleporter','Marker'].includes(e.type)))errors.push(`传送器 #${r.id} 缺少有效目标`);}
-  }for(const r of f.records)for(const field of objectFields(c,r.type).filter(f=>f.kind==='reference'&&f.targets&&f.name!=='group_id')){const id=Number(c.get(r,field.name));if(id&&!f.records.some(e=>e.id===id&&field.targets!.includes(e.type)))errors.push(r.type+' #'+r.id+' 的'+field.label+'没有有效目标');}return[...new Set([...errors,...groupErrors])];
+export function validateReferences(c:PropertyCodec,f:EntityFile,options:{transient?:boolean;nativeWorld?:boolean}={}):string[]{
+ const ids=new Map(f.records.map(r=>[r.id,r])),groups=new Map(f.records.filter(r=>r.type==='Group').map(r=>[r.id,r])),parents=new Map<number,number>(),fields=new Map<string,ReturnType<typeof objectFields>>(),errors:string[]=[],groupErrors:string[]=[];
+ for(const r of f.records){let values:Map<string,unknown>|undefined;const get=(name:string)=>{if(!options.transient)return c.get(r,name);values??=new Map(c.parseTransient(r).fields.map(f=>[f.schema.name,f.value]));return values.get(name)??0;};const group=Number(get('group_id'));if(r.type==='Group')parents.set(r.id,group);if(group&&!groups.has(group))groupErrors.push(r.type+' #'+r.id+' 的组合 #'+group+' 不存在');
+  if(options.nativeWorld){const names:Record<string,string[]>={Level_Entry:['unlocked_by_id','unlocked_by_id2','unlocked_by_id3'],Area_Pin:['map_label_marker_id'],Marker:['script_target_entity_id'],Camera_Control:['position_id','look_at_id'],Group:['unexist_this_id','unexist_this_id2','unexist_this_id3']};for(const name of names[r.type]??[]){const id=Number(get(name));if(id&&!ids.has(id))errors.push(r.type+' #'+r.id+' 的 '+name+' 引用 #'+id+' 不存在');}}
+  if(r.type==='Teleporter'){const target=ids.get(Number(get('target_id')));if(!target||!['Teleporter','Marker'].includes(target.type))errors.push('传送器 #'+r.id+' 缺少有效目标');}
+  let refs=fields.get(r.type);if(!refs){refs=objectFields(c,r.type).filter(f=>f.kind==='reference'&&f.targets&&f.name!=='group_id');fields.set(r.type,refs);}for(const field of refs){const id=Number(get(field.name)),target=ids.get(id);if(id&&(!target||!field.targets!.includes(target.type)))errors.push(r.type+' #'+r.id+' 的'+field.label+'没有有效目标');}
+ }
+ for(const r of groups.values()){const seen=new Set<number>([r.id]);let id=parents.get(r.id)??0;while(id&&groups.has(id)){if(seen.has(id)){groupErrors.push('组合 #'+r.id+' 存在循环关联');break;}seen.add(id);id=parents.get(id)??0;}}
+ return[...new Set([...errors,...groupErrors])];
 }
 export function prefabs(pkg:GamePackage,c:PropertyCodec):PrefabView[]{
   const specs:[string,string,string,string][]=[['mirror','魔镜','mirror_1','Mirror'],['rock','石头','3d_intro_vanilla','Rock'],['switch','压力开关','make_thief_goblin_maze_v2','Switch'],['gate','门闸','make_thief_goblin_maze_v2','Gate'],['teleporter','传送器','make_thief_goblin_maze_v2','Teleporter'],['gem','宝石','3d_intro_promesst_v5','Gem'],['slot','宝石插槽','3d_intro_promesst_v5','Gem_Slot']];

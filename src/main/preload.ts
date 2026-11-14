@@ -1,7 +1,23 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { EditorApi } from '../shared';
 const invoke=(method:string,...args:unknown[])=>ipcRenderer.invoke(`editor:${method}`,...args);
-const api:EditorApi={inspectCompatibility:()=>invoke('inspectCompatibility'),updateCheck:()=>invoke('updateCheck'),updateDownload:()=>invoke('updateDownload'),updateInstall:()=>invoke('updateInstall'),
+const api:EditorApi={
+storageScan:(...args:any[])=>invoke('storageScan',...args),
+storageClean:(...args:any[])=>invoke('storageClean',...args),
+playPreferences:(...args:any[])=>invoke('playPreferences',...args),
+playPreferencesSave:(...args:any[])=>invoke('playPreferencesSave',...args),
+testLegacyProfiles:()=>invoke('testLegacyProfiles'),testProfileImport:id=>invoke('testProfileImport',id),
+testProfiles:(...args:any[])=>invoke('testProfiles',...args),
+testProfileSelect:(...args:any[])=>invoke('testProfileSelect',...args),
+testProfileCreate:(...args:any[])=>invoke('testProfileCreate',...args),
+testProfileChange:(...args:any[])=>invoke('testProfileChange',...args),
+nativeSearch:(p,q)=>invoke('nativeSearch',p,q),
+nativeIndex:(...args:any[])=>invoke('nativeIndex',...args),
+nativeCreate:(...args:any[])=>invoke('nativeCreate',...args),
+nativeRegion:(...args:any[])=>invoke('nativeRegion',...args),
+nativeBuild:(...args:any[])=>invoke('nativeBuild',...args),
+nativeSave:(...args:any[])=>invoke('nativeSave',...args),
+nativeLoad:(...args:any[])=>invoke('nativeLoad',...args),inspectCompatibility:()=>invoke('inspectCompatibility'),updateCheck:()=>invoke('updateCheck'),updateDownload:()=>invoke('updateDownload'),updateInstall:()=>invoke('updateInstall'),
  quickSlotsRead:()=>invoke('quickSlotsRead'),quickSlotsWrite:v=>invoke('quickSlotsWrite',v),
  cameraObject:(p,r)=>invoke('cameraObject',p,r),
  regionCapture:(p,s)=>invoke("regionCapture",p,s),regionPreview:b=>invoke("regionPreview",b),assemblyList:()=>invoke("assemblyList"),assemblySave:b=>invoke("assemblySave",b),assemblyRemove:id=>invoke("assemblyRemove",id),assemblyImport:()=>invoke("assemblyImport"),assemblyExport:b=>invoke("assemblyExport",b),recoveryWrite:w=>invoke("recoveryWrite",w),recoveryList:w=>invoke("recoveryList",w),recoveryRestore:(w,id)=>invoke("recoveryRestore",w,id),runValidate:(w,r)=>invoke("runValidate",w,r),runLaunch:(w,r)=>invoke("runLaunch",w,r),
