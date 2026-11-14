@@ -137,7 +137,7 @@ export class EditorService {
   async thumbnailWrite(key:string,png:string){const file=this.thumbnailPath(key);if(typeof png!=='string'||!png.startsWith('data:image/png;base64,')||png.length>2_000_000)throw new Error('缩略图数据无效');const data=Buffer.from(png.slice(22),'base64');if(data.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw new Error('缩略图必须是 PNG');await atomicWrite(file,data);queueCacheTrim(this.workspace);}
   async objectCatalog():Promise<ObjectCatalog>{
     await this.unchanged();if(!this.codec)throw new Error('对象目录需要游戏类型信息');
-    return this.objects??=(async()=>{const file=path.join(this.workspace,'cache',`catalog-${this.sourceHash}-${this.codec!.reflection.hash}.json`);try{const c=JSON.parse(await fs.readFile(file,'utf8'))as ObjectCatalog;if(c.version===1&&c.schemaRevision===3&&c.sourceHash===this.sourceHash&&c.exeHash===this.codec!.reflection.hash)return c;}catch{}
+    return this.objects??=(async()=>{const file=path.join(this.workspace,'cache',`catalog-${this.sourceHash}-${this.codec!.reflection.hash}.json`);try{const c=JSON.parse(await fs.readFile(file,'utf8'))as ObjectCatalog;if(c.version===1&&c.schemaRevision===4&&c.sourceHash===this.sourceHash&&c.exeHash===this.codec!.reflection.hash)return c;}catch{}
       const c=await new Promise<ObjectCatalog>((resolve,reject)=>{const worker=new Worker(path.join(path.dirname(this.workerFile),'catalog-worker.cjs'));worker.once('message',m=>{void worker.terminate();m.error?reject(new Error(m.error)):resolve(m.value);});worker.once('error',reject);worker.once('exit',code=>{if(code!==0&&code!==1)reject(new Error('对象扫描线程异常退出'));});worker.postMessage({root:this.gamePath,build:this.build});});
       await atomicWrite(file,JSON.stringify(c));return c;})();
   }

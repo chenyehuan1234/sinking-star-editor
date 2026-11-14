@@ -9,7 +9,7 @@ export const OBJECT_DEFINITIONS:ObjectDefinition[]=[
   d('Rock','方块与飞石','block','普通石块、水晶和飞石。镜像、打水漂与外观分别配置；透光行为须以实机核对。',{properties:'原生方块属性',speed_mod:'原生速度档位'},'single',[],['推动与拉动','镜像交换','透光与遮光','飞石水面运动','高矮外观与占位']),
   d('Mirror','镜子','mechanism','普通、魔法、可镜像、向上及向下反射预设。',{is_magic:'魔法镜',is_vertical:'竖向反射',is_vertical_downward:'向下反射',mirrorable:'可被镜像交换'},'single',[],['魔镜交换','普通镜子','上下反射','镜中之镜']),
   d('Switch','压力开关','mechanism','频道与外观独立；普通同频道开关共同控制门闸。',{flavor:'开关频道',existence_group:'存在组',special_type:'原生特殊行为'},'single',[],['多人和物件压住','同频道全部按下','不同频道隔离','终局专用行为依赖']),
-  d('Gate','门闸','mechanism','朝向、横向安装、开合方向和反向响应分开设置。',{flavor:'门闸频道',open:'未连接时初始打开',is_monster_gate:'怪物门',notted:'反向响应',sideways:'横向安装',negate_direction:'反转开合方向',height:'门闸高度'},'single',[],['四方向','横向安装','全部开关与反向响应','怪物房间清空','开合方向与高度']),
+  d('Gate','门闸','mechanism','朝向、横向安装、开合方向和反向响应分开设置。',{flavor:'门闸频道',open:'未连接时初始打开',is_monster_gate:'怪物门',notted:'反向响应',sideways:'横向安装',negate_direction:'反转开合方向',height:'门闸高度','force_field_color.x':'活动门体 · 红','force_field_color.y':'活动门体 · 绿','force_field_color.z':'活动门体 · 蓝','force_field_color.w':'活动门体 · Alpha',force_field_brightness:'活动门体亮度'},'single',[],['四方向','横向安装','全部开关与反向响应','怪物房间清空','开合方向与高度']),
   d('Teleporter','传送器','mechanism','小型定向传送与大型原生快速旅行；目标在同一关卡内解析。',{target_id:'传送目标',teleporter_type:'传送器类型',enabled_t_target:'启用程度',also_discover:'同时发现对象',also_discover2:'同时发现对象 2',also_exist_this_group_id:'同时启用存在组',discovered:'初始已发现',gold_room_endpoint:'原生金色房间端点'},'single',['有效传送目标'],['按 V 传送','双向目标','启用与发现','移动平台与传送器']),
   d('Gem','宝石','mechanism','原生拾取、携带、放置和房间供能；不另造频道。',{dirtiness:'原生拾取条件',sink_depth:'原生下沉深度'},'single',[],['拾取与放置','插槽供能','神器限制']),
   d('Gem_Slot','宝石插槽','mechanism','宝石和光束供能状态由游戏结算。',{},'single',[],['宝石放入移出','光束供能','房间范围']),

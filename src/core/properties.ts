@@ -1,3 +1,4 @@
+import {gateForceDefaults} from '../gate-appearance';
 import { ExeReflection } from './reflection';
 import type { EntityRecord } from './entities';
 export type PropertyValue=number|boolean|string|string[]|number[];
@@ -67,7 +68,7 @@ export class PropertyCodec {
   // baseline, never a default learned from whichever unrelated level was read last.
   private defaultRaw(s:PropertySchema,type:string){
     if(s.kind==='string'||s.kind==='strings'||s.kind==='array')return Buffer.alloc(8);
-    const b=Buffer.alloc(s.size);if(type==='Gate'&&s.name==='height')b.writeFloatLE(1);if(s.kind==='float'&&(/^(scale|orientation.w|tint_color_[ab])/.test(s.name)))b.writeFloatLE(1);return b;
+    const b=Buffer.alloc(s.size);if(type==='Gate'&&s.name==='height')b.writeFloatLE(1);if(type==='Gate'&&gateForceDefaults[s.name]!==undefined)b.writeFloatLE(gateForceDefaults[s.name]);if(s.kind==='float'&&(/^(scale|orientation.w|tint_color_[ab])/.test(s.name)))b.writeFloatLE(1);return b;
   }
   private encode(s:PropertySchema,value:PropertyValue):Buffer{
     if(s.kind==='string'){if(typeof value!=='string'||Buffer.byteLength(value)>4096)throw new Error('字符串属性无效');const h=Buffer.alloc(8);h.writeBigUInt64LE(BigInt(Buffer.byteLength(value)));return Buffer.concat([h,Buffer.from(value)]);}

@@ -13,6 +13,6 @@ export interface ObjectPreset {placementValues?:Record<string,NativeValue>;place
   verification:'native-data'|'runtime-smoke';
 }
 export interface ObjectCatalog {
-  version:1;schemaRevision:2|3;sourceHash:string;exeHash:string;build:string;generatedAt:string;types:ObjectTypeView[];presets:ObjectPreset[];
+  version:1;schemaRevision:2|3|4;sourceHash:string;exeHash:string;build:string;generatedAt:string;types:ObjectTypeView[];presets:ObjectPreset[];
   totals:{levels:number;entities:number;types:number;meshes:number;textures:number;presets:number};
 }

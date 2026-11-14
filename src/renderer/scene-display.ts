@@ -26,3 +26,6 @@ export function relationsFor(level:LevelView,selection:number[],scope:RelationSc
 }
 
 export function terrainTouchesLocked(level:LevelView|null,display:SceneDisplay,positions:{x:number;y:number;z:number}[]){if(display.categories.terrain.locked)return positions.length>0;const ids=new Set(level?.entities.filter(e=>objectLocked(e,display)).map(e=>e.id));if(!ids.size)return false;const locked=new Set(level?.terrain?.filter(c=>c.id!==undefined&&ids.has(c.id)).map(c=>`${c.x},${c.y},${c.z-1}`));return positions.some(c=>locked.has(`${c.x},${c.y},${c.z}`));}
+
+/** Appearance is shared across scene tabs; object locks and height filters stay scene-local. */
+export function restoreSceneDisplay(saved:SceneDisplay,backgroundVisible:boolean):SceneDisplay {const categories={...defaultDisplay().categories,...saved.categories};return {...saved,categories:{...categories,background:{...categories.background,visible:backgroundVisible}}};}
