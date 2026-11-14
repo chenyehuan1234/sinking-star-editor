@@ -5,3 +5,7 @@
 .v08-preset-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-height:240px;overflow:auto}.v08-preset-grid button{display:grid;min-width:0;padding:4px!important}.v08-preset-grid .s-thumb{width:60px;height:60px}.v08-preset-grid span{font-size:10px;overflow:hidden}.v08-world .v08-toolbar{flex-wrap:wrap;max-width:calc(100% - 20px);font-size:11px}.v08-world .v08-toolbar label{margin:0}.v08-world>header{flex-wrap:nowrap;overflow:hidden}
 
 .v08-native-maintenance{position:fixed;inset:0;z-index:300}.v08-world>header strong{min-width:0;max-width:26vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.v08-world>header>span{font-size:11px;white-space:nowrap}@media(max-width:1200px){.v08-world>header>span{display:none}}
+
+.s-playtest-overlay{position:fixed;inset:0;z-index:450}.s-playtest-dialog{max-width:580px;padding:16px;max-height:90vh;overflow:auto}.s-playtest-dialog>label{display:block;margin:14px 0}.s-playtest-dialog input:not([type=radio]),.s-playtest-dialog select{display:block;width:100%;margin-top:6px}.s-playtest-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+.s-playtest-dialog input[type=radio]{width:14px;height:14px;margin:0 8px 0 0;vertical-align:middle}

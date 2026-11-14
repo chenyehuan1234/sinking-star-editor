@@ -29,7 +29,7 @@ test('新旧服务启动接口在部署、校验、战役切换前拒绝，输�
     await assert.rejects(()=>service.launch(),suspended);
     await assert.rejects(()=>service.worldLaunch(world,'entry','overworld',true),suspended);
     for(const mode of ['single','subset','world'] as const)
-      await assert.rejects(()=>service.runLaunch(world,{mode,levelIds:['a']}),suspended);
+      await assert.rejects(()=>service.runLaunch(world,{mode,levelIds:['a']}),/请选择兼容测试存档/);
     assert.equal(JSON.stringify(world),original);
     assert.equal(await fs.readFile(path.join(campaign,'overworld.history'),'utf8'),'unchanged world');
     assert.equal(await fs.readFile(path.join(campaign,'Status.sokoban_status'),'utf8'),'unchanged status');
@@ -38,8 +38,8 @@ test('新旧服务启动接口在部署、校验、战役切换前拒绝，输�
 });
 
 test('暂停策略不拦截编辑、保存、预览、校验与构建命令',()=>{
-  for(const command of ['launch','worldLaunch','runLaunch','prepare','deploy','worldDeploy','worldReset'])assert.throws(()=>assertPlaytestCommand(command),suspended);
-  for(const command of ['worldSave','save','preview','previewUpdate','worldValidate','runValidate','worldBuild','build'])
+  for(const command of ['launch','worldLaunch','worldReset'])assert.throws(()=>assertPlaytestCommand(command),suspended);
+  for(const command of ['runPlan','runLaunch','nativeRunPlan','nativeRunLaunch','prepare','deploy','worldDeploy','worldSave','save','preview','previewUpdate','worldValidate','runValidate','worldBuild','build'])
     assert.doesNotThrow(()=>assertPlaytestCommand(command));
 });
 
@@ -66,7 +66,7 @@ test('真实主进程的启动、部署与旧进度重置 IPC 均被拦截，未
       __dirname:root,__filename:path.join(root,'main.cjs'),process:{...process,env:{}},Buffer,console,setTimeout,clearTimeout,URL});
     vm.runInContext(output.outputFiles[0].text,context);await ready;
     const event={sender:window.webContents,senderFrame:window.webContents.mainFrame};
-    for(const method of ['launch','worldLaunch','runLaunch','prepare','deploy','worldDeploy','worldReset']) {
+    for(const method of ['launch','worldLaunch','worldReset']) {
       const handler=handlers.get('editor:'+method);assert.ok(handler,method);
       await assert.rejects(()=>handler(event,undefined,undefined),(e:any)=>e.code==='PLAYTEST_SUSPENDED'&&e.message===PLAYTEST_SUSPENSION);
     }

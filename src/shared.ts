@@ -89,7 +89,10 @@ export interface EditorApi {
   recoveryList(w:WorldProject):Promise<RecoveryItem[]>;
   recoveryRestore(w:WorldProject,id:string):Promise<WorldProject>;
   runValidate(w:WorldProject,r:RunRequest):Promise<WorldIssue[]>;
-  runLaunch(w:WorldProject,r:RunRequest):Promise<string>;
+  runPlan(w:WorldProject,r:RunRequest):Promise<import('./v08-types').PlaytestPlan>;
+  runLaunch(w:WorldProject,r:RunRequest,choice?:import('./v08-types').PlaytestChoice):Promise<string>;
+  nativeRunPlan(p:import('./v08-types').NativeWorldProject,r:RunRequest):Promise<import('./v08-types').PlaytestPlan>;
+  nativeRunLaunch(p:import('./v08-types').NativeWorldProject,r:RunRequest,choice?:import('./v08-types').PlaytestChoice):Promise<string>;
   levelCreateBlank(width?:number,height?:number):Promise<EditorProject>;
   presetPreview(key:string):Promise<LevelView>;
   thumbnailRead(key:string):Promise<string|null>;

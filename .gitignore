@@ -86,3 +86,7 @@ scripts/*
 !scripts/v08-benchmark.ts
 
 !docs/screenshots/native-world-v08.png
+
+!scripts/playtest-check.mjs
+!scripts/playtest-check-renderer.tsx
+!docs/PLAYTEST-ISOLATION.md

@@ -1,3 +1,7 @@
+import {TestProfiles,testRevision} from './test-profiles';
+import {patchSaveDirectory,bindIsolatedSaves,isolationSupported,SOURCE_EXE,RUNTIME_EXE,savedGamesDirectory} from './save-isolation';
+import {gameplayWorld} from '../editor-organization';
+import type {PlaytestChoice,PlaytestPlan,TestContext} from '../v08-types';
 import {queueCacheTrim} from './storage';
 import {validateNativeWorld} from '../core/native-world';
 import type {NativeWorldProject,NativeWorldIndex,NativeRegionRequest,NativeRegionResult} from '../v08-types';
@@ -14,7 +18,7 @@ import{mechanismIssues}from'../core/mechanism-check';
 import{scopedWorld}from'../core/runs';import{captureRegion,validateBundle}from'../core/regions';import{projectSources}from'../core/project';import type{RegionSelection,RegionBundle,RunRequest}from'../shared';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile,spawn } from 'node:child_process';
 import {blockPlaytest} from '../playtest-policy';
 import { promisify } from 'node:util';
 import { GamePackage, sha256 } from '../core/package';
@@ -73,7 +77,7 @@ export class EditorService {
     this.assets=codec?new NativeAssets(root,this.workspace,sourceHash+codec.reflection.hash,assetFiles,materials!,this.workerFile):undefined;
     this.schemaCache='';this.compiler=codec?new WorldCompiler(pkg,codec):undefined;
     let runtimeVerified=false;try{const e=JSON.parse(await fs.readFile(path.join(this.workspace,'playtest-evidence.json'),'utf8'));runtimeVerified=e.runtimeVerified===true&&e.sourceHash===this.sourceHash;}catch{}
-    return {gamePath:root,sourceHash:this.sourceHash,build:this.build,workspace:this.workspace,compatibility:((this.sourceHash==='d747e5d9b8f540c9c6b90e8e987bd74a8c7f8f2f0672fce189403128f1f3117c'&&this.codec?.reflection.hash==='d802098b7cb85eadfc733b88d1554042fad950c572e916febea3f669a474a549')||(this.sourceHash==='408aba3676925faea0c823f8c231e30844feffe9c32ae42644d273ef31863589'&&this.codec?.reflection.hash==='0ae10a513dae25286fe93d0db4fa8a2df9a473bc07e1734e12bc1ad30166db1c'))?'数据回归版本；游戏内运行仍需实测':'当前版本未经回归；已通过结构解析，试玩需实测',levels:pkg.entries.filter(e=>e.name.endsWith('.entities')).map(e=>path.basename(e.name,'.entities')),regions,runtimeVerified};
+    return {gamePath:root,sourceHash:this.sourceHash,build:this.build,workspace:this.workspace,compatibility:((this.sourceHash==='d747e5d9b8f540c9c6b90e8e987bd74a8c7f8f2f0672fce189403128f1f3117c'&&this.codec?.reflection.hash==='d802098b7cb85eadfc733b88d1554042fad950c572e916febea3f669a474a549')||(this.sourceHash==='408aba3676925faea0c823f8c231e30844feffe9c32ae42644d273ef31863589'&&this.codec?.reflection.hash==='0ae10a513dae25286fe93d0db4fa8a2df9a473bc07e1734e12bc1ad30166db1c')||(this.sourceHash==='a736bb1c2b6d44b80fb6de5b30a1f93308ebac0d3ead0e7c022b58a0eee47314'&&this.exeHash==='978b302fd0952e4ea8d869553aec875d9c635278a7d0f8cdb752f5a797a370aa'))?'数据回归版本；游戏内运行仍需实测':'当前版本未经回归；已通过结构解析，试玩需实测',levels:pkg.entries.filter(e=>e.name.endsWith('.entities')).map(e=>path.basename(e.name,'.entities')),regions,runtimeVerified};
   }
   async unchanged(){
     if(!this.pkg)throw new Error('请先连接游戏目录');
@@ -119,8 +123,8 @@ export class EditorService {
   }
   async assertStopped(){
     if(process.platform!=='win32')return;
-    const result=await exec('tasklist',['/FI','IMAGENAME eq sinking_star.exe','/FO','CSV','/NH'],{windowsHide:true});
-    if(/"sinking_star\.exe"/i.test(result.stdout))throw new Error('请先退出沉星之序，再修改测试副本');
+    const result=await exec('tasklist',['/FO','CSV','/NH'],{windowsHide:true});
+    if(/"(?:sinking_star|SinkingStarPlaytest)\.exe"/i.test(result.stdout))throw new Error('请先退出沉星之序或试玩窗口，再修改测试副本');
   }
   private statePath(){return path.join(this.workspace,'playtest-state.json');}
   private copySource():CopySource{return{workspace:this.workspace,gamePath:this.gamePath,testRoot:this.testRoot,sourceHash:this.sourceHash,sourceBuild:this.build,exeHash:this.exeHash};}
@@ -129,9 +133,10 @@ export class EditorService {
     if(s.pendingHash){const actual=sha256(await fs.readFile(path.join(this.testRoot,'data/levels.package')));if(actual===s.pendingHash){s.deployedHash=actual;delete s.pendingHash;await atomicWrite(this.statePath(),JSON.stringify(s,null,2));}}
     if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(s,null,2));return s;
   }
-  async preparationEstimate():Promise<import('../shared').PreparationEstimate>{await this.unchanged();const copy=await inspectTestCopy(this.copySource());return{...await estimatePreparation(this.gamePath,this.workspace,copy.prepared),requiresRefresh:copy.requiresRefresh};}
-  async prepare(){
+  async preparationEstimate():Promise<import('../shared').PreparationEstimate>{await this.unchanged();const copy=await inspectTestCopy(this.copySource());return{...await estimatePreparation(this.gamePath,this.workspace,copy.prepared||Boolean(copy.sourceExeMissing)),requiresRefresh:copy.requiresRefresh};}
+  async prepare():Promise<string>{
     await this.unchanged();await this.assertStopped();const source=this.copySource(),copy=await inspectTestCopy(source);
+    if(copy.sourceExeMissing){await this.verifySourceHash();await atomicWrite(path.join(this.testRoot,SOURCE_EXE),await fs.readFile(path.join(this.gamePath,'sinking_star.exe')));return this.prepare();}
     if(copy.prepared){if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(copy.state,null,2));return this.testRoot;}
     const estimate=await this.preparationEstimate();if(!estimate.canPrepare)throw Error(`工作区磁盘空间不足：需约 ${(estimate.requiredBytes/2**30).toFixed(1)} GB，可用 ${(estimate.availableBytes/2**30).toFixed(1)} GB。请在工程菜单更换工作区并重启。`);
     const building=path.join(this.workspace,`preparing-${Date.now()}-${process.pid}`);await managedPath(this.workspace,building);
@@ -144,7 +149,7 @@ export class EditorService {
     const state=freshTestState(source);await fs.writeFile(path.join(building,'steam_appid.txt'),'499170');await writeCopyMarker(building,state,copy.state);
     // Recheck the registered package before moving anything, after the potentially long copy.
     const final=await inspectTestCopy(source);if(final.prepared)throw Error('试玩副本已由另一项操作更新，请重试');
-    await promoteTestCopy(source,building,final);await atomicWrite(this.statePath(),JSON.stringify(state,null,2));return this.testRoot;
+    await promoteTestCopy(source,building,final);await atomicWrite(this.statePath(),JSON.stringify(state,null,2));await fs.rename(path.join(this.testRoot,'sinking_star.exe'),path.join(this.testRoot,SOURCE_EXE));return this.testRoot;
   }
   private async restoreAux(s:TestState){
     for(const rel of s.aux){const source=path.join(this.gamePath,rel),target=path.join(this.testRoot,rel);
@@ -202,7 +207,7 @@ export class EditorService {
   }
   async worldBuild(w:WorldProject){await this.checkWorld(w);await this.verifySourceHash();const b=this.compiler!.build(w),output=this.pkg.rebuild(b.changes),name=`world-${w.id}-${Date.now()}`,out=path.join(this.workspace,'exports',name+'.package');await atomicWrite(out,output);await atomicWrite(path.join(this.workspace,'exports',name+'.sstar-world.json'),JSON.stringify(w,null,2));return{path:out,hash:sha256(output)};}
   async worldDeploy(w:WorldProject,quickEntry?:string){
-    await this.checkWorld(w);await this.verifySourceHash();await this.assertStopped();await this.prepare();await this.campaigns.deactivate();
+    await this.checkWorld(w);await this.verifySourceHash();await this.assertStopped();await this.prepare();
     const built=this.compiler!.build(w,quickEntry),output=this.pkg.rebuild(built.changes),s=await this.readState();await this.restoreAux(s);
     const generated=new Map<string,Buffer>();const emptyPaint=Buffer.alloc(16);emptyPaint.write('allp');emptyPaint.writeUInt32LE(6,4);const emptyLight=Buffer.alloc(8);emptyLight.writeUInt32LE(3);
     for(const name of['overworld','intro']){generated.set(`data-common/${name}.all_paint_data`,emptyPaint);generated.set(`data-common/${name}.all_lightmap_data`,emptyLight);}
@@ -219,6 +224,13 @@ export class EditorService {
   async regionCapture(p:EditorProject,selection:RegionSelection){await this.checkProject(p);return captureRegion(this.codec!,applyProject(this.pkg,p,this.codec),p,selection,projectSources(p));}
   async regionPreview(bundle:RegionBundle){validateBundle(bundle);if(bundle.sourceHash!==this.sourceHash||bundle.sourceBuild!==this.build)throw Error('组合与当前游戏版本不一致');const source=parseEntities(this.pkg.get('data-common/mirror_1.entities')),file={...source,records:[]};const p:EditorProject={format:'sinking-star-project',version:3,sourceHash:this.sourceHash,sourceBuild:this.build,template:'mirror_1',name:'region_preview',operations:[{kind:'stamp',id:900*0x100000+1,bundle,position:[0,0,0],yaw:0}]};return levelView(this.pkg,'mirror_1',applyProject(this.pkg,p,this.codec,file),this.codec);}
   async runValidate(w:WorldProject,r:RunRequest){const scoped=scopedWorld(w,r);await this.checkWorld(scoped);const issues=await this.worldValidate(scoped);if(r.mode!=='world')for(const l of scoped.levels){const f=applyProject(this.pkg,l.project,this.codec);for(const e of f.records.filter(e=>e.type==='Door'))for(const field of ['target_level','switch_to_level_set']){const name=String(this.codec!.get(e,field,''));if(name&&!['intro','overworld'].includes(name)&&!scoped.levels.some(t=>[t.id,t.project.name,t.project.template,'ed_'+scoped.id+'_'+t.id].includes(name)))issues.push({severity:'error',levelId:l.id,entityId:e.id,message:l.title+'：出口依赖范围外关卡 '+name+'，请加入测试组或修改出口'});}}return issues;}
-  async runLaunch(_w:WorldProject,_r:RunRequest):Promise<string>{return blockPlaytest();}
-  async worldReset(w:WorldProject){await this.checkWorld(w);await this.assertStopped();await this.campaigns.deactivate();const archive=await this.campaigns.reset(w.id,this.sourceHash);return `本工程测试进度已重置，旧数据保留在 ${archive}`;}
+  private requireChoice(choice?:PlaytestChoice){if(!choice||[choice.profileId,choice.newProfileName,choice.resetProfileId].filter(Boolean).length!==1||[choice.profileId,choice.resetProfileId].some(id=>id!==undefined&&!/^[a-f0-9]{12}$/.test(id)))throw Error('请选择兼容测试存档，或明确输入名称新建存档');}
+  async runPlan(w:WorldProject,r:RunRequest):Promise<PlaytestPlan>{await this.checkWorld(w);scopedWorld(w,r);const context:TestContext={projectId:w.id,sourceHash:w.sourceHash,scope:{mode:r.mode,levelIds:r.mode==='world'?[]:[...r.levelIds]},revision:testRevision(gameplayWorld(w))},profiles=await new TestProfiles(this.workspace).select(context),supported=isolationSupported(this.exeHash);return{context,...profiles,supported,preparation:supported?await this.preparationEstimate():undefined,reason:supported?'独立测试存档，不读取正式战役':'当前游戏程序的独立存档路径尚未验证，请更新编辑器'};}
+  async nativeRunPlan(p:NativeWorldProject,r:RunRequest):Promise<PlaytestPlan>{const index=await this.nativeIndex(p);if(!r||!['single','world'].includes(r.mode)||!Array.isArray(r.levelIds)||r.mode==='single'&&(r.levelIds.length!==1||r.levelIds[0]==='overworld'||!index.levels.includes(r.levelIds[0])))throw Error('请选择有效的原版世界试玩范围');const context:TestContext={projectId:p.id,sourceHash:p.sourceHash,scope:{mode:r.mode,levelIds:r.mode==='world'?[]:[...r.levelIds]},revision:testRevision({sourceHash:p.sourceHash,edits:p.edits,levelEdits:p.levelEdits})},profiles=await new TestProfiles(this.workspace).select(context),supported=isolationSupported(this.exeHash);return{context,...profiles,supported,preparation:supported?await this.preparationEstimate():undefined,reason:supported?'独立测试存档，不读取正式战役':'当前游戏程序的独立存档路径尚未验证，请更新编辑器'};}
+  private async selectProfile(plan:PlaytestPlan,choice:PlaytestChoice){if(!plan.supported)throw Error(plan.reason);if(choice.resetProfileId){if(!plan.incompatible.some(p=>p.id===choice.resetProfileId))throw Error('不是当前工程的旧测试档');return new TestProfiles(this.workspace).resetForContext(choice.resetProfileId,plan.context);}if(choice.profileId){const p=plan.compatible.find(p=>p.id===choice.profileId);if(!p)throw Error('该存档与当前工程、范围或修改版本不兼容；原存档保留，请重新选择');return p;}return new TestProfiles(this.workspace).create(plan.context,choice.newProfileName!);}
+  private async startIsolated(profileId:string,initialLevel:string){await this.assertStopped();const manager=new TestProfiles(this.workspace),source=await fs.readFile(path.join(this.gamePath,'sinking_star.exe'));if(sha256(source)!==this.exeHash)throw Error('游戏程序已变化，请重新连接');const patched=patchSaveDirectory(source,profileId);await manager.prepareSettings(profileId,path.join(await savedGamesDirectory(),'Order of the Sinking Star'));const bound=await bindIsolatedSaves(this.workspace,profileId);await manager.startCampaign(profileId,initialLevel);const file=path.join(this.testRoot,RUNTIME_EXE);await managedPath(this.workspace,file);await atomicWrite(file,patched.buffer);if(sha256(await fs.readFile(file))!==patched.hash)throw Error('独立试玩程序校验失败');await this.assertStopped();const child=spawn(file,[],{cwd:this.testRoot,stdio:'ignore',detached:true,windowsHide:false});await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});child.unref();await manager.used(profileId);await atomicWrite(path.join(this.workspace,'last-playtest.json'),JSON.stringify({profileId,pid:child.pid,saves:bound.saves,alias:bound.alias,sourceExeHash:patched.sourceHash,runtimeExeHash:patched.hash,at:new Date().toISOString()},null,2));return '已启动独立试玩；存档保存在 '+bound.saves;}
+  async runLaunch(w:WorldProject,r:RunRequest,choice?:PlaytestChoice):Promise<string>{this.requireChoice(choice);await this.assertStopped();const plan=await this.runPlan(w,r);if(!plan.supported)throw Error(plan.reason);const issues=await this.runValidate(w,r),errors=issues.filter(i=>i.severity==='error');if(errors.length)throw Error(errors.map(i=>i.message).join('；'));const profile=await this.selectProfile(plan,choice!),scoped=scopedWorld(w,r);await this.worldDeploy(scoped);return this.startIsolated(profile.id,r.mode==='single'?`ed_${scoped.id}_${scoped.levels[0].id}`:'overworld');}
+  async nativeRunLaunch(p:NativeWorldProject,r:RunRequest,choice?:PlaytestChoice):Promise<string>{this.requireChoice(choice);await this.assertStopped();const plan=await this.nativeRunPlan(p,r);if(!plan.supported)throw Error(plan.reason);if(r.mode==='single'){const name=r.levelIds[0],w=newWorld(p.sourceHash,p.sourceBuild);w.id=p.id;w.levels=[{id:'native_scene',title:name,project:{format:'sinking-star-project',version:3,sourceHash:p.sourceHash,sourceBuild:p.sourceBuild,template:name,name,operations:p.levelEdits[name]??[]}}];const scoped=scopedWorld(w,{mode:'single',levelIds:['native_scene']}),issues=await this.worldValidate(scoped);if(issues.some(i=>i.severity==='error'))throw Error(issues.filter(i=>i.severity==='error').map(i=>i.message).join('；'));const profile=await this.selectProfile(plan,choice!);await this.worldDeploy(scoped);return this.startIsolated(profile.id,`ed_${scoped.id}_native_scene`);}await this.verifySourceHash();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');const result=await worker.request<{buffer:Uint8Array;changed:string[]}>('native-build',{project:p,build:this.build}),profile=await this.selectProfile(plan,choice!);await this.prepare();const state=await this.readState();await this.restoreAux(state);const output=Buffer.from(result.buffer.buffer,result.buffer.byteOffset,result.buffer.byteLength);state.pendingHash=sha256(output);await atomicWrite(this.statePath(),JSON.stringify(state,null,2));await atomicWrite(path.join(this.testRoot,'data/levels.package'),output);state.deployedHash=state.pendingHash;delete state.pendingHash;delete state.world;await atomicWrite(this.statePath(),JSON.stringify(state,null,2));return this.startIsolated(profile.id,'overworld');}
+
+  async worldReset(_w:WorldProject):Promise<string>{throw Error('请在测试存档管理器中选择隔离档并重置，旧共享战役不再修改');}
 }

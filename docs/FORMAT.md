@@ -125,3 +125,10 @@ LevelView.waters 增加可选 gridZ/kind/detectHoles/name/error；编辑绘制�
 v4 文件独立保存，覆盖前保留 `.previous.bak`。导出 `.package` 与同名 `.sstar-native-world.json` 两个文件。来源不匹配时停止相关操作，原文件保留。区域归属、工程名不会改变原生构建内容。编辑视角按工程和场景保存在本机。
 
 存储扫描使用短期令牌与目录快照，清理前重新核对依赖、运行状态、真实路径和内容变化，不跟随链接。隔离档位于 `test-profiles/<stable-id>`，只有归属元数据通过验证的档案才能管理。`prepareSettings` 只复制两个已知 menu_state 设置文件；运行时存档隔离尚未验证，所有启动、准备、部署与旧共享进度重置 IPC 继续封锁。
+
+
+## v0.8 alpha.2 独立试玩
+
+新增 runPlan/nativeRunPlan 和带 PlaytestChoice 的 runLaunch/nativeRunLaunch。选择包含 profileId 或明确的新档名称，互斥；计划返回上下文、兼容／不兼容档、支持状态与空间估算。元数据仍在本机，不改变 v3/v4 工程格式。
+
+新受管运行程序只调整已检查的等长存档目录常量，SavedGames 下 SStar_Editor_档案ID 为受验证联接，指向 test-profiles/id/saves。原安装及正式存档路径不改动。旧共享启动与重置入口仍拒绝执行。保存历史不再每次清空。原始测试程序改为 .disabled，副本检查同时接受旧原始文件与禁用源文件；已登记同版本副本缺源程序时仅修复源程序，不另复制整套游戏。
