@@ -1,4 +1,4 @@
-import {gateVisual,gateShape,gateShapeLabel} from './gate-config';
+import {gateForms,gateForm,gateFormLabel,gateStandardForm,gateLibraryGroup,gateLibraryLabel,gateLibraryOrder,gateDisplayName} from './gate-library';
 import type {ObjectCatalog,ObjectPreset,NativeValue} from './catalog-types';
 import {CHARACTER_LABELS,OBJECT_BY_TYPE} from './core/object-definitions';
 
@@ -21,7 +21,7 @@ export function variantIdentity(p:ObjectPreset,catalog:ObjectCatalog){
 export function assetFamilyId(p:ObjectPreset){
  let kind='';if(p.type==='Guy')kind=p.mesh.replace(/_alt$/,'');
  else if(p.type==='Monster')kind=Number(p.signature.constant_flags)&2?'dragon':'goblin';
- else if(p.type==='Gate')kind=gateVisual(p)+':'+gateShape(p);
+ else if(p.type==='Gate')kind=gateLibraryGroup(p);
  else if(p.type==='Rock')kind=Number(p.signature.properties)&2?'skipping':/Boulder/i.test(p.mesh)?'rolling':'block';
  else if(p.type==='Ocean_Map')kind=String(Number(p.values.kind??0));
  else if(p.type==='Fence')kind=bool(p.signature.is_floor??p.values.is_floor)?'floor':'fence';
@@ -32,7 +32,7 @@ export function assetFamilyId(p:ObjectPreset){
 function familyLabel(p:ObjectPreset){
  if(p.type==='Guy')return CHARACTER_LABELS[p.mesh.replace(/_alt$/,'')]??p.label;
  if(p.type==='Monster')return Number(p.signature.constant_flags)&2?'敌对龙':'哥布林';
- if(p.type==='Gate'){const style=p.mesh.match(/Glyph_(Monster_A|Promesst_A|[A-D])/)?.[1]??'原生';return(bool(p.signature.is_monster_gate)?'怪物门闸':'门闸')+' · '+style.replace('Monster_A','怪物纹').replace('Promesst_A','光束纹')+' · '+gateShapeLabel(gateShape(p));}
+ if(p.type==='Gate')return gateLibraryLabel(p);
  if(p.type==='Rock')return Number(p.signature.properties)&2?'飞石':/Boulder/i.test(p.mesh)?'滚石':'方块';
  if(p.type==='Ocean_Map')return Number(p.values.kind??0)===1?'阻挡水域':'普通水域';
  if(p.type==='Fence')return bool(p.signature.is_floor??p.values.is_floor)?'薄地板':'栅栏';
@@ -68,18 +68,19 @@ function variantName(p:ObjectPreset,catalog:ObjectCatalog){
 }
 export function assetFamilies(catalog:ObjectCatalog){
  const cached=cache.get(catalog);if(cached)return cached;const families=new Map<string,AssetFamily>(),identities=new Map<string,Map<string,AssetVariant>>();
- for(const p of catalog.presets){if(!p.parsed||['internal','excluded'].includes(p.placement))continue;const id=assetFamilyId(p);let family=families.get(id);
+ const gateGroups=new Map<string,ObjectPreset[]>();for(const p of catalog.presets)if(p.type==='Gate'&&p.parsed&&!['internal','excluded'].includes(p.placement)){const id=assetFamilyId(p),list=gateGroups.get(id)??[];list.push(p);gateGroups.set(id,list);}
+ const gates=[...gateGroups].map(([id,presets])=>({id,presets,first:presets[0]})).sort((a,b)=>gateLibraryOrder(a.first)-gateLibraryOrder(b.first)||a.id.localeCompare(b.id)).flatMap(({id,presets,first})=>{const variants=gateForms.flatMap(form=>{const aliases=presets.filter(p=>gateForm(p)===form),usable=aliases.filter(gateStandardForm).sort((a,b)=>Number(bool(a.signature.notted))-Number(bool(b.signature.notted))||a.key.localeCompare(b.key));return usable.length?[{preset:{...usable[0],label:gateDisplayName(usable[0])},aliases,label:gateFormLabel(form),details:'',searchText:''}]:[];});return variants.length?[{id,label:gateLibraryLabel(first),type:'Gate',category:first.category,variants} as AssetFamily]:[];});let insertedGates=false;
+ for(const p of catalog.presets){if(p.type==='Gate'){if(!insertedGates){for(const family of gates)families.set(family.id,family);insertedGates=true;}continue;}if(!p.parsed||['internal','excluded'].includes(p.placement))continue;const id=assetFamilyId(p);let family=families.get(id);
   if(!family){family={id,label:familyLabel(p),type:p.type,category:['Friendly_Dragon','Baby_Dragon','Egg'].includes(p.type)?'creature':p.category,variants:[]};families.set(id,family);identities.set(id,new Map());}
   const identity=variantIdentity(p,catalog),existing=identities.get(id)!.get(identity);if(existing){existing.aliases.push(p);continue;}
   const variant:AssetVariant={preset:p,aliases:[p],label:variantName(p,catalog),details:'',searchText:''};family.variants.push(variant);identities.get(id)!.set(identity,variant);
  }
  for(const family of families.values()){
-  const rank=(p:ObjectPreset)=>p.type==='Gate'?Number(bool(p.signature.notted))*10+Number(bool(p.signature.sideways))*4+Number(bool(p.signature.negate_direction))+(p.mesh.includes('_Down')?2:0)+(p.mesh.includes('_Short')?1:0)+(Number(p.signature.height??1)===1?0:.25):p.type==='Guy'?Number(p.mesh.endsWith('_alt'))+Number(p.signature.inventory_flags??0)*2:p.type==='Switch'?Number(p.signature.special_type)*10:p.type==='Monster'?Number(p.signature.accessory_mask)>>>0:0;family.variants.sort((a,b)=>rank(a.preset)-rank(b.preset)||a.preset.mesh.localeCompare(b.preset.mesh)||a.preset.key.localeCompare(b.preset.key));
+  const rank=(p:ObjectPreset)=>p.type==='Gate'?Number(bool(p.signature.notted))*10+Number(bool(p.signature.sideways))*4+Number(bool(p.signature.negate_direction))+(p.mesh.includes('_Down')?2:0)+(p.mesh.includes('_Short')?1:0)+(Number(p.signature.height??1)===1?0:.25):p.type==='Guy'?Number(p.mesh.endsWith('_alt'))+Number(p.signature.inventory_flags??0)*2:p.type==='Switch'?Number(p.signature.special_type)*10:p.type==='Monster'?Number(p.signature.accessory_mask)>>>0:0;if(family.type!=='Gate')family.variants.sort((a,b)=>rank(a.preset)-rank(b.preset)||a.preset.mesh.localeCompare(b.preset.mesh)||a.preset.key.localeCompare(b.preset.key));
   const descriptions=new Map<string,AssetVariant[]>();for(const v of family.variants){const list=descriptions.get(v.label)??[];list.push(v);descriptions.set(v.label,list);}
   for(const list of descriptions.values())if(list.length>1)list.forEach((v,i)=>v.label+=' · 配置 '+(i+1));
-  for(const v of family.variants){const p=v.preset;v.details=[family.label,v.label,...p.tags,p.type==='Gate'?'height 为原生参数，具体用途尚待实机核实，不表示已验证的跨层阻挡高度':'',p.type==='Switch'&&Number(p.signature.special_type)?'特殊原生行为，需原版场景验证':'',p.placement==='assembly'?'需要原生关联或场景环境':'',p.mesh?'原生模型：'+p.mesh:'',normalizedMaterials(p.materials).some(Boolean)?'原生材质：'+normalizedMaterials(p.materials).join('、'):'',...v.aliases.map(a=>'来源：'+a.template),v.aliases.length>1?'已合并 '+v.aliases.length+' 条相同配置来源':''].filter(Boolean).join('\n');v.searchText=[family.label,v.label,v.details,...v.aliases.flatMap(a=>[a.label,a.type,a.mesh,a.template,...a.materials,...a.tags])].join(' ').toLowerCase();}
+  for(const v of family.variants){const p=v.preset;v.details=[family.label,v.label,...p.tags,p.type==='Gate'?'外观朝向由模型决定，与开合方向、反向响应分开；频道及响应可在卡片参数中预设。height 为原生参数，跨层阻挡具体用途尚待实机核实':'',p.type==='Switch'&&Number(p.signature.special_type)?'特殊原生行为，需原版场景验证':'',p.placement==='assembly'?'需要原生关联或场景环境':'',p.mesh?'原生模型：'+p.mesh:'',normalizedMaterials(p.materials).some(Boolean)?'原生材质：'+normalizedMaterials(p.materials).join('、'):'',...v.aliases.map(a=>'来源：'+a.template),v.aliases.length>1?'已合并 '+v.aliases.length+' 条相同配置来源':''].filter(Boolean).join('\n');v.searchText=[family.label,v.label,v.details,...v.aliases.flatMap(a=>[a.label,a.type,a.mesh,a.template,...a.materials,...a.tags])].join(' ').toLowerCase();}
  }
- const gateGroups=new Map<string,ObjectPreset>();for(const p of catalog.presets)if(p.type==='Gate'&&p.parsed)gateGroups.set(gateVisual(p),p);for(const [visual,p] of gateGroups)for(const shape of ['short','tall','side']as const){const id='Gate:'+visual+':'+shape;if(!families.has(id)){const display={...p,signature:{...p.signature,sideways:shape==='side',height:shape==='tall'?1.5:1}};families.set(id,{id,label:familyLabel(display),type:'Gate',category:p.category,variants:[{preset:p,aliases:[p],label:gateShapeLabel(shape),details:'此外观没有已验证的原生结构',searchText:'门闸 '+gateShapeLabel(shape)}],unavailable:'此外观没有已验证的原生结构'});}}
  const result=[...families.values()];cache.set(catalog,result);return result;
 }
 export function variantMatches(family:AssetFamily,variant:AssetVariant,query:string){const terms=query.trim().toLowerCase();return !terms||terms.split(/\s+/).every(term=>variant.searchText.includes(term));}

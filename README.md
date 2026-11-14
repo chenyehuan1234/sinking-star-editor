@@ -2,16 +2,16 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，按区域编辑完整原版世界。支持独立测试存档试玩，原安装保持只读。
 
-**[下载 v0.8.0-alpha.4 阶段测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.8.0-alpha.4)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
+**[下载 v0.8.0-alpha.5 阶段测试版](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.8.0-alpha.5)** · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [使用与验收步骤](docs/USER-TEST.md)
 
 > **v0.8.0-alpha.2 恢复独立试玩**：存档试玩先明确选择或新建命名测试档，默认复用兼容档；临时试玩从初始进度直接启动。受管启动器使用独立存档目录，载入菜单只列测试档内战役。当前已检查的 Steam Build 26466613 可用；其他游戏程序若尚未检查隔离路径，继续阻止启动。不要手动运行旧共享存档副本。
 
 单关、临时关卡组、整个工程及 v4 原版世界均有独立试玩入口。原版世界循环、跨层与进度机制的完整通关验收仍未完成。
 
-本版更新（[alpha.4 说明与验收](docs/RELEASE-V08-ALPHA4.md)）：
+本版更新（[alpha.5 说明与验收](docs/RELEASE-V08-ALPHA5.md)）：
 
 - **临时试玩直接启动**：不弹选档确认窗；状态栏显示检查、准备、构建和启动，隔离进度退出清理。存档试玩保留选档窗口。
-- **门闸六向开合与预配置**：各颜色、符文、普通／怪物类型继续分开，每组按高度1、高度1.5、横向整理。卡片下拉预设频道等参数，竖向上／下、横向四轴，虚像和属性同步。
+- **门闸六向开合与预配置**：按类型再按颜色排列，每色一张可折叠卡，展开为1格外观朝下、1格外观朝上、1.5格外观朝下、水平横向门；不可用项隐藏。卡片齿轮预设频道等参数，外观模型与开合方向分开，反转不换模型。
 - **原样复制**：普通复制、区域粘贴、分组和阵列默认保留名称、频道和同关角色控制身份；创建独立副本为明确选择。跨关清除外部引用并提示。
 - **隐藏环境图标**：空白关的天空、阳光、风和雾辅助模型默认隐藏，原生环境记录仍保留。
 
@@ -50,8 +50,8 @@
 
 需要 Windows x64，以及通过 Steam 安装的《沉星之序 / Order of the Sinking Star》。下载包不包含原游戏资源，不需要另装 Node.js。
 
-- **安装版**：下载 `SinkingStarEditor-0.8.0-alpha.4-Setup.exe`，按向导安装。
-- **免安装版**：下载 `SinkingStarEditor-0.8.0-alpha.4-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
+- **安装版**：下载 `SinkingStarEditor-0.8.0-alpha.5-Setup.exe`，按向导安装。
+- **免安装版**：下载 `SinkingStarEditor-0.8.0-alpha.5-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
 - GitHub 自动生成的 **Source code** 压缩包供开发者使用，不是可运行的软件下载。
 
 启动时先检查已保存的目录，再查找 Steam 默认库和其他磁盘的游戏库。只有一个有效安装时自动连接；多个安装可选择。没有找到时，点击“选择游戏文件夹”，选择包含 `sinking_star.exe` 的目录，不是 Steam 总目录。

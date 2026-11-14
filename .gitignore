@@ -98,3 +98,5 @@ scripts/*
 !scripts/alpha4-check.mjs
 !scripts/alpha4-check-renderer.tsx
 !docs/RELEASE-V08-ALPHA4.md
+
+!docs/RELEASE-V08-ALPHA5.md

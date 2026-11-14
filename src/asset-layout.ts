@@ -5,7 +5,7 @@ export function layoutAssets(families:AssetFamily[],columns:number,rowHeight:num
  const rows:AssetRow[]=[];let top=0;columns=Math.max(1,Math.floor(columns));
  for(let i=0;i<families.length;i+=columns){const chunk=families.slice(i,i+columns);rows.push({id:chunk[0].id,top,height:rowHeight,kind:'families',families:chunk});top+=rowHeight;
   for(const family of chunk)if(expanded[family.id]&&family.variants.length>1){rows.push({id:'heading:'+family.id,top,height:28,kind:'heading',family});top+=28;
-   for(let j=0;j<family.variants.length;j+=columns){const variants=family.variants.slice(j,j+columns);rows.push({id:variants[0].preset.key,top,height:variantRowHeight,kind:'variants',family,variants});top+=variantRowHeight;}
+   const height=family.type==='Gate'?rowHeight:variantRowHeight;for(let j=0;j<family.variants.length;j+=columns){const variants=family.variants.slice(j,j+columns);rows.push({id:variants[0].preset.key,top,height,kind:'variants',family,variants});top+=height;}
   }
  }return{rows,height:top};
 }
