@@ -114,7 +114,7 @@ LevelView.waters 增加可选 gridZ/kind/detectHoles/name/error；编辑绘制�
 新副本在提升前写入 _editor-test-copy.json，包含来源与前一份登记的指纹。目录切换成功但外部登记写入中断时，只在新副本哈希、程序哈希、版本及原登记指纹全部对应后恢复登记。此标记不绕过当前部署包的外部修改保护。准备和估算不处理测试存档；部署中的战役停用在副本准备成功之后执行。
 
 
-## v0.8 原版完整世界（独立 v4）
+## v0.8 原版完整世界（独立 v4，历史结构）
 
 `format: sinking-star-native-world, version: 4`。字段为 `id/name/sourceHash/sourceBuild/base:overworld`、`edits`（按 layer:x:y 分区登记 EditOp）、`levelEdits`（按原生小关名登记 EditOp）及 `assignments`（人工确认的区域归属元数据）。v3 工程保持原样，不就地升级或搬迁。
 
@@ -145,3 +145,15 @@ alpha.5 门闸本机放置草稿增加可选 `appearance`（up／down），只�
 
 
 alpha.6 本机 `GateDraft.colors` 为可选的8个数值，依次对应原生 tint_color_a 与 tint_color_b 的RGBA。新素材库配置从同色组原生短款参考复制染色，并写入 `PrefabOp.values`；缩略图和虚像读取同一个配置键。缺省该字段的历史配置保留来源染色，已有工程不自动改写。显式恢复颜色仅生成染色 properties 操作，不改变来源、频道或机关字段。
+
+## v0.9 统一完整世界（v5）
+
+`format: sinking-star-native-world, version: 5`。保留 `id/name/sourceHash/sourceBuild/base:overworld/assignments`。`operations` 是世界根场景按提交顺序应用的 EditOp 数组；`scenes` 是完整小关目录，每项 `{id,title,folderId?,project}`，project 使用现有 EditorProject。场景 ID 是原生输出名称，原版场景保持原名，新增与复制场景分配独立名称。目录 `directory:[{id,title}]` 为无嵌套关卡分组，场景最多属于一组；`editor` 为根场景编辑分组。可选 `camera/topology` 覆盖世界原生参数。v5 的旧 `edits/levelEdits` 为空映射，只供兼容结构。
+
+v4 迁移将 `Object.values(edits).flat()` 按原历史应用次序合并到 operations，小关修改进入对应 scenes.project。另存新 v5 文件，不能覆盖 v4 原文件。普通 v3 保持原格式。内部工作台将原生文档投影为带 `native` 标记的 WorldProject，以复用界面；此内部投影不作为原生世界磁盘格式，也不能送入二维大地图编译器。文档转换产生独立快照，后续修改不能反向改变编辑状态。
+
+原生世界构建保留原记录、原对象 ID、循环和未知字段，仅覆盖已修改的文件并增加新场景及资源别名。目录、标题、排序、编辑分组不进入原生构建修订。没有原生修改及场景集合变化时返回原包字节。删除原场景前检查入口、对象引用和 `.level_set` 序列；未开放的依赖不能静默移除。
+
+`nativeRegion` 可携带 XYZ bounds、overview、includeBackground，仍带 session/revision。世界根修改保持全局有序；窗口只裁剪返回视图，不改变修改归属或运行逻辑。主画布请求票据拒绝已取消、切关和旧范围结果。概览使用入口代理和粗地形；细节视图按原生实体 ID 更新。布局、任意 Z 显示范围及视角是本机偏好，不写入工程。保存、导出及试玩使用已提交的完整快照。
+
+`GateDraft.forceField` 可选 `{color:[r,g,b,a],brightness}`，与底座 `colors` 独立；写为原生 `force_field_color.x/y/z/w` 和 `force_field_brightness`。缺省原生值为浮点基准 0.1/0.8/0.7/0.7、亮度2，已有 diff 默认字节保持不变。目录 schemaRevision=4，更新门闸缩略图缓存；历史未携带该配置的工程保持来源值，只有明确恢复颜色才改写。

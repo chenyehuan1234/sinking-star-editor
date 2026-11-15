@@ -1,3 +1,5 @@
+import {nativeDocument,validateFolders} from '../native-project';
+import {validateNativeWorld} from './native-world';
 import {validateEditor,gameplayWorld,gameplayProject} from '../editor-organization';
 import { GamePackage,sha256 } from './package';
 import {parseEntities,writeEntities,type EntityFile,type EntityRecord}from './entities';
@@ -15,11 +17,12 @@ export function newWorld(hash:string,build:string):WorldProject {
   return{format:'sinking-star-world',version:1,id,name:'我的大地图',sourceHash:hash,sourceBuild:build,map:{width,height,tiles:Array.from({length:width*height},(_,i)=>{const x=i%width,y=Math.floor(i/width);return x>=2&&x<=18&&y>=2&&y<=14?1:0;}),spawn:[6,5],entries:[]},levels:[]};
 }
 export function validateWorld(w:WorldProject){
+  if(w?.native){validateNativeWorld(nativeDocument(w));return;}validateFolders(w?.levelGroups,w?.levels??[]);
   if(!w||w.format!=='sinking-star-world'||![1,2,3].includes(w.version)||!/^[a-f0-9]{12}$/.test(w.id)||typeof w.name!=='string'||w.name.length>100||!/^[a-f0-9]{64}$/.test(w.sourceHash)||typeof w.sourceBuild!=='string')throw new Error('大地图工程格式无效');
   validateEditor(w.map?.editor);const m=w.map;if(!m||!Number.isInteger(m.width)||!Number.isInteger(m.height)||m.width<4||m.width>128||m.height<4||m.height>128||!Array.isArray(m.tiles)||m.tiles.length!==m.width*m.height||!m.tiles.every(t=>[0,1,2].includes(t)))throw new Error('地图尺寸或地形无效（4–128 格）');
   if(m.objects)validateProject({format:'sinking-star-project',version:3,sourceHash:w.sourceHash,sourceBuild:w.sourceBuild,template:'mirror_1',name:'overworld',operations:m.objects});
   const point=(p:unknown)=>Array.isArray(p)&&p.length===2&&p.every(Number.isInteger)&&p[0]>=0&&p[1]>=0&&p[0]<m.width&&p[1]<m.height;
-  if(!point(m.spawn)||!Array.isArray(m.entries)||m.entries.length>200||!Array.isArray(w.levels)||w.levels.length>200)throw new Error('地图出生点或关卡数量无效');
+  if(!point(m.spawn)||!Array.isArray(m.entries)||m.entries.length>5000||!Array.isArray(w.levels)||w.levels.length>5000)throw new Error('地图出生点或关卡数量无效');
   const ids=new Set<string>(),names=new Set<string>();for(const l of w.levels){if(!validName(l.id)||ids.has(l.id)||typeof l.title!=='string')throw new Error('小关卡标识无效或重复');ids.add(l.id);validateProject(l.project);if(l.project.sourceHash!==w.sourceHash||l.project.sourceBuild!==w.sourceBuild)throw new Error('合集内关卡的源版本不一致');}
   for(const e of m.entries){if(!validName(e.id)||names.has(e.id)||typeof e.title!=='string'||typeof e.levelId!=='string'||!point([e.x,e.y]))throw new Error('入口标识或位置无效');if(e.prototype&&(!validName(e.prototype.template)||!Number.isInteger(e.prototype.sourceId)||e.prototype.sourceId<1||e.prototype.sourceId>0xffffffff))throw new Error('入口样式无效');names.add(e.id);}
 }
@@ -99,8 +102,9 @@ export class WorldCompiler {
     const spawn=selected?[selected.x,selected.y] as[number,number]:w.map.spawn;
     const revision=(Number.parseInt(sha256('world-compiler-5'+JSON.stringify(gameplayWorld(w))).slice(0,7),16)%0x3fffffff)+1000;
     const changes=new Map<string,Buffer>(),resources:WorldBuild['resources']=[],levelNames:Record<string,string>={};
+    for(const l of w.levels)levelNames[l.id]=`ed_${w.id}_${l.id}`;
     for(const l of w.levels){
-      const name=`ed_${w.id}_${l.id}`;levelNames[l.id]=name;const f=applyProject(this.pkg,l.project,this.codec);
+      const name=`ed_${w.id}_${l.id}`;levelNames[l.id]=name;const f=applyProject(this.pkg,l.project,this.codec);f.records=f.records.map(r=>{if(r.type!=='Door')return r;const values:Record<string,string>={};for(const field of ['target_level','switch_to_level_set']){const target=String(this.codec.get(r,field,'')),level=w.levels.find(l=>l.id===target||l.project.name===target);if(level)values[field]=levelNames[level.id];}return Object.keys(values).length?this.codec.patch(r,values):r;});
       const refs=validateReferences(this.codec,f);if(refs.length)throw new Error(`「${l.title}」：${refs.join('；')}`);
       if(!f.records.some(r=>r.type==='Guy'))throw new Error(`「${l.title}」缺少主角`);
       if(l.project.base?.kind==='blank'&&!f.records.some(r=>r.type==='Door'))throw new Error(`「${l.title}」缺少出口`);

@@ -38,7 +38,7 @@ export function validateProject(value: unknown): asserts value is EditorProject 
     if(o.kind==='properties'&&o.sourceTemplate!==undefined&&!validName(o.sourceTemplate))throw new Error('属性资源来源无效');
   }
 }
-export function validName(s: unknown): s is string {return typeof s==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(s);}
+export function validName(s: unknown): s is string {return typeof s==='string'&&/^[a-zA-Z0-9_.-]{1,100}$/.test(s)&&s!=='.'&&!s.includes('..');}
 export function applyProject(pkg:GamePackage,project:EditorProject,codec?:PropertyCodec,base?:EntityFile):EntityFile {
   validateProject(project);
   const f=base??(project.base?.kind==='blank'?(codec?blankFile(pkg,codec,project.base.width,project.base.height):(()=>{throw new Error('空白场景需要游戏类型信息');})()):parseEntities(pkg.get(`data-common/${project.template}.entities`)));

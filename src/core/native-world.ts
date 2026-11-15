@@ -1,3 +1,5 @@
+import {validateFolders} from '../native-project';
+import {validateEditor} from '../editor-organization';
 import type {NativeWorldProject,NativeWorldIndex,NativeWorldCell,NativeLayer,NativeRegionRequest,NativeRegionResult} from '../v08-types';
 import type {EditOp,EditorProject,Vec3} from '../shared';
 import {GamePackage,sha256} from './package';import {parseEntities,writeEntities,position as nativePosition,type EntityFile,type EntityRecord} from './entities';
@@ -6,12 +8,13 @@ import {localizationEntries,nativeRegionsFromFile} from './native-regions';
 import {mergeManifests} from './manifests';
 import {waterView} from './water';import {topologyView} from './topology';import {validateReferences} from './mechanisms';
 export function validateNativeWorld(value:unknown):asserts value is NativeWorldProject {
- const w=value as NativeWorldProject;if(!w||w.format!=='sinking-star-native-world'||w.version!==4||!/^[a-f0-9]{12}$/.test(w.id)||typeof w.name!=='string'||w.name.length>100||!/^[a-f0-9]{64}$/.test(w.sourceHash)||typeof w.sourceBuild!=='string'||w.base!=='overworld'||!w.edits||Array.isArray(w.edits)||typeof w.edits!=='object'||!w.levelEdits||Array.isArray(w.levelEdits)||typeof w.levelEdits!=='object'||!Array.isArray(w.assignments))throw Error('原版世界 v4 工程无效');
+ const w=value as NativeWorldProject;if(!w||w.format!=='sinking-star-native-world'||![4,5].includes(w.version)||!/^[a-f0-9]{12}$/.test(w.id)||typeof w.name!=='string'||w.name.length>100||!/^[a-f0-9]{64}$/.test(w.sourceHash)||typeof w.sourceBuild!=='string'||w.base!=='overworld'||!w.edits||Array.isArray(w.edits)||typeof w.edits!=='object'||!w.levelEdits||Array.isArray(w.levelEdits)||typeof w.levelEdits!=='object'||!Array.isArray(w.assignments))throw Error('原版世界 v4 工程无效');
+ if(w.version===5){if(!Array.isArray(w.scenes)||w.scenes.length>5000||!Array.isArray(w.operations))throw Error('完整世界场景目录无效');const ids=new Set<string>();for(const l of w.scenes){if(!validName(l.id)||l.id==='overworld'||ids.has(l.id)||typeof l.title!=='string'||l.title.length>100)throw Error('场景标识或名称无效');ids.add(l.id);validateProject(l.project);if(l.project.sourceHash!==w.sourceHash||l.project.sourceBuild!==w.sourceBuild)throw Error('场景来源不匹配');}validateFolders(w.directory,w.scenes);validateEditor(w.editor);validateProject({format:'sinking-star-project',version:3,sourceHash:w.sourceHash,sourceBuild:w.sourceBuild,template:'overworld',name:'overworld',operations:w.operations,camera:w.camera,topology:w.topology});}
  for(const[scene,ops]of [...Object.entries(w.edits),...Object.entries(w.levelEdits)]){if(!validName(scene.replaceAll(':','_')))throw Error('场景索引无效');validateProject({format:'sinking-star-project',version:3,sourceHash:w.sourceHash,sourceBuild:w.sourceBuild,template:'overworld',name:'overworld',operations:ops});}
  for(const a of w.assignments)if(!['ground','sky','underground'].includes(a.layer)||!Array.isArray(a.cell)||a.cell.length!==2||!a.cell.every(Number.isInteger)||typeof a.areaId!=='string'||a.areaId.length>120)throw Error('区域归属无效');
 }
 export class NativeWorldEngine {
- private file:EntityFile;private rows=new Map<number,EntityRecord>();private buckets=new Map<string,number[]>();private wide:{id:number;min:Vec3;max:Vec3}[]=[];
+ protected file:EntityFile;private rows=new Map<number,EntityRecord>();private buckets=new Map<string,number[]>();private wide:{id:number;min:Vec3;max:Vec3}[]=[];
  private indexValue:NativeWorldIndex;private lower:number;private upper:number;private origin:[number,number];private screen:[number,number];
  private cache=new Map<string,NativeRegionResult>();private appliedCache=new Map<string,EntityFile>();private indexCache=new Map<string,NativeWorldIndex>();private referenceBaseline?:Set<string>;
  private nextId(file:EntityFile){let next=900*0x100000+1;for(const r of file.records)if((r.id>>>20)===900)next=Math.max(next,r.id+1);if(next>=901*0x100000)throw Error('新增物件编号已用完');return next;}

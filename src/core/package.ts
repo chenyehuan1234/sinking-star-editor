@@ -38,9 +38,9 @@ export class GamePackage {
     if (!entry) throw new Error(`包内不存在：${name}`);
     return entry.data;
   }
-  rebuild(changes = new Map<string, Buffer>()): Buffer {
-    if (!changes.size) return Buffer.from(this.buffer);
-    const list = this.entries.map(e => ({ name: e.name, data: changes.get(e.name) ?? e.data }));
+  rebuild(changes = new Map<string, Buffer>(),removed=new Set<string>()): Buffer {
+    if (!changes.size&&!removed.size) return Buffer.from(this.buffer);
+    const list = this.entries.filter(e=>!removed.has(e.name)).map(e => ({ name: e.name, data: changes.get(e.name) ?? e.data }));
     for (const [name, data] of changes) if (!this.entries.some(e => e.name === name)) list.push({ name, data });
     const header = Buffer.from(this.buffer.subarray(0,64));
     const toc = Buffer.from(this.buffer.subarray(this.tocOffset,this.tocOffset+64));

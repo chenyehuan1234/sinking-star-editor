@@ -22,7 +22,7 @@ export function organizeOperations(meta:EditorMetadata|undefined,ops:EditOp[]){
 }
 /** Editor-only metadata must never change native revisions or test progress. */
 export function gameplayProject(p:EditorProject):EditorProject{const{editor,sourceEvidence,...rest}=p;return rest;}
-export function gameplayWorld(w:WorldProject):WorldProject{const{editor,...map}=w.map;const{sourceEvidence,...rest}=w;return{...rest,map,levels:w.levels.map(l=>({...l,project:gameplayProject(l.project)}))};}
+export function gameplayWorld(w:WorldProject):WorldProject{const{editor,...map}=w.map;const{sourceEvidence,levelGroups,...rest}=w;return{...rest,map,levels:w.levels.map(l=>({id:l.id,title:l.id,project:gameplayProject(l.project)})).sort((a,b)=>a.id.localeCompare(b.id))};}
 
 export function operationTargets(op:EditOp):number[]{return op.kind==='control'?op.ids:op.kind==='duplicate'?op.copies.map(c=>c.id):[op.id];}
 

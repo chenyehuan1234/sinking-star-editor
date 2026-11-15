@@ -103,3 +103,12 @@ scripts/*
 
 !docs/RELEASE-V08-ALPHA6.md
 !docs/screenshots/gate-color-variants.png
+!scripts/v09-check.mjs
+!scripts/v09-check-renderer.tsx
+!scripts/v09-entry-check.mjs
+!scripts/v09-entry-check-renderer.tsx
+!scripts/v09-benchmark.ts
+!docs/RELEASE-V09-ALPHA1.md
+!docs/V09-ACCEPTANCE.md
+!docs/screenshots/native-world-v09.png
+!docs/screenshots/native-entry-v09.png

@@ -10,7 +10,7 @@ export function diffPreview(previous:LevelView|null,next:LevelView,request:Previ
  if(!previous||previous.name!==next.name)return{...out,full:next};
  const byId=new Map(previous.entities.map(e=>[e.id,e]));out.entities=next.entities.filter(e=>!equal(byId.get(e.id),e));const ids=new Set(next.entities.map(e=>e.id));out.removed=previous.entities.filter(e=>!ids.has(e.id)).map(e=>e.id);
  const before=chunkTerrain(previous.terrain??[]),after=chunkTerrain(next.terrain??[]);out.chunks=[...new Set([...before.keys(),...after.keys()])].filter(k=>!equal(before.get(k)??[],after.get(k)??[])).map(k=>[k,after.get(k)??[]]);out.fields={};
- for(const key of ['name','typeCount','manifest','waters','camera','topology']as const)if(!equal(previous[key],next[key]))(out.fields as any)[key]=next[key];return out;
+ for(const key of ['name','typeCount','manifest','waters','camera','topology','overview','partial','externalTargets']as const)if(!equal(previous[key],next[key]))(out.fields as any)[key]=next[key];return out;
 }
 export function mergePreview(previous:LevelView|null,delta:PreviewDelta,baseRevision?:number):LevelView{
  if(delta.full)return delta.full;
