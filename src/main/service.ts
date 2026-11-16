@@ -1,3 +1,4 @@
+import {registerMaterialResolver} from '../render-purpose';
 import {gameplayProject} from '../editor-organization';
 import {decodeGateKey,gateValues} from '../gate-config';
 import {nativeQuaternion} from '../editor-math';
@@ -34,7 +35,7 @@ import type{WorldProject,WorldIssue}from'../shared';
 import{ExeReflection}from'../core/reflection';import{PropertyCodec}from'../core/properties';
 import{WorldCompiler,newWorld,validateWorld,worldIssues}from'../core/world';
 import{prefabs,validateReferences}from'../core/mechanisms';import{CampaignManager}from'./campaigns';
-import {buildObjectCatalog} from '../core/object-catalog';
+import {buildObjectCatalog,currentCatalogLabels} from '../core/object-catalog';
 import type {ObjectCatalog} from '../catalog-types';
 import {NativeAssets} from './assets';
 import {Worker} from 'node:worker_threads';
@@ -106,7 +107,7 @@ export class EditorService {
     // Connecting and browsing are read-only toward the game's save directory.
     // A failed new connection must leave the previously usable installation intact.
     await this.previews?.dispose();this.previews=undefined;await this.assets?.dispose();this.objects=undefined;this.pkg=pkg;this.sourceHash=sourceHash;this.exeHash=sha256(exe);this.gamePath=root;this.stamp=`${st.size}:${st.mtimeMs}`;this.codec=codec;this.assetFiles=assetFiles;this.build=build;
-    this.assets=codec?new NativeAssets(root,this.workspace,sourceHash+codec.reflection.hash,assetFiles,materials!,this.workerFile):undefined;
+    this.assets=codec?new NativeAssets(root,this.workspace,sourceHash+codec.reflection.hash,assetFiles,materials!,this.workerFile):undefined;if(this.assets){const assets=this.assets;registerMaterialResolver(this.pkg,name=>assets.material(name).shader);}
     this.schemaCache='';this.compiler=codec?new WorldCompiler(pkg,codec):undefined;
     let runtimeVerified=false;try{const e=JSON.parse(await fs.readFile(path.join(this.workspace,'playtest-evidence.json'),'utf8'));runtimeVerified=e.runtimeVerified===true&&e.sourceHash===this.sourceHash;}catch{}
     return {gamePath:root,sourceHash:this.sourceHash,build:this.build,workspace:this.workspace,compatibility:((this.sourceHash==='d747e5d9b8f540c9c6b90e8e987bd74a8c7f8f2f0672fce189403128f1f3117c'&&this.codec?.reflection.hash==='d802098b7cb85eadfc733b88d1554042fad950c572e916febea3f669a474a549')||(this.sourceHash==='408aba3676925faea0c823f8c231e30844feffe9c32ae42644d273ef31863589'&&this.codec?.reflection.hash==='0ae10a513dae25286fe93d0db4fa8a2df9a473bc07e1734e12bc1ad30166db1c')||(this.sourceHash==='a736bb1c2b6d44b80fb6de5b30a1f93308ebac0d3ead0e7c022b58a0eee47314'&&this.exeHash==='978b302fd0952e4ea8d869553aec875d9c635278a7d0f8cdb752f5a797a370aa'))?'数据回归版本；游戏内运行仍需实测':'当前版本未经回归；已通过结构解析，试玩需实测',levels:pkg.entries.filter(e=>e.name.endsWith('.entities')).map(e=>path.basename(e.name,'.entities')),regions,runtimeVerified};
@@ -139,7 +140,7 @@ export class EditorService {
   async thumbnailWrite(key:string,png:string){const file=this.thumbnailPath(key);if(typeof png!=='string'||!png.startsWith('data:image/png;base64,')||png.length>2_000_000)throw new Error('缩略图数据无效');const data=Buffer.from(png.slice(22),'base64');if(data.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw new Error('缩略图必须是 PNG');await atomicWrite(file,data);queueCacheTrim(this.workspace);}
   async objectCatalog():Promise<ObjectCatalog>{
     await this.unchanged();if(!this.codec)throw new Error('对象目录需要游戏类型信息');
-    return this.objects??=(async()=>{const file=path.join(this.workspace,'cache',`catalog-${this.sourceHash}-${this.codec!.reflection.hash}.json`);try{const c=JSON.parse(await fs.readFile(file,'utf8'))as ObjectCatalog;if(c.version===1&&c.schemaRevision===4&&c.sourceHash===this.sourceHash&&c.exeHash===this.codec!.reflection.hash)return c;}catch{}
+    return this.objects??=(async()=>{const file=path.join(this.workspace,'cache',`catalog-${this.sourceHash}-${this.codec!.reflection.hash}.json`);try{const c=JSON.parse(await fs.readFile(file,'utf8'))as ObjectCatalog;if(c.version===1&&c.schemaRevision===4&&c.sourceHash===this.sourceHash&&c.exeHash===this.codec!.reflection.hash)return currentCatalogLabels(c);}catch{}
       const c=await new Promise<ObjectCatalog>((resolve,reject)=>{const worker=new Worker(path.join(path.dirname(this.workerFile),'catalog-worker.cjs'));worker.once('message',m=>{void worker.terminate();m.error?reject(new Error(m.error)):resolve(m.value);});worker.once('error',reject);worker.once('exit',code=>{if(code!==0&&code!==1)reject(new Error('对象扫描线程异常退出'));});worker.postMessage({root:this.gamePath,build:this.build});});
       await atomicWrite(file,JSON.stringify(c));return c;})();
   }

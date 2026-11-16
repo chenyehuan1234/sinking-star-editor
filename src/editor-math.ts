@@ -5,7 +5,7 @@ export const isScenery=(e:EntityView)=>['Inanimate','Decal','Animating','Procedu
 export const isAdded=(e:EntityView)=>!e.generatedSurface&&[899,900].includes(e.id>>>20);
 export function gameplayObject(e:EntityView){return e.editable&&!['Inanimate','Decal','Animating','Procedurally_Animating','Group','Marker','Wall_Set','Ocean_Map','Level_Entry','Camera_Marker','Trigger','Outline_Override'].includes(e.type);}
 export function designVisible(e:EntityView,showBackground=false){return gameplayObject(e)||isAdded(e)||showBackground&&isScenery(e);}
-export function selectableObject(e:EntityView,unlockBackground=false){return e.editable&&!e.generatedSurface&&(gameplayObject(e)||isAdded(e)||unlockBackground)&&!['Level_Entry','Camera_Control','Camera_Marker'].includes(e.type);}
+export function selectableObject(e:EntityView,unlockBackground=false){return e.editable&&!e.generatedSurface&&(e.type==='Ocean_Map'||gameplayObject(e)||isAdded(e)||unlockBackground)&&!['Level_Entry','Camera_Control','Camera_Marker'].includes(e.type);}
 export function rectangleCells(a:Vec3,b:Vec3,spacing:[number,number]=[1,1],limit=4096):Vec3[]{
   const minX=Math.min(Math.round(a[0]),Math.round(b[0])),maxX=Math.max(Math.round(a[0]),Math.round(b[0])),minY=Math.min(Math.round(a[1]),Math.round(b[1])),maxY=Math.max(Math.round(a[1]),Math.round(b[1]));
   const sx=Math.max(1,Math.round(spacing[0])),sy=Math.max(1,Math.round(spacing[1])),count=(Math.floor((maxX-minX)/sx)+1)*(Math.floor((maxY-minY)/sy)+1);if(count>limit)throw new Error(`一次最多铺设 ${limit} 格，请缩小区域`);

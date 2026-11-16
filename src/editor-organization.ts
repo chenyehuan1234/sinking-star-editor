@@ -1,16 +1,18 @@
 import type {EditOp,EditorProject,WorldProject} from './shared';
 export type ObjectKey=`entity:${number}`|`entry:${string}`;
 export interface EditorGroup {id:string;name:string;members:ObjectKey[]}
-export interface EditorMetadata {groups:EditorGroup[]}
+export interface CameraPlan {start:[number,number];columns:number;rows:number}
+export interface EditorMetadata {groups:EditorGroup[];cameraPlan?:CameraPlan}
 export const entityKey=(id:number):ObjectKey=>`entity:${id}`;
 export const entryKey=(id:string):ObjectKey=>`entry:${id}`;
 export function validateEditor(v:EditorMetadata|undefined){
  if(v===undefined)return;
  if(!v||!Array.isArray(v.groups)||v.groups.length>2000)throw Error('编辑分组数据无效');
+ const p=v.cameraPlan;if(p&&(!Array.isArray(p.start)||p.start.length!==2||p.start.some(n=>!Number.isInteger(n)||Math.abs(n)>10000)||![p.columns,p.rows].every(n=>Number.isInteger(n)&&n>=1&&n<=512)))throw Error('分屏规划范围无效');
  const ids=new Set<string>(),members=new Set<string>();
  for(const g of v.groups){if(!g||typeof g.id!=='string'||!g.id||g.id.length>256||ids.has(g.id)||typeof g.name!=='string'||!g.name.trim()||g.name.length>100||!Array.isArray(g.members)||g.members.length>10000)throw Error('编辑分组名称或标识无效');ids.add(g.id);for(const k of g.members){if(typeof k!=='string'||!/^entity:[1-9]\d*$|^entry:[a-zA-Z0-9_-]+$/.test(k)||members.has(k))throw Error('编辑分组成员重复或无效');if(k.startsWith('entity:')&&Number(k.slice(7))>0xffffffff)throw Error('物件标识越界');members.add(k);}}
 }
-export function removeMembers(meta:EditorMetadata|undefined,keys:Set<ObjectKey>):EditorMetadata|undefined{return meta?{groups:meta.groups.map(g=>({...g,members:g.members.filter(k=>!keys.has(k))}))}:undefined;}
+export function removeMembers(meta:EditorMetadata|undefined,keys:Set<ObjectKey>):EditorMetadata|undefined{return meta?{...meta,groups:meta.groups.map(g=>({...g,members:g.members.filter(k=>!keys.has(k))}))}:undefined;}
 export function copyGroups(meta:EditorMetadata|undefined,map:Map<ObjectKey,ObjectKey>,suffix:string):EditorGroup[]{return(meta?.groups??[]).flatMap((g,index)=>{const members=g.members.flatMap(k=>map.has(k)?[map.get(k)!]:[]);return members.length?[{id:'copy_'+suffix+'_'+index,name:g.name.slice(0,97)+' 副本',members}]:[];});}
 export function organizeOperations(meta:EditorMetadata|undefined,ops:EditOp[]){
  let result=meta?structuredClone(meta):undefined;

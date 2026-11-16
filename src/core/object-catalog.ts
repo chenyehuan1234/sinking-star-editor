@@ -35,6 +35,11 @@ function presetLabel(type:string,mesh:string,sig:Record<string,NativeValue>){
   if(type==='Mirror')return(sig.is_magic?'魔法镜':'普通镜')+(sig.is_vertical?sig.is_vertical_downward?' · 向下反射':' · 向上反射':'')+(sig.mirrorable?' · 可镜像':'');
   return(OBJECT_BY_TYPE.get(type)?.label??type)+(mesh?' · '+mesh:'');
 }
+// Text-only cache migration keeps preset identities and avoids rescanning native resources.
+export function currentCatalogLabels(catalog:ObjectCatalog):ObjectCatalog{
+  const def=OBJECT_BY_TYPE.get('View_Giver')!;
+  return{...catalog,types:catalog.types.map(t=>t.type==='View_Giver'?{...t,label:def.label,description:def.description,fields:t.fields.map(f=>({...f,label:def.fields[f.name]??f.label}))}:t),presets:catalog.presets.map(p=>p.type==='View_Giver'?{...p,label: presetLabel(p.type,p.mesh,p.signature)}:p)};
+}
 export function buildObjectCatalog(pkg:GamePackage,codec:PropertyCodec,build:string,assetFiles:string[]):ObjectCatalog{
   const levels=pkg.entries.filter(e=>e.name.endsWith('.entities'));
   const counts=new Map<string,{instances:number;completeInstances:number}>(),presets=new Map<string,ObjectPreset>();let entities=0;

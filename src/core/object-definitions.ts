@@ -51,7 +51,7 @@ export const OBJECT_DEFINITIONS:ObjectDefinition[]=[
   d('Area_Pin','地图区域标记','world','区域名称、图片与标签位置。',{local_area_name:'区域名称',local_area_image:'区域图片',map_label_marker_id:'标签位置标记'},'assembly',['区域标记']),
   d('Overworld_Unlock','返回世界解锁器','world','原生返回世界或部分完成标记。',{},'assembly',['原版关卡上下文']),
   d('Impeller','原生返程目标','world','飞石等原生关卡返程目标。',{},'assembly',['原版关卡上下文']),
-  d('View_Giver','地图视野道具','world','关联原生总览视图，非场景照明。',{map_overview_id:'总览视图',map_overview_id_2:'第二总览视图',viewpoint_name:'原生视点名称'},'assembly',['原生总览摄像机']),
+  d('View_Giver','视角卷轴','world','解锁原生额外视角；视点名称关联同名辅助镜头，总览通过镜头 ID 关联。',{map_overview_id:'总览视图',map_overview_id_2:'第二总览视图',viewpoint_name:'原生视点名称'},'assembly',['原生总览摄像机']),
   d('Annihilator','消除区域','advanced','原生边界／消除区域组合。',{expand_bounds:'范围扩张',fade_entity_distance:'原生渐隐距离'},'assembly',['区域边界']),
   d('Fog_Of_War','探索迷雾','world','玩法探索范围；与渲染雾效果分开。',{primary:'主要探索层',clear_as_part_of_room:'随房间揭开'},'assembly',['关卡分屏和高度层']),
   d('Fog_Of_War_Clear','探索揭雾区域','world','原生邻屏或范围揭雾。',{radius:'揭开半径',clear_neighboring_screen:'邻接屏幕方向',cleared_on_load:'加载时揭开'},'assembly',['探索迷雾']),

@@ -9,11 +9,11 @@ test('冻结的Electron接口可适配；单关及关卡组仅传选中场景，
  for(const r of [{mode:'single',levelIds:['scene_2']},{mode:'subset',levelIds:['scene_4','scene_8']}] as RunRequest[]){await api.runPlan(source,r);const call=calls.at(-1)!;assert.equal(call.w.native,undefined);assert.equal(call.w.id,source.id);assert.deepEqual(call.w.levels.map(l=>l.id),r.levelIds);assert.ok(call.w.map.tiles.every(Boolean));assert.deepEqual(call.r,r);}
  assert.equal(source.levels.length,993);assert.ok(source.native);
 });
-test('世界范围请求保留负Z和修订号，概览切到细节会清掉旧概览标记',async()=>{
+test('世界范围请求保留负Z和修订号，不因缩远切换概览代理',async()=>{
  const requests:any[]=[],view:LevelView={name:'overworld',typeCount:1,entities:[],manifest:'',terrain:[],overview:true};
- const base={nativeRegion:async(r:any)=>{requests.push(r);return {view:{...view,overview:requests.length===1?true:undefined},elapsedMs:1};}} as unknown as EditorApi;
+ const base={nativeRegion:async(r:any)=>{requests.push(r);return {view:{...view,overview:r.overview?true:undefined},elapsedMs:1};}} as unknown as EditorApi;
  const bridge=createWorkbenchApi(base),w=world();bridge.setRange({min:[-20,-30,-8],max:[25,40,3],overview:true});
- const first=await bridge.api.previewUpdate({world:w,scene:w.id+':world',revision:1});const initial=mergePreview(null,first);assert.equal(initial.overview,true);
+ const first=await bridge.api.previewUpdate({world:w,scene:w.id+':world',revision:1});const initial=mergePreview(null,first);assert.equal(initial.overview,undefined);assert.equal(requests[0].overview,false);
  bridge.setRange({min:[-20,-30,-8],max:[25,40,3],overview:false});const second=await bridge.api.previewUpdate({world:w,scene:w.id+':world',revision:2,baseRevision:1});
  assert.equal(mergePreview(initial,second,1).overview,undefined);assert.equal(requests[1].revision,2);assert.deepEqual(requests[1].bounds.min,[-20,-30,-8]);assert.equal(requests[1].project.version,5);
 });

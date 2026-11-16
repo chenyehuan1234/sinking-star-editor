@@ -1,3 +1,4 @@
+import {resolveEntityAppearance} from '../render-purpose';
 import{applyWater,waterView,validateWaterOp,WATER_TEMPLATE}from'./water';
 import {validateEditor,gameplayWorld,gameplayProject} from '../editor-organization';
 import{applyCharacterControl}from'./character-control';import{applyTopology,topologyView,validateTopology}from'./topology';
@@ -94,7 +95,7 @@ export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:Pr
     const raw=codec?Object.fromEntries(codec.parse(r).fields.map(f=>[f.schema.name,f.value])):{};
     const vector=(n:string,d:number)=>['x','y','z'].map(a=>Number(raw[n+'.'+a]??d))as[number,number,number];
     const nativeProperties=codec&&editable?objectFields(codec,r.type).filter(f=>f.access==='design'&&!/^(position|orientation|scale|visual_position|tint_color_[ab])\./.test(f.name)).map(field=>({field,value:raw[field.name]??nativeFieldDefault(r.type,field.name,field.kind),defaulted:raw[field.name]===undefined})):undefined;
-    return {id:r.id,type:r.type,position:position(r),yaw:yawOf(r),editable,bytes:r.diff.length,mesh:codec?String(raw.mesh??''):field?r.diff.toString('utf8',field.value,field.end):'',cloneable:editable&&(codec?editableType(r.type):['Mirror','Rock'].includes(r.type)),properties:codec?mechanismProperties(codec,r):[],scale:vector('scale',1),rotation:[...vector('orientation',0),Number(raw['orientation.w']??1)]as[number,number,number,number],tint:vector('tint_color_a',1),materials:Array.isArray(raw.materials)?raw.materials as string[]:[],accessoryMask:r.type==='Monster'?Number(raw.accessory_mask??0):undefined,generatedSurface:['Inanimate','Wall_Set'].includes(r.type)&&String(raw.entity_name??'').startsWith('editor_voxel_'),nativeProperties};
+    return resolveEntityAppearance(pkg,{nativeFlags:String(raw.entity_flags??0),id:r.id,type:r.type,position:position(r),yaw:yawOf(r),editable,bytes:r.diff.length,mesh:codec?String(raw.mesh??''):field?r.diff.toString('utf8',field.value,field.end):'',cloneable:editable&&(codec?editableType(r.type):['Mirror','Rock'].includes(r.type)),properties:codec?mechanismProperties(codec,r):[],scale:vector('scale',1),rotation:[...vector('orientation',0),Number(raw['orientation.w']??1)]as[number,number,number,number],tint:vector('tint_color_a',1),materials:Array.isArray(raw.materials)?raw.materials as string[]:[],accessoryMask:r.type==='Monster'?Number(raw.accessory_mask??0):undefined,generatedSurface:['Inanimate','Wall_Set'].includes(r.type)&&String(raw.entity_name??'').startsWith('editor_voxel_'),nativeProperties});
   })};
 }
 

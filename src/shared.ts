@@ -27,19 +27,19 @@ export interface RecoveryItem {id:string;name:string;at:string;kind:"auto"|"manu
 export interface AssemblyItem {id:string;name:string;at:string;bundle:RegionBundle}
 export type EditOp=WaterCreateOp|WaterResizeOp|WaterPaintOp|ControlOp|StampOp|TransformOp|CloneOp|DeleteOp|PropertiesOp|PrefabOp|TerrainOp|ProfileOp|DuplicateOp;
 export type ProjectBase={kind:'template';template:string}|{kind:'blank';width:number;height:number};
-export interface CameraOverride {id:number;position?:Vec3;target?:Vec3;upDistance?:number;southDistance?:number;fov?:number;panRate?:number;yaw?:number}
+export interface CameraOverride {id:number;position?:Vec3;target?:Vec3;upDistance?:number;southDistance?:number;lookAtSouthDistance?:number;fov?:number;panRate?:number;yaw?:number}
 export type CameraObjectKind='play'|'overview'|'height-lock'|'limiter'|'overview-region';
 export type CameraObjectEdit={kind:'clone';sourceId:number;sourceTemplate?:string;ids:Record<string,number>;offset:Vec3}|{kind:'patch';id:number;values:Record<string,number|string|boolean>}|{kind:'delete';ids:number[]};
 export type CameraObjectRequest={action:'create';kind:CameraObjectKind;position:Vec3}|{action:'clone';id:number;offset:Vec3}|{action:'delete';id:number};
 export interface CameraConfig {mode:'template'|'single'|'screens';screenSize?:[number,number];origin?:[number,number];margins?:[number,number];controls?:CameraOverride[];edits?:CameraObjectEdit[]}
-export interface NativeCameraView {id:number;name:string;position:Vec3;rotation:[number,number,number,number];overview:boolean;primary:boolean;upDistance:number;southDistance:number;fov:number;panRate:number;positionId?:number;lookAtId?:number;resolvedPosition?:Vec3;resolvedTarget?:Vec3}
+export interface NativeCameraView {id:number;name:string;position:Vec3;rotation:[number,number,number,number];overview:boolean;primary:boolean;upDistance:number;southDistance:number;lookAtSouthDistance?:number;fov:number;panRate:number;positionId?:number;lookAtId?:number;resolvedPosition?:Vec3;resolvedTarget?:Vec3}
 export interface CameraRegion {id:number;position:Vec3;extents:Vec3;kind:number;cameraId:number;category?:CameraObjectKind;name?:string;priority?:number;sourceType?:'Camera_Marker'|'Marker';targetId?:number;nativeParameter?:number}
 export interface CameraView {perScreen:boolean;screenSize:[number,number];origin:[number,number];margins:[number,number];controls:NativeCameraView[];regions:CameraRegion[];references?:{sourceId:number;field:string;targetId:number}[]}
 export interface TopologyConfig {corner:Vec3;size:Vec3;wrapping:boolean;wrappingOverride:number;forceWrappingOverride:boolean}
 export interface NativeTopologyView extends TopologyConfig {perScreen:boolean;maskCount:number}
 export interface EditorProject {sourceEvidence?:import('./core/compatibility').SourceEvidence; format:'sinking-star-project'; version:1|2|3; sourceHash:string; sourceBuild:string; template:string; base?:ProjectBase; name:string; operations:EditOp[];editor?:EditorMetadata;camera?:CameraConfig;topology?:TopologyConfig }
 export interface EditableProperty {name:string;label:string;kind:'number'|'boolean'|'target';value:number|boolean;min?:number;max?:number;targets?:string[]}
-export interface EntityView {id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue;defaulted?:boolean}[]}
+export interface EntityView {renderPurpose?:import('./render-purpose').RenderPurpose;nativeFlags?:string;id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue;defaulted?:boolean}[]}
 export interface LevelView {overview?:boolean;partial?:boolean;externalTargets?:{id:number;type:string;position:Vec3}[];name:string;entities:EntityView[];typeCount:number;manifest:string;camera?:CameraView;topology?:NativeTopologyView;terrain?:{x:number;y:number;z:number;id?:number}[];waters?:WaterView[]}
 export type Tile=0|1|2;
 export interface WorldEntry {id:string;title:string;levelId:string;x:number;y:number;prototype?:{template:string;sourceId:number}}

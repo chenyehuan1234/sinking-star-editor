@@ -1,7 +1,7 @@
 /** Editor-only layout data. Never stored in or compiled into a game project. */
 export const panelDefinitions = [
   ['scene','主画布','cube'],['levels','关卡','world'],['objects','场景物件','select'],['assets','素材与快捷槽','template'],['inspector','属性','settings'],
-  ['camera','游戏镜头','eye'],['cameraRegions','原生区域与分层镜头','grid'],['topology','循环与边界','world'],['placement','放置设置','magnet'],['water','水域与水流','flow'],
+  ['camera','镜头','eye'],['cameraRegions','镜头（旧入口）','grid'],['topology','循环与边界','world'],['placement','放置设置','magnet'],['water','水域与水流','flow'],
   ['groups','编辑分组','folder'],['array','阵列复制','stamp'],['mechanisms','机关检查','warning'],['relations','机关关联','link'],['display','显示与选择','eye'],
   ['region','区域复制','copy'],['library','我的组合','folder'],['recovery','保存与恢复','clock'],['native','原版关卡目录','template'],
   ['validation','工程检查','check'],['settings','快捷键与鼠标','settings'],['workspace','工作区设置','folder'],['guide','操作指南','help']
@@ -65,5 +65,7 @@ export function readWorkspace(value:unknown):WorkspaceLayout|null {try{
   const root=v.root===null?null:node(v.root);const floating=v.floating.map(f=>{if(!f||![f.x,f.y,f.width,f.height].every(Number.isFinite)||f.width<1||f.height<1)throw Error('float');const g=node(f.group);if(g.kind!=='group')throw Error('float group');return {...f,group:g};});
   const hidden=v.hidden.map(take);if(!seen.has('scene')||hidden.includes('scene'))return null;for(const[p]of panelDefinitions)if(!seen.has(p))hidden.push(p);
   const homes:Partial<Record<PanelId,PanelHome>>={};if(v.homes&&typeof v.homes==='object')for(const[p,h]of Object.entries(v.homes)){if(!isPanel(p)||!h||!['center','left','right','top','bottom'].includes(h.zone)||h.peer!==undefined&&(!isPanel(h.peer)||h.peer===p)||h.ratio!==undefined&&(!Number.isFinite(h.ratio)||h.ratio<.08||h.ratio>.92)||h.index!==undefined&&(!Number.isInteger(h.index)||h.index<0||h.index>panelDefinitions.length))continue;if(h.floating&&(![h.floating.x,h.floating.y,h.floating.width,h.floating.height].every(Number.isFinite)||h.floating.width<1||h.floating.height<1))continue;homes[p]=h;}
-  return {version:1,root,floating,hidden,locked:v.locked===true,maximized:isPanel(v.maximized)&&!hidden.includes(v.maximized)?v.maximized:null,...Object.keys(homes).length?{homes}:{}};
+  return mergeCameraPanels({version:1,root,floating,hidden,locked:v.locked===true,maximized:isPanel(v.maximized)&&!hidden.includes(v.maximized)?v.maximized:null,...Object.keys(homes).length?{homes}:{}});
 }catch{return null;}}
+/** Preserve the existing camera dock; a legacy-only dock becomes the unified camera panel. */
+export function mergeCameraPanels(l:WorkspaceLayout):WorkspaceLayout{const old=panelGroup(l,'cameraRegions');if(!old)return l;const hadCamera=!!panelGroup(l,'camera'),next=hadCamera?without(l,'cameraRegions'):l;const rename=(n:DockNode):DockNode=>n.kind==='group'?{...n,tabs:n.tabs.map(p=>p==='cameraRegions'?'camera':p),active:n.active==='cameraRegions'?'camera':n.active}:n;return{...next,root:mapNode(next.root,rename),floating:next.floating.map(f=>({...f,group:rename(f.group)as DockGroup})),hidden:[...next.hidden.filter(p=>p!=='camera'&&p!=='cameraRegions'),'cameraRegions'],maximized:l.maximized==='cameraRegions'?'camera':l.maximized};}

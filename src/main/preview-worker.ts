@@ -1,3 +1,5 @@
+import {registerMaterialResolver} from '../render-purpose';
+import {NativeMaterials} from '../core/materials';
 import {captureRegion} from '../core/regions';
 import {UnifiedNativeWorldEngine as NativeWorldEngine} from '../core/native-world-v5';
 import {sha256} from '../core/package';
@@ -19,6 +21,7 @@ import type {EditorProject,LevelView,WorldProject,WorldIssue} from '../shared';
 const pkg=new GamePackage(fs.readFileSync(path.join(workerData.root,'data/levels.package')));
 const exe=fs.readFileSync(path.join(workerData.root,'sinking_star.exe'));
 const codec=exe.length>64?new PropertyCodec(new ExeReflection(exe)):undefined;
+const materialPath=path.join(workerData.root,'data/materials.package');if(codec&&fs.existsSync(materialPath)){const materials=new NativeMaterials(new GamePackage(fs.readFileSync(materialPath)));registerMaterialResolver(pkg,name=>materials.material(name).shader);}
 const compiler=codec?new WorldCompiler(pkg,codec):undefined;
 const bases=new Map<string,EntityFile>();
 function base(p:EditorProject){const key=JSON.stringify([p.template,p.base]);let b=bases.get(key);if(!b){b=p.base?.kind==='blank'?blankFile(pkg,codec!,p.base.width,p.base.height):parseEntities(pkg.get(`data-common/${p.template}.entities`));bases.set(key,b);if(bases.size>16)bases.delete(bases.keys().next().value!);}return{...b,types:[...b.types],records:b.records.map(r=>({...r})),analysisWarnings:b.analysisWarnings?.map(w=>({...w}))};}

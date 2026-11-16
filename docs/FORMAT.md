@@ -157,3 +157,16 @@ v4 迁移将 `Object.values(edits).flat()` 按原历史应用次序合并到 ope
 `nativeRegion` 可携带 XYZ bounds、overview、includeBackground，仍带 session/revision。世界根修改保持全局有序；窗口只裁剪返回视图，不改变修改归属或运行逻辑。主画布请求票据拒绝已取消、切关和旧范围结果。概览使用入口代理和粗地形；细节视图按原生实体 ID 更新。布局、任意 Z 显示范围及视角是本机偏好，不写入工程。保存、导出及试玩使用已提交的完整快照。
 
 `GateDraft.forceField` 可选 `{color:[r,g,b,a],brightness}`，与底座 `colors` 独立；写为原生 `force_field_color.x/y/z/w` 和 `force_field_brightness`。缺省原生值为浮点基准 0.1/0.8/0.7/0.7、亮度2，已有 diff 默认字节保持不变。目录 schemaRevision=4，更新门闸缩略图缓存；历史未携带该配置的工程保持来源值，只有明确恢复颜色才改写。
+
+
+### v0.9 alpha.2 本机显示与输入
+
+完整世界工作台不再根据镜头远近请求 overview 代理，保留原始模型和地形；底层显式概览接口仅供兼容和数据检查。sceneryVisibility091 本机偏好独立保存用户装饰／原版布景／辅助显示，首次三项关闭，旧误开启值不自动迁入；高度和锁定继续读取。地形显示只改表现偏好，不再修改装饰状态。中键单击需短促、原位且只有中键按下；长按、组合鼠标键、滚轮、画布外移动和失焦取消，均不提交取样。工程格式及原生数据不变。
+
+### 镜头交互与取点
+
+沿用 CameraConfig 的 origin、screenSize、controls 和 edits 白名单，工程版本不变。画布屏幕编号由整数格中心及半整数边界推导，不保存额外相机副本或强制行列数。cameraRoom:<viewKey>:<cameraId> 是本机屏幕浏览记忆；约束与取点是未提交会话。无法确定多高度观察中心时不使用第一名角色统一推算，保留原生数据并要求显式取点。
+
+### alpha.4 分屏规划
+
+EditorMetadata 可含 cameraPlan:{start:[屏X,屏Y],columns,rows}，缺省自动按玩法范围计算；它与编辑分组共存，复制／删除成员不丢失。规划元数据不进入原生记录或试玩修订，v3/v5 工程版本不变。相机 origin/screenSize 与 TopologyConfig 的 XY 矩形分别提交，Z 和循环开关保持原值。旧 cameraRegions 布局迁到 camera，旧别名仅保留兼容。

@@ -29,7 +29,7 @@ export function lensDirectionReason(direction:Vec3,restricted=false){
  return'';
 }
 export function lensAxisReason(action:LensAction,axis:number,screens:boolean,overview:boolean){
- if(screens&&(action==='translate'?axis!==2:axis!==0))return'原生分屏只支持高度平移与南向俯仰';
+ if(screens&&(action==='translate'?axis===0:axis!==0))return action==='translate'?'默认原生分屏的 X 由每屏中心确定，没有独立横向偏移参数；整套网格可在布局中移动':'默认原生分屏按高度与南向距离重算姿态，Y/Z 旋转不能由普通物件旋转保存；单场景镜头不受此限制';
  if(overview&&action==='rotate'&&axis!==0)return'总览镜头保持原生方向，仅支持俯仰';return'';
 }
 export function lensPoseForDirection(pose:LensPose,direction:Vec3):LensPose{
@@ -43,4 +43,12 @@ export function transformLens(pose:LensPose,action:LensAction,axis:number,amount
  const a=pose.yaw*Math.PI/180,v=new Vector3(Math.sin(a)*pose.southDistance,-Math.cos(a)*pose.southDistance,pose.upDistance).applyQuaternion(new Quaternion().setFromAxisAngle(new Vector3().setComponent(axis,1),amount));
  if(v.z<.1||v.z>2000||Math.hypot(v.x,v.y)>2000)throw Error('已到原生镜头范围，不能越过取景平面或远近上限');
  return{...pose,upDistance:v.z,southDistance:Math.hypot(v.x,v.y),yaw:Math.atan2(v.x,-v.y)*180/Math.PI};
+}
+/** Per-screen runtime rebuilds its pose from these distances, ignoring raw position. */
+export function transformScreenLens(pose:LensPose,action:LensAction,axis:number,amount:number):LensPose{
+ const reason=lensAxisReason(action,axis,true,false);if(reason)throw Error(reason);
+ if(action==='rotate')return{...transformLens({...pose,yaw:0},action,axis,amount),yaw:0};
+ if(!Number.isFinite(amount))throw Error('镜头位移无效');
+ const next={...pose,target:[...pose.target]as Vec3,yaw:0,...axis===1?{southDistance:pose.southDistance-amount}:{upDistance:pose.upDistance+amount}};
+ if(next.upDistance<.1||next.upDistance>2000||next.southDistance<0||next.southDistance>2000)throw Error('已到原生镜头远近范围');return next;
 }

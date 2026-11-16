@@ -1,4 +1,9 @@
 import type{EditOp,LevelView}from'./shared';
+/** Property previews update overlays (channels/directions) without native compilation. */
+export function optimisticPropertyDraft(level:LevelView|null,operations:EditOp[]):LevelView|null{
+ const changes=new Map<number,Record<string,import('./catalog-types').NativeValue>>();for(const op of operations)if(op.kind==='properties')changes.set(op.id,{...changes.get(op.id),...op.values});
+ if(!level||!changes.size)return level;return{...level,entities:level.entities.map(e=>{const values=changes.get(e.id);return values?{...e,nativeProperties:e.nativeProperties?.map(p=>Object.hasOwn(values,p.field.name)?{...p,value:values[p.field.name],defaulted:false}:p)}:e;})};
+}
 /** Keep committed transforms visible while the native preview is in flight. */
 export function optimisticTransforms(level:LevelView|null,operations:EditOp[]):LevelView|null{
  if(!level||!operations.length)return level;
