@@ -3,6 +3,27 @@ cd /d "%~dp0"
 set "SINKING_STAR_WORKSPACE=%~dp0workspace"
 set "SINKING_STAR_USER_DATA="
 set "SINKING_STAR_OPEN_PROJECT="
+if exist "%~dp0release-v09-alpha8-local\SHA256SUMS.txt" (
+  for %%F in ("%~dp0release-v09-alpha8-local\win-unpacked\*.exe") do (
+    if exist "%%~fF" (
+      start "" "%%~fF"
+      exit /b 0
+    )
+  )
+)
+rem Prefer source when no audited current package is available.
+if exist "%~dp0node_modules\electron\dist\electron.exe" (
+  call npm start
+  exit /b
+)
+if exist "%~dp0release-v09-alpha7-local\SHA256SUMS.txt" (
+  for %%F in ("%~dp0release-v09-alpha7-local\win-unpacked\*.exe") do (
+    if exist "%%~fF" (
+      start "" "%%~fF"
+      exit /b 0
+    )
+  )
+)
 if exist "%~dp0release-v09-alpha6-local\SHA256SUMS.txt" (
   for %%F in ("%~dp0release-v09-alpha6-local\win-unpacked\*.exe") do (
     if exist "%%~fF" (

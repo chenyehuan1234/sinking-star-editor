@@ -11,6 +11,7 @@ export function rememberMaterialShader(name:string,shader:string){shaders.set(na
 export function materialPurpose(shader:string):RenderPurpose|undefined{return /cloud|additive|nebula|particle|volumetric/i.test(shader)?'effect':shader==='ground_general'?'terrain-art':undefined;}
 /** Native flags are 64-bit; bitwise JS number operators discard their high bits. */
 export function appearancePurpose(e:EntityView,resolve?:(name:string)=>string):RenderPurpose{
+ if(e.type==='View_Giver')return 'scenery';
  if(entities.has(e))return entities.get(e)!;
  if(e.renderPurpose)return e.renderPurpose;
  if(['Ocean_Map','Wall_Set'].includes(e.type))return 'scenery';

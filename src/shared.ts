@@ -9,7 +9,7 @@ export interface TransformOp { kind:'transform'; id:number; position?:Vec3; yaw?
 export interface CloneOp { kind:'clone'; id:number; newId:number; position:Vec3 }
 export interface DeleteOp {kind:'delete';id:number}
 export interface ControlOp {kind:'control';id:number;ids:number[];targetId?:number}
-export interface PropertiesOp {kind:'properties';id:number;values:Record<string,NativeValue>;sourceTemplate?:string}
+export interface PropertiesOp {kind:'properties';id:number;values:Record<string,NativeValue>;sourceTemplate?:string;viewCameraId?:number}
 export interface PrefabOp {kind:'prefab';id:number;template:string;sourceId:number;position:Vec3;values?:Record<string,NativeValue>;assembly?:boolean}
 export interface TerrainOp {kind:'terrain';id:number;cells:{x:number;y:number;z:number;solid:boolean}[]}
 export interface WaterCreateOp {kind:'waterCreate';id:number;position:Vec3;width:number;height:number}
@@ -27,10 +27,14 @@ export interface RecoveryItem {id:string;name:string;at:string;kind:"auto"|"manu
 export interface AssemblyItem {id:string;name:string;at:string;bundle:RegionBundle}
 export type EditOp=WaterCreateOp|WaterResizeOp|WaterPaintOp|ControlOp|StampOp|TransformOp|CloneOp|DeleteOp|PropertiesOp|PrefabOp|TerrainOp|ProfileOp|DuplicateOp;
 export type ProjectBase={kind:'template';template:string}|{kind:'blank';width:number;height:number};
-export interface CameraOverride {id:number;position?:Vec3;target?:Vec3;upDistance?:number;southDistance?:number;lookAtSouthDistance?:number;fov?:number;panRate?:number;yaw?:number}
+/** In screen mode XY are offsets from each screen centre; otherwise world coordinates. */
+export interface CameraPose {position:Vec3;target:Vec3;up:Vec3}
+export interface CameraOverride {id:number;position?:Vec3;target?:Vec3;pose?:CameraPose;nativePose?:CameraPose;upDistance?:number;southDistance?:number;lookAtSouthDistance?:number;fov?:number;panRate?:number;yaw?:number}
 export type CameraObjectKind='play'|'overview'|'height-lock'|'limiter'|'overview-region';
 export type CameraObjectEdit={kind:'clone';sourceId:number;sourceTemplate?:string;ids:Record<string,number>;offset:Vec3}|{kind:'patch';id:number;values:Record<string,number|string|boolean>}|{kind:'delete';ids:number[]};
-export type CameraObjectRequest={action:'create';kind:CameraObjectKind;position:Vec3}|{action:'clone';id:number;offset:Vec3}|{action:'delete';id:number};
+export type CameraObjectRequest={action:'create';kind:CameraObjectKind;position:Vec3;role?:'main'|'aux';sourceId?:number}|{action:'clone';id:number;offset:Vec3}|{action:'delete';id:number};
+export interface ViewGiverLinkRequest {ids:number[];slot:'view'|'overview'|'overview2';cameraId:number}
+export interface ViewGiverLinkResult {project:EditorProject;cameraId:number;copied:boolean}
 export interface CameraConfig {mode:'template'|'single'|'screens';screenSize?:[number,number];origin?:[number,number];margins?:[number,number];controls?:CameraOverride[];edits?:CameraObjectEdit[]}
 export interface NativeCameraView {id:number;name:string;position:Vec3;rotation:[number,number,number,number];overview:boolean;primary:boolean;upDistance:number;southDistance:number;lookAtSouthDistance?:number;fov:number;panRate:number;positionId?:number;lookAtId?:number;resolvedPosition?:Vec3;resolvedTarget?:Vec3}
 export interface CameraRegion {id:number;position:Vec3;extents:Vec3;kind:number;cameraId:number;category?:CameraObjectKind;name?:string;priority?:number;sourceType?:'Camera_Marker'|'Marker';targetId?:number;nativeParameter?:number}
@@ -84,6 +88,7 @@ export interface EditorApi {
  quickSlotsWrite(value:QuickSlotSet):Promise<QuickSlotSet>;
  previewUpdate(request:PreviewRequest):Promise<PreviewDelta>;
  cameraObject(p:EditorProject,request:CameraObjectRequest):Promise<CameraConfig>;
+ viewGiverLink(p:EditorProject,request:ViewGiverLinkRequest):Promise<ViewGiverLinkResult>;
   regionCapture(p:EditorProject,selection:RegionSelection):Promise<RegionBundle>;
   regionPreview(bundle:RegionBundle):Promise<LevelView>;
   assemblyList():Promise<AssemblyItem[]>;

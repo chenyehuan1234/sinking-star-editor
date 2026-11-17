@@ -38,7 +38,7 @@ function presetLabel(type:string,mesh:string,sig:Record<string,NativeValue>){
 // Text-only cache migration keeps preset identities and avoids rescanning native resources.
 export function currentCatalogLabels(catalog:ObjectCatalog):ObjectCatalog{
   const def=OBJECT_BY_TYPE.get('View_Giver')!;
-  return{...catalog,types:catalog.types.map(t=>t.type==='View_Giver'?{...t,label:def.label,description:def.description,fields:t.fields.map(f=>({...f,label:def.fields[f.name]??f.label}))}:t),presets:catalog.presets.map(p=>p.type==='View_Giver'?{...p,label: presetLabel(p.type,p.mesh,p.signature)}:p)};
+  return{...catalog,types:catalog.types.map(t=>t.type==='View_Giver'?{...t,label:def.label,description:def.description,dependencies:def.dependencies,fields:t.fields.map(f=>({...f,label:def.fields[f.name]??f.label}))}:t),presets:catalog.presets.map(p=>p.type==='View_Giver'?{...p,label: presetLabel(p.type,p.mesh,p.signature)}:p)};
 }
 export function buildObjectCatalog(pkg:GamePackage,codec:PropertyCodec,build:string,assetFiles:string[]):ObjectCatalog{
   const levels=pkg.entries.filter(e=>e.name.endsWith('.entities'));

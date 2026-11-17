@@ -138,3 +138,17 @@ scripts/*
 !scripts/live-input-check.mjs
 !scripts/live-input-check-renderer.tsx
 !docs/screenshots/split-screen-v09-alpha6.png
+!docs/RELEASE-V09-ALPHA7.md
+!scripts/v098-camera-check.mjs
+!scripts/v098-camera-check-renderer.tsx
+!docs/RELEASE-V09-ALPHA8.md
+!scripts/v099-entry-check.mjs
+!scripts/v099-entry-check-renderer.tsx
+!scripts/camera-object-check.mjs
+!scripts/camera-object-check-renderer.tsx
+!scripts/view-giver-check.mjs
+!scripts/view-giver-check-renderer.tsx
+!scripts/camera-panel-check.mjs
+!scripts/camera-panel-check-renderer.tsx
+
+!docs/screenshots/camera-workbench-alpha8.png

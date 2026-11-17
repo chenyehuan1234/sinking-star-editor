@@ -68,7 +68,7 @@ if(lock)app.whenReady().then(async()=>{
   handle('quickSlotsRead',async()=>{if(!service.codec)throw Error('请先连接原游戏');return quickSlots.read(service.sourceHash,service.build,service.codec);});
   handle('quickSlotsWrite',async value=>{if(!service.codec)throw Error('请先连接原游戏');return quickSlots.write(value,service.sourceHash,service.build,service.codec);});
   handle('preparationEstimate',()=>service.preparationEstimate());
-  handle('cameraObject',(p,r)=>service.cameraObject(p,r));
+  handle('cameraObject',(p,r)=>service.cameraObject(p,r));handle('viewGiverLink',(p,r)=>service.viewGiverLink(p,r));
   handle('previewUpdate',r=>service.previewUpdate(r));handle('openLevel',n=>service.openLevel(n));handle('preview',p=>service.preview(p));
   handle('objectCatalog',()=>service.objectCatalog());handle('worldPreview',w=>service.worldPreview(w));
   handle('levelCreateBlank',(w,h)=>service.levelCreateBlank(w,h));handle('presetPreview',k=>service.presetPreview(k));handle('thumbnailRead',k=>service.thumbnailRead(k));handle('thumbnailWrite',(k,p)=>service.thumbnailWrite(k,p));

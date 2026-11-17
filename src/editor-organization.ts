@@ -1,4 +1,5 @@
-import type {EditOp,EditorProject,WorldProject} from './shared';
+import type {CameraConfig,EditOp,EditorProject,WorldProject} from './shared';
+import {cameraHistoryIds} from './camera-ids';
 export type ObjectKey=`entity:${number}`|`entry:${string}`;
 export interface EditorGroup {id:string;name:string;members:ObjectKey[]}
 export interface CameraPlan {start:[number,number];columns:number;rows:number}
@@ -29,4 +30,6 @@ export function gameplayWorld(w:WorldProject):WorldProject{const{editor,...map}=
 export function operationTargets(op:EditOp):number[]{return op.kind==='control'?op.ids:op.kind==='duplicate'?op.copies.map(c=>c.id):[op.id];}
 
 export function removeWorldLevel(w:WorldProject,id:string){const removed=new Set(w.map.entries.filter(e=>e.levelId===id).map(e=>entryKey(e.id)));w.levels=w.levels.filter(l=>l.id!==id);w.map.entries=w.map.entries.filter(e=>e.levelId!==id);w.map.editor=removeMembers(w.map.editor,removed);return removed.size;}
-export function reservedEntityIds(ops:EditOp[],existing:number[]=[]){const used=new Set(existing);for(const op of ops){used.add(op.id);if(op.kind==='clone')used.add(op.newId);if(op.kind==='duplicate')for(const c of op.copies)used.add(c.newId);if(op.kind==='prefab'&&op.assembly)for(let n=1;n<257;n++)used.add(op.id+n);}return used;}
+export function reservedEntityIds(ops:EditOp[],existing:number[]=[],camera?:CameraConfig){const used=cameraHistoryIds(camera);for(const id of existing)used.add(id);for(const op of ops){used.add(op.id);if(op.kind==='properties'&&op.viewCameraId)used.add(op.viewCameraId);if(op.kind==='clone')used.add(op.newId);if(op.kind==='duplicate')for(const c of op.copies)used.add(c.newId);const count=op.kind==='prefab'&&op.assembly?257:op.kind==='stamp'?op.bundle.records.length:1;for(let n=1;n<count;n++)used.add(op.id+n);}return used;}
+/** Reserve a contiguous span for assemblies and batches, not just their root. */
+export function nextEntityId(used:Set<number>,count=1){if(!Number.isSafeInteger(count)||count<1||count>0x100000-1)throw Error('新增对象数量无效');let free=0;for(let id=900*0x100000+1;id<901*0x100000;id++){free=used.has(id)?0:free+1;if(free===count)return id-count+1;}throw Error('新增对象编号空间已满');}

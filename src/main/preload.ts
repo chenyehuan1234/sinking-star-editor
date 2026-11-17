@@ -21,7 +21,7 @@ nativeDeploy:(...args:any[])=>invoke('nativeDeploy',...args),nativeBuild:(...arg
 nativeSave:(...args:any[])=>invoke('nativeSave',...args),
 nativeLoad:(...args:any[])=>invoke('nativeLoad',...args),inspectCompatibility:()=>invoke('inspectCompatibility'),updateCheck:()=>invoke('updateCheck'),updateDownload:()=>invoke('updateDownload'),updateInstall:()=>invoke('updateInstall'),
  quickSlotsRead:()=>invoke('quickSlotsRead'),quickSlotsWrite:v=>invoke('quickSlotsWrite',v),
- cameraObject:(p,r)=>invoke('cameraObject',p,r),
+ cameraObject:(p,r)=>invoke('cameraObject',p,r),viewGiverLink:(p,r)=>invoke('viewGiverLink',p,r),
  regionCapture:(p,s)=>invoke("regionCapture",p,s),regionPreview:b=>invoke("regionPreview",b),assemblyList:()=>invoke("assemblyList"),assemblySave:b=>invoke("assemblySave",b),assemblyRemove:id=>invoke("assemblyRemove",id),assemblyImport:()=>invoke("assemblyImport"),assemblyExport:b=>invoke("assemblyExport",b),recoveryWrite:w=>invoke("recoveryWrite",w),recoveryList:w=>invoke("recoveryList",w),recoveryRestore:(w,id)=>invoke("recoveryRestore",w,id),runValidate:(w,r)=>invoke("runValidate",w,r),runPlan:(w,r)=>invoke("runPlan",w,r),nativeRunPlan:(p,r)=>invoke("nativeRunPlan",p,r),nativeRunLaunch:(p,r,c)=>invoke("nativeRunLaunch",p,r,c),runLaunch:(w,r,c)=>invoke("runLaunch",w,r,c),
   previewMesh:r=>invoke('previewMesh',r),worldStartup:()=>invoke('worldStartup'),levelCreateBlank:(w,h)=>invoke('levelCreateBlank',w,h),presetPreview:k=>invoke('presetPreview',k),thumbnailRead:k=>invoke('thumbnailRead',k),thumbnailWrite:(k,p)=>invoke('thumbnailWrite',k,p),
   worldRecreations:()=>invoke('worldRecreations'),

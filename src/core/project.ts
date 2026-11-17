@@ -37,6 +37,7 @@ export function validateProject(value: unknown): asserts value is EditorProject 
     if(o.kind==='clone'&&(!Number.isInteger(o.newId)||o.newId<1||o.newId>0xffffffff||!Array.isArray(o.position)))throw new Error('复制实体 ID 或坐标无效');
     if(o.kind==='prefab'&&(!validName(o.template)||!Number.isInteger(o.sourceId)||o.sourceId<0||o.sourceId>0xffffffff||!Array.isArray(o.position)))throw new Error('物件预设无效');
     if(o.kind==='properties'&&o.sourceTemplate!==undefined&&!validName(o.sourceTemplate))throw new Error('属性资源来源无效');
+    if(o.kind==='properties'&&o.viewCameraId!==undefined&&(!Number.isInteger(o.viewCameraId)||o.viewCameraId<0||o.viewCameraId>0xffffffff||typeof o.values.viewpoint_name!=='string'))throw Error('卷轴镜头标识无效');
   }
 }
 export function validName(s: unknown): s is string {return typeof s==='string'&&/^[a-zA-Z0-9_.-]{1,100}$/.test(s)&&s!=='.'&&!s.includes('..');}
@@ -74,7 +75,14 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
     }
   }
   if(project.base?.kind==='blank'&&codec&&!project.topology)updateBlankBounds(codec,f);
-  if(codec){applyCamera(codec,f,project.camera,pkg);applyTopology(codec,f,project.topology);}
+  if(codec){applyCamera(codec,f,project.camera,pkg);applyTopology(codec,f,project.topology);
+    // Resolve authoring IDs after camera edits. Native named links then follow a
+    // rename without an old rename in history redirecting a newer association.
+    const links=new Map<number,number>();
+    for(const op of project.operations){if(op.kind==='properties'&&Object.hasOwn(op.values,'viewpoint_name')){if(op.viewCameraId===undefined)links.delete(op.id);else links.set(op.id,op.viewCameraId);}else if(op.kind==='delete'||op.kind==='profile')links.delete(op.id);}
+    const recordIndices=links.size?new Map(f.records.map((r,i)=>[r.id,i])):new Map<number,number>();
+    for(const [id,target]of links){const index=recordIndices.get(id);if(index===undefined)continue;const giver=f.records[index];if(giver.type!=='View_Giver')throw Error('视角关联对象不是卷轴');const cameraIndex=recordIndices.get(target),camera=cameraIndex===undefined?undefined:f.records[cameraIndex];if(target&&(!camera||camera.type!=='Camera_Control'||codec.get(camera,'is_for_map_overview',false)||Number(codec.get(camera,'minus_one_if_not_primary',0))!==-1))throw Error('卷轴关联的辅助镜头不可用 #'+target);const name=camera?String(codec.get(camera,'entity_name','')):'';if(camera&&!name)throw Error('卷轴关联的辅助镜头尚未命名');f.records[index]=codec.patch(giver,{viewpoint_name:name});}
+  }
   return f;
 }
 export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:PropertyCodec,bounds?:{min:Vec3;max:Vec3}):LevelView {

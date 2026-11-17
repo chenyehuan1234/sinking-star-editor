@@ -2,11 +2,15 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，在同一个工作台编辑完整原版世界及小关。原安装只读，试玩使用隔离测试档。
 
-**v0.9.0-alpha.6 测试版。** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.9.0-alpha.6) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [本版验收步骤](docs/V09-ACCEPTANCE.md)
+**v0.9.0-alpha.8 测试版。** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.9.0-alpha.8) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [本版验收步骤](docs/V09-ACCEPTANCE.md)
+
+**本版更新**：[镜头工作台、普通／分屏取景、六轴调整、卷轴关联及中键修复](docs/RELEASE-V09-ALPHA8.md)。下载包含 Windows x64 安装程序、完整免安装 ZIP 与 SHA-256 校验文件，无需另装 Node.js。
+
+源码镜头栏采用单页结构：本关画面规则 → 统一镜头清单 → 当前取景 → 特殊控制区域。数字默认折叠，用途标签区分正常游玩、额外视角与地图总览；阅读位置仅记在本机。镜头清单双击直接进入取景，“完成镜头编辑”返回原自由视角。导航下拉采用同一取景计算；分屏边界开关位于画布上方图标栏，默认开启。
 
 这是 v0.9 大版本的测试版。需要已安装的 Steam 原游戏，不附带原生资源；程序未签名。当前原生检查版本为 Build 26466613。未知程序版本未经存档隔离验证时，阻止试玩启动。
 
-本版统一分屏规划、有限边界和导航，支持整套布局平移、一步撤销及返回大地图恢复视角；数字属性即时预览并自动提交，频道支持精确整数增减，连续输入合并撤销。地形外观、场景装饰、环境特效与辅助独立显示，水流默认展示全部可见水域。见 [alpha.6 说明](docs/RELEASE-V09-ALPHA6.md)及[镜头操作](docs/CAMERA-SWITCHING.md)。原生默认分屏开放 Y/Z 距离调整；静态参考与游戏内切换分别验收。
+本版统一分屏规划、有限边界和导航，支持整套布局平移、一步撤销及返回大地图恢复视角；数字属性即时预览并自动提交，频道支持精确整数增减，连续输入合并撤销。地形外观、场景装饰、环境特效与辅助独立显示，水流默认展示全部可见水域。见 [alpha.6 说明](docs/RELEASE-V09-ALPHA6.md)及[镜头操作](docs/CAMERA-SWITCHING.md)。镜头编辑与原生运行能力分别说明；静态参考与游戏内切换分别验收。
 
 此前新增镜头 G/R＋XYZ、画布取点和可视化分屏，见 [alpha.3 说明](docs/RELEASE-V09-ALPHA3.md)。同时包含此前修复（[alpha.2 说明](docs/RELEASE-V09-ALPHA2.md)）：
 
@@ -32,6 +36,10 @@
 临时试玩直接启动，存档试玩明确选档。只使用受管隔离启动入口，不要手动运行旧共享存档副本。完整世界的循环穿越、跨层、解锁进度和本版门闸游戏内颜色仍待人工实测；自动构建通过不等于已通关验证。
 
 ## 编辑器截图
+
+**alpha.8 镜头工作台**：镜头清单双击取景，精确参数和特殊控制区域可折叠；分屏摘要横排，边界开关位于上方图标栏。截图来自独立界面检查工程。
+
+![alpha.8 镜头工作台](docs/screenshots/camera-workbench-alpha8.png)
 
 **alpha.6 的有限分屏布局**：测试工程规划为 3×2，空屏也保留，可用中央 X/Y 柄整体平移，不自动生成地形。
 
