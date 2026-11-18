@@ -1,17 +1,41 @@
+import {performanceCapture as perf,type Ticket} from './performance-capture';
+import type {AssetKind,AssetValue} from '../asset-diagnostics';
 import {rememberMaterialShader,rememberEntityPurpose,materialPurpose} from '../render-purpose';
 import {helperScenery} from './scene-display';
 import * as T from 'three';
 import type {EntityView} from '../shared';
+function asset<K extends AssetKind>(kind:K,name:string,detail:number|undefined,normal:()=>Promise<AssetValue<K>>,sample:Ticket|undefined){
+  if(!sample)return normal();
+  return profiledAsset(kind,name,detail,normal,sample);
+}
+
+async function profiledAsset<K extends AssetKind>(kind:K,name:string,detail:number|undefined,normal:()=>Promise<AssetValue<K>>,sample:Ticket){
+  const profile=window.editor.profileAsset;
+  if(!profile){
+    const value=await normal();perf.end(sample,'asset.roundtrip',{category:kind,source:'unavailable'});return value;
+  }
+  const {value,timings}=await profile({kind,name,detail});
+  const elapsed=performance.now()-sample.at,details={category:kind,source:timings.source};
+  perf.end(sample,'asset.roundtrip',details,elapsed);
+  for(const [phase,ms] of [
+    ['asset.disk',timings.diskMs],['asset.read',timings.readMs],['asset.decode',timings.decodeMs],
+    ['asset.cacheWrite',timings.cacheWriteMs],['asset.workerBoundary',timings.workerBoundaryMs],
+    ['asset.ipcBoundary',Math.max(0,elapsed-timings.mainMs)],
+  ] as const)if(ms!==undefined)perf.end(sample,phase,details,ms);
+  return value;
+}
+
 export class ViewAssets {
   decalGeometry?:T.PlaneGeometry;
   geometries=new Map<string,Promise<{geometry:T.BufferGeometry;materials:string[]}>>();
   materials=new Map<string,Promise<T.MeshStandardMaterial>>();textures=new Map<string,Promise<T.DataTexture>>();variants=new Map<string,T.MeshStandardMaterial>();disposed=false;
   constructor(readonly changed:()=>void,readonly failed:(message:string)=>void){}
-  geometry(name:string,pose=false){const key=name+':'+pose;let p=this.geometries.get(key);if(!p){p=(pose?window.editor.previewMesh({name,lod:1,pose:'idle'}):window.editor.meshAsset(name,1)).then(a=>{const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(a.positions,3));g.setAttribute('uv',new T.BufferAttribute(a.uvs,2));g.setIndex(new T.BufferAttribute(a.indices,1));for(const group of a.groups)g.addGroup(group.start,group.count,group.materialIndex);g.computeVertexNormals();g.computeBoundingSphere();if(this.disposed)g.dispose();return{geometry:g,materials:a.materials};});this.geometries.set(key,p);}return p;}
-  texture(name:string){let p=this.textures.get(name);if(!p){p=window.editor.textureAsset(name,512).then(a=>{const t=new T.DataTexture(a.pixels,a.width,a.height,T.RGBAFormat);t.colorSpace=a.srgb?T.SRGBColorSpace:T.NoColorSpace;t.wrapS=t.wrapT=T.RepeatWrapping;t.flipY=false;t.generateMipmaps=true;t.minFilter=T.LinearMipmapLinearFilter;t.magFilter=T.LinearFilter;t.needsUpdate=true;if(this.disposed)t.dispose();return t;});this.textures.set(name,p);}return p;}
-  material(name:string){let p=this.materials.get(name);if(!p){p=window.editor.materialAsset(name||'default').then(async a=>{rememberMaterialShader(name,a.shader);const mat=new T.MeshStandardMaterial({name,color:new T.Color(...a.color.slice(0,3)as[number,number,number]),roughness:a.roughness,metalness:/metal/i.test(a.shader)?.35:0,side:a.doubleSided?T.DoubleSide:T.FrontSide,transparent:a.color[3]<1,opacity:a.color[3]});
+  geometry(name:string,pose=false){const key=name+':'+pose;let p=this.geometries.get(key);if(!p){const kind=pose?'pose':'mesh',ticket=perf.begin();p=asset(kind,name,1,()=>pose?window.editor.previewMesh({name,lod:1,pose:'idle'}):window.editor.meshAsset(name,1),ticket).then(a=>{const build=perf.begin();const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(a.positions,3));g.setAttribute('uv',new T.BufferAttribute(a.uvs,2));g.setIndex(new T.BufferAttribute(a.indices,1));for(const group of a.groups)g.addGroup(group.start,group.count,group.materialIndex);g.computeVertexNormals();g.computeBoundingSphere();if(this.disposed)g.dispose();if(build)perf.end(build,'asset.renderer',{category:kind,parent:ticket?.session===build.session?ticket.id:undefined});return{geometry:g,materials:a.materials};});this.geometries.set(key,p);}else perf.reuseAsset(pose?'pose':'mesh');return p;}
+  texture(name:string){let p=this.textures.get(name);if(!p){const ticket=perf.begin();p=asset('texture',name,512,()=>window.editor.textureAsset(name,512),ticket).then(a=>{const build=perf.begin();const t=new T.DataTexture(a.pixels,a.width,a.height,T.RGBAFormat);t.colorSpace=a.srgb?T.SRGBColorSpace:T.NoColorSpace;t.wrapS=t.wrapT=T.RepeatWrapping;t.flipY=false;t.generateMipmaps=true;t.minFilter=T.LinearMipmapLinearFilter;t.magFilter=T.LinearFilter;t.needsUpdate=true;if(this.disposed)t.dispose();if(build)perf.end(build,'asset.renderer',{category:'texture',parent:ticket?.session===build.session?ticket.id:undefined});return t;});this.textures.set(name,p);}else perf.reuseAsset('texture');return p;}
+  material(name:string){let p=this.materials.get(name);if(!p){const ticket=perf.begin();p=asset('material',name||'default',undefined,()=>window.editor.materialAsset(name||'default'),ticket).then(async a=>{const build=perf.begin();rememberMaterialShader(name,a.shader);const mat=new T.MeshStandardMaterial({name,color:new T.Color(...a.color.slice(0,3)as[number,number,number]),roughness:a.roughness,metalness:/metal/i.test(a.shader)?.35:0,side:a.doubleSided?T.DoubleSide:T.FrontSide,transparent:a.color[3]<1,opacity:a.color[3]});
       if(/crystal|glass/i.test(a.shader)){mat.transparent=true;mat.opacity=.78;mat.roughness=.22;}
       if(/masked|foliage|decal/i.test(a.shader))mat.alphaTest=.35;
+      if(build)perf.end(build,'asset.renderer',{category:'material',parent:ticket?.session===build.session?ticket.id:undefined});
       mat.userData.unsupportedEffect=materialPurpose(a.shader)==='effect';if(mat.userData.unsupportedEffect){mat.transparent=true;mat.opacity=.35;mat.depthWrite=false;mat.blending=T.AdditiveBlending;return mat;}mat.userData.mask=a.mask??'0';mat.userData.nativeTextureNames=[a.map,a.alphaMap,a.tintMap].filter(Boolean);
       if(a.worldUV||a.tintMap){
         const tint={value:null as T.Texture|null};
@@ -27,7 +51,7 @@ export class ViewAssets {
       if(a.alphaMap)await this.texture(a.alphaMap).then(t=>{mat.alphaMap=t;mat.transparent=true;mat.alphaTest=.08;mat.needsUpdate=true;this.changed();}).catch(e=>this.failed(String(e)));
       if(a.map)await this.texture(a.map).then(t=>{mat.map=t;mat.needsUpdate=true;this.changed();}).catch(e=>this.failed(a.map+': '+String(e)));
       if(this.disposed)mat.dispose();return mat;
-    }).catch(e=>{this.failed(name+': '+String(e));return new T.MeshStandardMaterial({color:'#c87b51',roughness:.9,wireframe:true});});this.materials.set(name,p);}return p;}
+    }).catch(e=>{this.failed(name+': '+String(e));return new T.MeshStandardMaterial({color:'#c87b51',roughness:.9,wireframe:true});});this.materials.set(name,p);}else perf.reuseAsset('material');return p;}
   async entity(e:EntityView):Promise<T.Mesh<T.BufferGeometry,T.Material|T.Material[]>>{if(helperScenery(e)){const proxy=new T.Mesh(new T.SphereGeometry(1,8,6),new T.MeshBasicMaterial({color:0x7398a6,wireframe:true,transparent:true,opacity:.16,depthWrite:false}));proxy.userData.ownedGeometry=true;proxy.userData.ownedMaterial=true;proxy.userData.nativeNotice='原生远景或辅助对象，特殊材质未复现';return proxy;}const a=e.type==='Decal'?{geometry:this.decalGeometry??=new T.PlaneGeometry(1,1),materials:e.materials?.length?e.materials:['default']}:await this.geometry(e.mesh,['Guy','Monster'].includes(e.type));const names=a.materials.map((name,i)=>e.materials?.[i]||name);const materials=await Promise.all(names.map(n=>this.material(n)));if(['Inanimate','Decal','Animating','Procedurally_Animating','Outline_Override'].includes(e.type)&&materials.some(m=>m.userData.unsupportedEffect)){rememberEntityPurpose(e,"effect");return this.entity(e);}const tinted=materials.map(m=>{if(!e.tint||e.tint.every(v=>v===1))return m;const key=m.name+':'+e.tint.join(',');let v=this.variants.get(key);if(!v){v=m.clone();v.color.multiply(new T.Color(...e.tint));v.onBeforeCompile=m.onBeforeCompile;v.customProgramCacheKey=m.customProgramCacheKey;this.variants.set(key,v);}return v;});const visibility=e.accessoryMask,inventory=Number(e.nativeProperties?.find(p=>p.field.name==='inventory_flags')?.value??0);const filtered=tinted.map(m=>{const mask=Number(m.userData.mask??0)>>>0;if(visibility!==undefined&&mask&&(mask&(visibility>>>0))===0||e.type==='Guy'&&(/prom_wand/.test(m.name)&&!(inventory&1024)||/prom_torc/.test(m.name)&&!(inventory&2048)||/prom_prism/.test(m.name)&&!(inventory&4096))){const key='hidden:'+m.uuid;let hidden=this.variants.get(key);if(!hidden){hidden=m.clone();hidden.visible=false;this.variants.set(key,hidden);}return hidden;}return m;});const mesh=new T.Mesh(a.geometry,filtered);if(e.type==='Decal')mesh.position.z=.015;return mesh;}
   async prune(root:T.Object3D,geometryBudget=128*2**20,textureBudget=256*2**20){
     const usedGeometry=new Set<T.BufferGeometry>(),usedMaterial=new Set<T.Material>(),usedTexture=new Set<T.Texture>(),usedTextureNames=new Set<string>();

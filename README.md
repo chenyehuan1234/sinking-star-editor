@@ -2,11 +2,11 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，在同一个工作台编辑完整原版世界及小关。原安装只读，试玩使用隔离测试档。
 
-**v0.9.0-alpha.8 测试版。** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.9.0-alpha.8) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [本版验收步骤](docs/V09-ACCEPTANCE.md)
+**v0.9.0-alpha.9 测试版。** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.9.0-alpha.9) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [验收步骤](docs/V09-ACCEPTANCE.md)
 
-**本版更新**：[镜头工作台、普通／分屏取景、六轴调整、卷轴关联及中键修复](docs/RELEASE-V09-ALPHA8.md)。下载包含 Windows x64 安装程序、完整免安装 ZIP 与 SHA-256 校验文件，无需另装 Node.js。
+游戏更新后替换现有试玩副本，首次复制和更新均显示实际进度。「操作设置 → 性能诊断」可记录选择、拖动、放置及素材读取耗时。下载包含 Windows x64 安装程序、免安装 ZIP 和 SHA-256 校验文件，无需另装 Node.js。[本版更新](docs/RELEASE-V09-ALPHA9.md) · [性能基准与空间盘点](docs/PERFORMANCE.md)
 
-源码镜头栏采用单页结构：本关画面规则 → 统一镜头清单 → 当前取景 → 特殊控制区域。数字默认折叠，用途标签区分正常游玩、额外视角与地图总览；阅读位置仅记在本机。镜头清单双击直接进入取景，“完成镜头编辑”返回原自由视角。导航下拉采用同一取景计算；分屏边界开关位于画布上方图标栏，默认开启。
+镜头栏集中展示本关画面规则、镜头清单、取景和特殊控制区域。双击镜头直接取景，“完成镜头编辑”恢复原自由视角。分屏边界开关位于画布上方图标栏，默认开启。[alpha.8 镜头工作台与取景更新](docs/RELEASE-V09-ALPHA8.md)
 
 这是 v0.9 大版本的测试版。需要已安装的 Steam 原游戏，不附带原生资源；程序未签名。当前原生检查版本为 Build 26466613。未知程序版本未经存档隔离验证时，阻止试玩启动。
 

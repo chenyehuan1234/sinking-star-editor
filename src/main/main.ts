@@ -55,12 +55,12 @@ if(lock)app.whenReady().then(async()=>{
   handle('nativeImpact',(p,n)=>service.nativeImpact(p,n));
   handle('nativeValidate',p=>service.nativeValidate(p));
   handle('nativeSearch',(p,q)=>service.nativeSearch(p,q));
-  handle('nativeIndex',p=>service.nativeIndex(p));handle('nativeRegion',r=>service.nativeRegion(r));handle('nativeBuild',p=>service.nativeBuild(p),true);handle('nativeDeploy',p=>service.nativeDeploy(p),true);
+  handle('nativeIndex',p=>service.nativeIndex(p));handle('nativeRegion',r=>service.nativeRegion(r));handle('nativePreviewUpdate',r=>service.nativePreviewUpdate(r));handle('nativeBuild',p=>service.nativeBuild(p),true);handle('nativeDeploy',p=>service.nativeDeploy(p),true);
   handle('nativeCreate',async()=>{await service.unchanged();return{format:'sinking-star-native-world',version:4,id:randomUUID().replaceAll('-','').slice(0,12),name:'原版三层世界',sourceHash:service.sourceHash,sourceBuild:service.build,base:'overworld',edits:{},levelEdits:{},assignments:[]};});
   handle('nativeSave',async(p:NativeWorldProject,saveAs=false)=>{validateNativeWorld(p);if(p.sourceHash!==service.sourceHash||p.sourceBuild!==service.build)throw Error('世界来源不匹配');let file=saveAs?undefined:nativePaths.get(p.id);if(file){try{const previous=JSON.parse(await fs.readFile(file,'utf8'));if(previous.version===4&&p.version===5)file=undefined;}catch{}}if(!file){const r=await dialog.showSaveDialog(win,{defaultPath:path.join(service.workspace,'projects',p.id+(p.version===5?'.v5':'')+'.sstar-native-world.json'),filters:[{name:'原版世界 v4／v5',extensions:['json']}]});if(r.canceled||!r.filePath)return null;file=r.filePath;}try{const old=JSON.parse(await fs.readFile(file,'utf8'));if(old.version===4&&p.version===5)throw Error('升级工程请选择新的 v5 文件名，保留原版 v4 文件');await fs.copyFile(file,file+'.previous.bak');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}await atomicWrite(file,JSON.stringify(p,null,2));nativePaths.set(p.id,file);if(p.version===5)await rememberProject(nativeWorkbench(p,await service.nativeIndex(p)),file);return file;},true);
   handle('nativeLoad',async()=>{const r=await dialog.showOpenDialog(win,{defaultPath:path.join(service.workspace,'projects'),filters:[{name:'原版世界 v4／v5',extensions:['json']}],properties:['openFile']});if(r.canceled)return null;const file=r.filePaths[0];if((await fs.stat(file)).size>20_000_000)throw Error('工程超过20MB');const p=JSON.parse(await fs.readFile(file,'utf8'));validateNativeWorld(p);await service.nativeIndex(p);nativePaths.set(p.id,file);return p;},true);
   const updates=new Updates();handle('updateCheck',()=>updates.check());handle('updateDownload',()=>updates.fetch());handle('updateInstall',()=>updates.install(win));
-  const connectGame=async(selected?:string)=>{const location=selected??preferences.gamePath;if(!location)throw Error('请先选择原游戏目录');const inspected=await inspectInstallation(location);if(!inspected.directoryValid)throw Error(inspected.reason);service.onPlaytestProgress=text=>win?.webContents.send('editor:playtest-progress',text);const catalog=await service.connect(inspected.path);await service.cleanupTemporary().catch(()=>{});if(!service.codec)throw Error('无法读取原游戏类型信息，请选择完整的 Steam 版安装目录');preferences.gamePath=inspected.path;await persistPreferences();return catalog;};
+  const connectGame=async(selected?:string)=>{const location=selected??preferences.gamePath;if(!location)throw Error('请先选择原游戏目录');const inspected=await inspectInstallation(location);if(!inspected.directoryValid)throw Error(inspected.reason);service.onPlaytestProgress=(text,progress)=>{if(win&&!win.isDestroyed())win.webContents.send('editor:playtest-progress',text,progress);};const catalog=await service.connect(inspected.path);await service.cleanupTemporary().catch(()=>{});if(!service.codec)throw Error('无法读取原游戏类型信息，请选择完整的 Steam 版安装目录');preferences.gamePath=inspected.path;await persistPreferences();return catalog;};
   handle('discoverGames',()=>discoverInstallations(preferences.gamePath,service.workspace,Boolean(process.env.SINKING_STAR_WORKSPACE)).then(v=>({...v,pendingWorkspace:preferences.workspace&&preferences.workspace!==service.workspace?preferences.workspace:undefined})));
   handle('connect',connectGame,true);
   handle('chooseGame',async()=>{const r=await dialog.showOpenDialog(win,{title:'选择包含 sinking_star.exe 的原游戏文件夹',properties:['openDirectory']});if(r.canceled)return null;return connectGame(r.filePaths[0]);},true);
@@ -75,6 +75,14 @@ if(lock)app.whenReady().then(async()=>{
   handle('worldExample',()=>service.worldExample());
   handle('worldStudioExample',()=>service.worldStudioExample());
   handle('worldRecreations',()=>service.worldRecreations());
+  handle('profileAsset',request=>service.assets!.profile(request));
+  handle('savePerformanceReport',async(json:string)=>{
+    if(typeof json!=='string'||json.length>4_000_000)throw Error('性能报告大小无效');
+    const result=await dialog.showSaveDialog(win,{title:'导出性能报告',defaultPath:'sinking-star-performance.json',filters:[{name:'JSON',extensions:['json']}]});
+    if(result.canceled||!result.filePath)return false;
+    await atomicWrite(result.filePath,json);
+    return true;
+  });
   handle('meshAsset',(n,l)=>service.assets!.mesh(n,l));handle('textureAsset',(n,s)=>service.assets!.texture(n,s));handle('materialAsset',async n=>service.assets!.material(n));handle('assetStatus',async()=>service.assets!.status);
   handle('regionCapture',(p,selection)=>service.regionCapture(p,selection));handle('regionPreview',b=>service.regionPreview(b));
   handle('assemblyList',()=>store.assemblies());handle('assemblySave',async b=>{await service.regionPreview(b);return store.saveAssembly(b);},true);handle('assemblyRemove',id=>store.removeAssembly(id),true);

@@ -3,8 +3,8 @@ cd /d "%~dp0"
 set "SINKING_STAR_WORKSPACE=%~dp0workspace"
 set "SINKING_STAR_USER_DATA="
 set "SINKING_STAR_OPEN_PROJECT="
-if exist "%~dp0release-v09-alpha8-local\SHA256SUMS.txt" (
-  for %%F in ("%~dp0release-v09-alpha8-local\win-unpacked\*.exe") do (
+if exist "%~dp0release-v09-alpha9-local\SHA256SUMS.txt" (
+  for %%F in ("%~dp0release-v09-alpha9-local\win-unpacked\*.exe") do (
     if exist "%%~fF" (
       start "" "%%~fF"
       exit /b 0

@@ -12,7 +12,9 @@ export function createWorkbenchApi(base:EditorApi) {
   exportDesign:r=>base.exportDesign({...r,project:r.project.format==='sinking-star-world'&&r.project.native?nativeDocument(r.project):r.project}),
   previewUpdate:async(r:PreviewRequest)=>{
    if(!r.world?.native)return base.previewUpdate(r);
-   const result=await base.nativeRegion({project:nativeDocument(r.world),session:r.world.id,revision:r.revision,cellId:'world',bounds:{min:range.min,max:range.max},overview:false,includeBackground:range.includeBackground??false});
+   const request={scene:r.scene,baseRevision:r.baseRevision,project:nativeDocument(r.world),session:r.world.id,revision:r.revision,cellId:'world',bounds:{min:range.min,max:range.max},overview:false,includeBackground:range.includeBackground??false};
+   if(base.nativePreviewUpdate)return base.nativePreviewUpdate(request);
+   const result=await base.nativeRegion(request);
    const delta=diffPreview(previousScene===r.scene&&previousRevision===r.baseRevision?previous:null,result.view,r,result.elapsedMs);previous=result.view;previousScene=r.scene;previousRevision=r.revision;return delta;
   },
   worldValidate:w=>w.native?base.nativeValidate(nativeDocument(w)):base.worldValidate(w),

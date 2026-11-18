@@ -1,13 +1,40 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
+import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import {createHash} from 'node:crypto';
 import {GamePackage,sha256} from '../src/core/package';import {ExeReflection} from '../src/core/reflection';import {PropertyCodec} from '../src/core/properties';
 import {UnifiedNativeWorldEngine} from '../src/core/native-world-v5';import {nativeWorkbench,nativeDocument} from '../src/native-project';import {nativeRegions} from '../src/core/native-regions';
 import {createBlank} from '../src/core/blank';import {parseEntities} from '../src/core/entities';import {gameplayWorld} from '../src/editor-organization';
-import {validateNativeWorld} from '../src/core/native-world';import {validName} from '../src/core/project';import type {NativeWorldProject} from '../src/v08-types';
+import {validateNativeWorld} from '../src/core/native-world';import {validName} from '../src/core/project';import type {NativeViewportPreviewRequest,NativeWorldProject} from '../src/v08-types';
 import {EditorService} from '../src/main/service';import os from 'node:os';import path from 'node:path';
 import {newWorld,WorldCompiler} from '../src/core/world';import {exportWorld} from '../src/core/export-scope';
+import {mergePreview} from '../src/preview-delta';
 const root=process.env.SINKING_STAR_GAME??'',available=fs.existsSync(root+'/sinking_star.exe');let data:ReturnType<typeof make>|undefined;
 function make(){const pkg=new GamePackage(fs.readFileSync(root+'/data/levels.package')),codec=new PropertyCodec(new ExeReflection(fs.readFileSync(root+'/sinking_star.exe'))),localization=fs.readFileSync(root+'/data/strings/s-cn.localization','utf8'),engine=new UnifiedNativeWorldEngine(pkg,codec,sha256(pkg.buffer),'test',localization),legacy:NativeWorldProject={format:'sinking-star-native-world',version:4,id:'0123456789ab',name:'完整世界',sourceHash:sha256(pkg.buffer),sourceBuild:'test',base:'overworld',edits:{},levelEdits:{},assignments:[]},index=engine.index(legacy),world=nativeWorkbench(legacy,index,nativeRegions(pkg,codec,localization));return {pkg,codec,engine,legacy,index,world};}
 const fixture=()=>data??=make();
+test('统一世界预览由后台返回分区差量并校验基础修订',{skip:!available},async()=>{
+ const hash=createHash('sha256');
+ for await(const chunk of fs.createReadStream(path.join(root,'data/levels.package')))hash.update(chunk);
+ const project:NativeWorldProject={format:'sinking-star-native-world',version:4,id:'0123456789ab',name:'分区差量测试',sourceHash:hash.digest('hex'),sourceBuild:'test',base:'overworld',edits:{},levelEdits:{},assignments:[]};
+ const service=new EditorService(path.resolve('workspace'));
+ service.gamePath=root;service.sourceHash=project.sourceHash;
+ service.build=project.sourceBuild;service.unchanged=async()=>{};
+ try{
+  const entry=(await service.nativeIndex(project)).entryLinks![0];
+  const [x,y,z]=entry.position,scene=project.id+':world';
+  const common={project,scene,session:project.id,cellId:'world'};
+  const first=await service.nativePreviewUpdate({...common,revision:1,bounds:{min:[x-3,y-3,z-1],max:[x+3,y+3,z+1]}});
+  assert.ok(first.full?.entities.some(entity=>entity.id===entry.id));
+  const request={...common,revision:2,baseRevision:1,bounds:{min:[x-1,y-3,z-1],max:[x+5,y+3,z+1]}} satisfies NativeViewportPreviewRequest;
+  const update=await service.nativePreviewUpdate(request);
+  assert.equal(update.full,undefined);
+  const merged=mergePreview(first.full!,update,1);
+  const expected=(await service.nativeRegion(request)).view;
+  const byId=(view:typeof expected)=>new Map(view.entities.map(entity=>[entity.id,entity]));
+  assert.deepEqual(byId(merged),byId(expected));
+  const byCell=(view:typeof expected)=>new Map(view.terrain?.map(cell=>[[cell.x,cell.y,cell.z].join(','),cell]));
+  assert.deepEqual(byCell(merged),byCell(expected));
+  assert.throws(()=>mergePreview(first.full!,update,0),/修订/);
+  assert.ok((await service.nativePreviewUpdate({...request,revision:3,baseRevision:1})).full);
+ }finally{await (service as any).previews?.dispose();}
+});
 test('原生小数场景名合法，仍拒绝路径与上级目录',()=>{for(const s of ['heroes2_10.5','promesst2.5_deeper'])assert.ok(validName(s));for(const s of ['../x','x/level','..','.','x..y'])assert.equal(validName(s),false);});
 test('v5 完整目录包含993个关联和辅助场景，原版组及未确认组可独立整理',{skip:!available},()=>{const {world,engine,pkg}=fixture(),p=nativeDocument(world);assert.equal(world.levels.length,993);assert.equal(engine.index(p).entryCount,920);assert.equal(p.version,5);assert.ok(world.levels.some(l=>l.id==='heroes2_10.5'));assert.ok(world.levelGroups!.length>75);validateNativeWorld(p);assert.ok(engine.build(p).buffer.equals(pkg.buffer));const copy=structuredClone(world);copy.levelGroups!.reverse();copy.levelGroups![0].title='我的区域';copy.levels[0].folderId=copy.levelGroups![0].id;copy.levels[0].title='显示名称';assert.deepEqual(gameplayWorld(copy),gameplayWorld(world));assert.ok(engine.build(nativeDocument(copy)).buffer.equals(pkg.buffer));});
 test('新增和独立复制小关写出命名场景与资源别名，不重造原版大世界',{skip:!available},()=>{const {world,engine,pkg}=fixture(),copy=structuredClone(world),project=createBlank(world.sourceHash,world.sourceBuild);copy.levels.push({id:'ed_new_room',title:'中文新关',project},{id:'ed_copy_room',title:'副本',project:structuredClone(project)});copy.levels.at(-1)!.project.operations.push({kind:'transform',id:898*0x100000+1,position:[3,4,0]});const out=engine.build(nativeDocument(copy)),built=new GamePackage(out.buffer);assert.ok(built.get('data-common/overworld.entities').equals(pkg.get('data-common/overworld.entities')));assert.ok(out.changed.includes('data-common/ed_new_room.entities'));assert.ok(out.resources?.some(r=>r.target==='data-common/ed_new_room.all_paint_data'));assert.notDeepEqual(built.get('data-common/ed_new_room.entities'),built.get('data-common/ed_copy_room.entities'));});

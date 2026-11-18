@@ -54,10 +54,13 @@ export interface PrefabView {key:string;label:string;type:string;template:string
 export interface NativeLevelRegion {id:string;title:string;layer:'ground'|'underground'|'sky'|'other';levels:string[];cell?:[number,number];cells?:[number,number][];subregions?:{cell:[number,number];levels:string[]}[];nameSource?:'native-volume'|'overlap'|'unmarked';areaKey?:string}
 export interface GameInstallation {path:string;build:string;directoryValid:boolean;compatibility:'unchecked'|'data-checked'|'unverified';reason?:string;saved?:boolean}
 export interface GameDiscovery {installations:GameInstallation[];workspace:string;workspaceLocked:boolean;pendingWorkspace?:string}
+export interface PreparationProgress {phase:'scan'|'copy'|'verify'|'replace'|'cleanup';copiedBytes:number;totalBytes:number;filesCopied:number;totalFiles:number;currentFile?:string}
 export interface PreparationEstimate {workspace:string;prepared:boolean;requiresRefresh?:boolean;sourceBytes:number;requiredBytes:number;availableBytes:number;canPrepare:boolean}
 export interface Catalog {gamePath:string;sourceHash:string;build:string;levels:string[];regions?:NativeLevelRegion[];workspace:string;runtimeVerified:boolean;compatibility?:string}
 export interface EditorApi {
-  onPlaytestProgress?(callback:(text:string)=>void):()=>void;
+  profileAsset?<K extends import('./asset-diagnostics').AssetKind>(request:import('./asset-diagnostics').AssetProfileRequest & {kind:K}):Promise<import('./asset-diagnostics').ProfiledAsset<K>>;
+  savePerformanceReport?(json:string):Promise<boolean>;
+  onPlaytestProgress?(callback:(text:string,progress?:PreparationProgress)=>void):()=>void;
   exportDesign(r:import('./export-types').ExportRequest):Promise<import('./export-types').ExportResult|null>;
  storageScan():Promise<import('./v08-types').StorageScan>;
  storageClean(token:string,ids:string[]):Promise<{reclaimed:number}>;
@@ -74,6 +77,7 @@ export interface EditorApi {
  nativeImpact(project:import('./v08-types').NativeWorldProject,name:string):Promise<{entries:number[];references:string[]}>;
  nativeValidate(project:import('./v08-types').NativeWorldProject):Promise<WorldIssue[]>;
  nativeCreate():Promise<import('./v08-types').NativeWorldProject>;
+ nativePreviewUpdate?(request:import('./v08-types').NativeViewportPreviewRequest):Promise<import('./preview-delta').PreviewDelta>;
  nativeRegion(request:import('./v08-types').NativeRegionRequest):Promise<import('./v08-types').NativeRegionResult>;
  nativeDeploy(project:import('./v08-types').NativeWorldProject):Promise<string>;
  nativeBuild(project:import('./v08-types').NativeWorldProject):Promise<{path:string;hash:string;changed:string[]}>;

@@ -1,3 +1,4 @@
+import {copyGameFiles} from './copy-progress';
 import {registerMaterialResolver} from '../render-purpose';
 import {linkViewGiver} from '../core/view-giver';
 import {gameplayProject,reservedEntityIds} from '../editor-organization';
@@ -13,7 +14,7 @@ import {nativeDocument,nativeWorkbench,nativeScene} from '../native-project';
 import {validateNativeWorld} from '../core/native-world';
 import type {NativeWorldProject,NativeWorldIndex,NativeRegionRequest,NativeRegionResult} from '../v08-types';
 import{dependencyEvidence,schemaFingerprint,forwardBuild,verifyEvidence,rebindSource}from'../core/compatibility';
-import{inspectTestCopy,freshTestState,writeCopyMarker,promoteTestCopy,managedPath,type CopySource,type TestState}from'./playtest-copy';
+import{inspectTestCopy,freshTestState,writeCopyMarker,promoteTestCopy,recoverCopyReplacement,discardPreparingCopy,markPreparingCopy,cleanupAbandonedPreparingCopies,managedPath,type CopySource,type TestState}from'./playtest-copy';
 export type{TestState}from'./playtest-copy';
 import {PreviewWorker} from './preview-client';
 import type {PreviewRequest,PreviewDelta} from '../preview-delta';
@@ -56,7 +57,7 @@ export async function atomicWrite(file:string,data:Buffer|string):Promise<void>{
 }
 
 export class EditorService {
-  onPlaytestProgress?:(text:string)=>void;
+  onPlaytestProgress?:(text:string,progress?:import('../shared').PreparationProgress)=>void;
   async exportDesign(request:ExportRequest,target:string):Promise<ExportResult>{
     if(!request||!['project','runtime'].includes(request.format))throw Error('导出类型无效');
     const source=request.project;if(source.format==='sinking-star-world')await this.checkWorld(source);else await this.nativeIndex(source);
@@ -170,21 +171,39 @@ export class EditorService {
   }
   async preparationEstimate():Promise<import('../shared').PreparationEstimate>{await this.unchanged();const copy=await inspectTestCopy(this.copySource());return{...await estimatePreparation(this.gamePath,this.workspace,copy.prepared||Boolean(copy.sourceExeMissing)),requiresRefresh:copy.requiresRefresh};}
   async prepare():Promise<string>{
-    await this.unchanged();await this.assertStopped();const source=this.copySource(),copy=await inspectTestCopy(source);
+    await this.unchanged();await this.assertStopped();const source=this.copySource();
+    const blank={copiedBytes:0,totalBytes:0,filesCopied:0,totalFiles:0};
+    const report=(phase:import('../shared').PreparationProgress['phase'],text:string,counts=blank)=>this.onPlaytestProgress?.(text,{phase,...counts});
+    try{if(await fs.access(path.join(this.workspace,'playtest-replacement.json')).then(()=>true,()=>false))report('cleanup','恢复上次试玩副本更新…');await recoverCopyReplacement(source);await cleanupAbandonedPreparingCopies(source,()=>report('cleanup','清理上次未完成的复制…'));}catch(error){this.onPlaytestProgress?.('试玩副本恢复失败：'+String(error));throw error;}
+    const copy=await inspectTestCopy(source).catch(error=>{this.onPlaytestProgress?.('准备试玩副本失败：'+String(error));throw error;});
     if(copy.sourceExeMissing){await this.verifySourceHash();await atomicWrite(path.join(this.testRoot,SOURCE_EXE),await fs.readFile(path.join(this.gamePath,'sinking_star.exe')));return this.prepare();}
-    if(copy.prepared){if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(copy.state,null,2));return this.testRoot;}
-    const estimate=await this.preparationEstimate();if(!estimate.canPrepare)throw Error(`工作区磁盘空间不足：需约 ${(estimate.requiredBytes/2**30).toFixed(1)} GB，可用 ${(estimate.availableBytes/2**30).toFixed(1)} GB。请在工程菜单更换工作区并重启。`);
-    const building=path.join(this.workspace,`preparing-${Date.now()}-${process.pid}`);await managedPath(this.workspace,building);
-    await fs.cp(this.gamePath,building,{recursive:true,filter:s=>!s.split(path.sep).includes('logs'),force:false,errorOnExist:true});
-    if(sha256(await fs.readFile(path.join(building,'data/levels.package')))!==this.sourceHash||sha256(await fs.readFile(path.join(building,'sinking_star.exe')))!==this.exeHash)throw Error('复制期间游戏源文件已变化，请重新连接');
-    await this.verifySourceHash();await this.assertStopped();
-    const backup=path.join(this.workspace,'backups',this.sourceHash+'.package');await managedPath(this.workspace,backup);await fs.mkdir(path.dirname(backup),{recursive:true});
-    try{await fs.writeFile(backup,this.pkg.buffer,{flag:'wx'});}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;}
-    if(sha256(await fs.readFile(backup))!==this.sourceHash)throw Error('备份包损坏');
-    const state=freshTestState(source);await fs.writeFile(path.join(building,'steam_appid.txt'),'499170');await writeCopyMarker(building,state,copy.state);
-    // Recheck the registered package before moving anything, after the potentially long copy.
-    const final=await inspectTestCopy(source);if(final.prepared)throw Error('试玩副本已由另一项操作更新，请重试');
-    await promoteTestCopy(source,building,final);await atomicWrite(this.statePath(),JSON.stringify(state,null,2));await fs.rename(path.join(this.testRoot,'sinking_star.exe'),path.join(this.testRoot,SOURCE_EXE));return this.testRoot;
+    if(copy.prepared){if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(copy.state,null,2));const raw=path.join(this.testRoot,'sinking_star.exe');if(await fs.access(raw).then(()=>true,()=>false))await fs.rename(raw,path.join(this.testRoot,SOURCE_EXE));this.onPlaytestProgress?.('复用已有试玩副本');return this.testRoot;}
+    const building=path.join(this.workspace,`preparing-${Date.now()}-${process.pid}`);
+    try{
+      report('scan','统计试玩副本大小…');
+      const estimate=await this.preparationEstimate();if(!estimate.canPrepare)throw Error(`工作区磁盘空间不足：需约 ${(estimate.requiredBytes/2**30).toFixed(1)} GB，可用 ${(estimate.availableBytes/2**30).toFixed(1)} GB。请在工程菜单更换工作区并重启。`);
+      await managedPath(this.workspace,building);
+      const counts=await copyGameFiles(this.gamePath,building,p=>this.onPlaytestProgress?.(p.phase==='scan'?'统计试玩副本大小…':copy.requiresRefresh?'复制新版试玩副本…':'首次复制试玩副本…',p),()=>markPreparingCopy(source,building));
+      report('verify','校验新版试玩资源…',counts);
+      if(sha256(await fs.readFile(path.join(building,'data/levels.package')))!==this.sourceHash||sha256(await fs.readFile(path.join(building,'sinking_star.exe')))!==this.exeHash)throw Error('复制期间游戏源文件已变化，请重新连接');
+      await this.verifySourceHash();await this.assertStopped();
+      const backup=path.join(this.workspace,'backups',this.sourceHash+'.package');await managedPath(this.workspace,backup);await fs.mkdir(path.dirname(backup),{recursive:true});
+      try{await fs.writeFile(backup,this.pkg.buffer,{flag:'wx'});}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;}
+      if(sha256(await fs.readFile(backup))!==this.sourceHash)throw Error('备份包损坏');
+      const state=freshTestState(source);await fs.writeFile(path.join(building,'steam_appid.txt'),'499170');await writeCopyMarker(building,state,copy.state);
+      await fs.rename(path.join(building,'sinking_star.exe'),path.join(building,SOURCE_EXE));
+      const final=await inspectTestCopy(source);if(final.prepared)throw Error('试玩副本已由另一项操作更新，请重试');
+      report('replace','替换当前试玩副本…',counts);
+      await promoteTestCopy(source,building,final);await atomicWrite(this.statePath(),JSON.stringify(state,null,2));
+      report('cleanup','清理旧试玩副本…',counts);await recoverCopyReplacement(source);
+      this.onPlaytestProgress?.(copy.requiresRefresh?'试玩副本已更新，旧副本已清理':'试玩副本已准备完成');return this.testRoot;
+    }catch(error){
+      // A surviving replacement journal owns its rollback and staging directory.
+      // Never discard those files when recovery needs them.
+      const pending=await fs.access(path.join(this.workspace,'playtest-replacement.json')).then(()=>true,()=>false);
+      if(!pending)await discardPreparingCopy(source,building).catch(cleanup=>{this.onPlaytestProgress?.('临时复制清理失败：'+String(cleanup));});
+      this.onPlaytestProgress?.('准备试玩副本失败：'+String(error));throw error;
+    }
   }
   private async restoreAux(s:TestState){
     for(const rel of s.aux){const source=path.join(this.gamePath,rel),target=path.join(this.testRoot,rel);
@@ -228,6 +247,12 @@ export class EditorService {
   async nativeValidate(project:NativeWorldProject):Promise<WorldIssue[]>{await this.nativeIndex(project);const worker=await this.previewWorker();return worker!.request('native-validate',{project,build:this.build});}
   async nativeSearch(project:NativeWorldProject,query:string):Promise<{id:number;type:string;name:string;position:Vec3;cellId:string}[]>{await this.unchanged();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-search',{project,query,build:this.build});}
   async nativeIndex(project?:NativeWorldProject):Promise<NativeWorldIndex>{await this.unchanged();if(project){validateNativeWorld(project);if(project.sourceHash!==this.sourceHash||project.sourceBuild!==this.build)throw Error('原版世界来源不匹配');}const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-index',{project,build:this.build});}
+  async nativePreviewUpdate(r:import('../v08-types').NativeViewportPreviewRequest):Promise<PreviewDelta>{
+    await this.unchanged();
+    if(typeof r.scene!=='string'||r.scene.length>200||r.scene!==r.project.id+':world'||r.cellId!=='world'||r.baseRevision!==undefined&&(!Number.isSafeInteger(r.baseRevision)||r.baseRevision<0||r.baseRevision>=r.revision))throw Error('大地图预览修订无效');
+    const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');
+    return worker.request('native-preview-update',{...r,build:this.build});
+  }
   async nativeRegion(r:NativeRegionRequest):Promise<NativeRegionResult>{await this.unchanged();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-region',{...r,build:this.build});}
   async nativeDeploy(project:NativeWorldProject):Promise<string>{
     await this.nativeIndex(project);await this.assertStopped();await this.verifySourceHash();

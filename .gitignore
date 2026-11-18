@@ -152,3 +152,11 @@ scripts/*
 !scripts/camera-panel-check-renderer.tsx
 
 !docs/screenshots/camera-workbench-alpha8.png
+
+!scripts/copy-progress-check.mjs
+!scripts/copy-progress-check-renderer.tsx
+!docs/RELEASE-V09-ALPHA9.md
+
+!scripts/diagnostics-benchmark.mjs
+!scripts/diagnostics-benchmark-renderer.tsx
+!scripts/playtest-space.ps1

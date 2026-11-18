@@ -2,7 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { EditorApi } from '../shared';
 const invoke=(method:string,...args:unknown[])=>ipcRenderer.invoke(`editor:${method}`,...args);
 const api:EditorApi={
-onPlaytestProgress:callback=>{const listener=(_event:unknown,text:string)=>callback(String(text));ipcRenderer.on('editor:playtest-progress',listener);return()=>{ipcRenderer.removeListener('editor:playtest-progress',listener);};},
+profileAsset:request=>invoke('profileAsset',request),savePerformanceReport:json=>invoke('savePerformanceReport',json),
+onPlaytestProgress:callback=>{const listener=(_event:unknown,text:string,progress?:import('../shared').PreparationProgress)=>callback(String(text),progress);ipcRenderer.on('editor:playtest-progress',listener);return()=>{ipcRenderer.removeListener('editor:playtest-progress',listener);};},
 exportDesign:r=>invoke('exportDesign',r),
 storageScan:(...args:any[])=>invoke('storageScan',...args),
 storageClean:(...args:any[])=>invoke('storageClean',...args),
@@ -16,7 +17,7 @@ testProfileChange:(...args:any[])=>invoke('testProfileChange',...args),
 nativeSearch:(p,q)=>invoke('nativeSearch',p,q),
 nativeIndex:(...args:any[])=>invoke('nativeIndex',...args),
 nativeImpact:(...args:any[])=>invoke('nativeImpact',...args),nativeValidate:(...args:any[])=>invoke('nativeValidate',...args),nativeCreate:(...args:any[])=>invoke('nativeCreate',...args),
-nativeRegion:(...args:any[])=>invoke('nativeRegion',...args),
+nativeRegion:(...args:any[])=>invoke('nativeRegion',...args),nativePreviewUpdate:r=>invoke('nativePreviewUpdate',r),
 nativeDeploy:(...args:any[])=>invoke('nativeDeploy',...args),nativeBuild:(...args:any[])=>invoke('nativeBuild',...args),
 nativeSave:(...args:any[])=>invoke('nativeSave',...args),
 nativeLoad:(...args:any[])=>invoke('nativeLoad',...args),inspectCompatibility:()=>invoke('inspectCompatibility'),updateCheck:()=>invoke('updateCheck'),updateDownload:()=>invoke('updateDownload'),updateInstall:()=>invoke('updateInstall'),
