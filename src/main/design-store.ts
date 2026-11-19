@@ -1,6 +1,15 @@
-import fs from'node:fs/promises';import path from'node:path';import{randomUUID,createHash}from'node:crypto';import type{WorldProject,RecoveryItem,AssemblyItem,RegionBundle}from'../shared';import{validateBundle}from'../core/regions';
+import fs from'node:fs/promises';import path from'node:path';import{randomUUID,createHash}from'node:crypto';import type{WorldProject,RecoveryItem,AssemblyItem,RegionBundle}from'../shared';import{validateBundle,validateRegionTransfer}from'../core/regions';
 async function write(file:string,data:unknown){await fs.mkdir(path.dirname(file),{recursive:true});const temp=file+'.'+randomUUID()+'.tmp';await fs.writeFile(temp,JSON.stringify(data));try{await fs.rename(temp,file);}catch(e){await fs.rm(temp,{force:true});throw e;}}
 export class DesignStore{
+ async clipboard(bundle?:RegionBundle):Promise<RegionBundle|null>{
+  const file=path.join(this.root,'region-clipboard.json');
+  if(bundle){validateRegionTransfer(bundle);await this.serial(()=>write(file,bundle));return bundle;}
+  try{
+   const stored=JSON.parse(await fs.readFile(file,'utf8')) as RegionBundle;
+   validateRegionTransfer(stored);
+   return stored;
+  }catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return null;throw e;}
+ }
  private queue=Promise.resolve();private lastTime=0;constructor(readonly root:string){}
  private serial<T>(fn:()=>Promise<T>){const next=this.queue.then(fn);this.queue=next.then(()=>{},()=>{});return next;}
  private key(w:WorldProject,file?:string){return createHash('sha256').update(w.id+':'+(file?path.resolve(file).toLowerCase():'unsaved')).digest('hex').slice(0,24);}

@@ -160,3 +160,7 @@ scripts/*
 !scripts/diagnostics-benchmark.mjs
 !scripts/diagnostics-benchmark-renderer.tsx
 !scripts/playtest-space.ps1
+!scripts/region-transfer-check.mjs
+!scripts/region-transfer-check-renderer.tsx
+!scripts/project-tabs-check.mjs
+!scripts/project-tabs-check.ts

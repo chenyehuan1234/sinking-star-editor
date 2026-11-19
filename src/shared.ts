@@ -19,13 +19,20 @@ export interface WaterView {id:number;x:number;y:number;z:number;width:number;he
 export interface ProfileOp {kind:'profile';id:number;template:string;sourceId:number}
 export type CopyPolicy='preserve'|'independent';
 export interface DuplicateOp {copyPolicy?:CopyPolicy;kind:'duplicate';id:number;copies:{id:number;newId:number}[];offset:Vec3;associations?:'independent'|'shared'}
-export interface RegionBundle {copyPolicy?:CopyPolicy;origin?:string;format:"sstar-region";version:1;sourceHash:string;sourceBuild:string;name:string;sources:string[];records:{id:number;type:string;diff:string}[];terrain:Vec3[];warnings:string[];associations?:'independent'|'shared'}
-export interface RegionSelection {copyPolicy?:CopyPolicy;origin?:string;ids:number[];bounds?:{min:Vec3;max:Vec3};includeBackground?:boolean;associations?:'independent'|'shared';single?:boolean}
-export interface StampOp {context?:string;kind:"stamp";id:number;bundle:RegionBundle;position:Vec3;yaw:number}
+export interface RegionEntrance {id:number;title:string;levelId:string;position:Vec3;appearance:string;unlocks:number[];unlockAny:boolean}
+export interface RegionLevelLink {levelId:string;doorId:number;field:'target_level'|'switch_to_level_set';target:string;targetId?:string}
+export interface RegionTransfer {size:Vec3;entries:RegionEntrance[];levels:WorldLevel[];links:RegionLevelLink[];channels?:string[]}
+export interface RegionBundle {terrainPaint?:import('./terrain-paint').TerrainFacePaint[];copyPolicy?:CopyPolicy;origin?:string;format:"sstar-region";version:1|2;sourceHash:string;sourceBuild:string;name:string;sources:string[];records:{id:number;type:string;diff:string}[];terrain:Vec3[];warnings:string[];associations?:'independent'|'shared';transfer?:RegionTransfer}
+export interface RegionSelection {copyPolicy?:CopyPolicy;origin?:string;ids:number[];bounds?:{min:Vec3;max:Vec3};includeBackground?:boolean;associations?:'independent'|'shared';single?:boolean;volume?:boolean}
+export interface StampOp {context?:string;kind:"stamp";id:number;bundle:RegionBundle;position:Vec3;yaw:number;entries?:Record<number,{level:string;externalUnlocks:number[]}>}
+export interface RegionPasteOptions {expand:boolean;skipConflicts:boolean;includeDependencies:boolean;unlocks:Record<string,string>}
+export interface RegionPasteRequest {world:WorldProject;scene:string;bundle:RegionBundle;at:Vec3;yaw:number;id:number;options:RegionPasteOptions}
 export interface RunRequest {mode:"world"|"single"|"subset";levelIds:string[]}
 export interface RecoveryItem {id:string;name:string;at:string;kind:"auto"|"manual";summary:string;recoverable?:boolean}
 export interface AssemblyItem {id:string;name:string;at:string;bundle:RegionBundle}
-export type EditOp=WaterCreateOp|WaterResizeOp|WaterPaintOp|ControlOp|StampOp|TransformOp|CloneOp|DeleteOp|PropertiesOp|PrefabOp|TerrainOp|ProfileOp|DuplicateOp;
+export interface LevelSettingsOp {kind:'levelSettings';id:0;values:import('./level-settings').LevelSettings}
+export interface TerrainPaintOp {kind:'terrainPaint';id:0;defaults?:import('./terrain-paint').TerrainPalette;faces?:import('./terrain-paint').TerrainFacePaint[]}
+export type EditOp=TerrainPaintOp|LevelSettingsOp|WaterCreateOp|WaterResizeOp|WaterPaintOp|ControlOp|StampOp|TransformOp|CloneOp|DeleteOp|PropertiesOp|PrefabOp|TerrainOp|ProfileOp|DuplicateOp;
 export type ProjectBase={kind:'template';template:string}|{kind:'blank';width:number;height:number};
 /** In screen mode XY are offsets from each screen centre; otherwise world coordinates. */
 export interface CameraPose {position:Vec3;target:Vec3;up:Vec3}
@@ -43,12 +50,13 @@ export interface TopologyConfig {corner:Vec3;size:Vec3;wrapping:boolean;wrapping
 export interface NativeTopologyView extends TopologyConfig {perScreen:boolean;maskCount:number}
 export interface EditorProject {sourceEvidence?:import('./core/compatibility').SourceEvidence; format:'sinking-star-project'; version:1|2|3; sourceHash:string; sourceBuild:string; template:string; base?:ProjectBase; name:string; operations:EditOp[];editor?:EditorMetadata;camera?:CameraConfig;topology?:TopologyConfig }
 export interface EditableProperty {name:string;label:string;kind:'number'|'boolean'|'target';value:number|boolean;min?:number;max?:number;targets?:string[]}
-export interface EntityView {renderPurpose?:import('./render-purpose').RenderPurpose;nativeFlags?:string;id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue;defaulted?:boolean}[]}
-export interface LevelView {overview?:boolean;partial?:boolean;externalTargets?:{id:number;type:string;position:Vec3}[];name:string;entities:EntityView[];typeCount:number;manifest:string;camera?:CameraView;topology?:NativeTopologyView;terrain?:{x:number;y:number;z:number;id?:number}[];waters?:WaterView[]}
+export interface EntityView {prismPreset?:number;renderPurpose?:import('./render-purpose').RenderPurpose;nativeFlags?:string;id:number;type:string;position:Vec3|null;yaw:number;editable:boolean;bytes:number;mesh:string;cloneable:boolean;properties?:EditableProperty[];rotation?:[number,number,number,number];scale?:Vec3;materials?:string[];tint?:Vec3;accessoryMask?:number;generatedSurface?:boolean;nativeProperties?:{field:ObjectField;value:NativeValue;defaulted?:boolean}[]}
+export interface LevelView {levelSettings?:import('./level-settings').LevelSettings;overview?:boolean;partial?:boolean;externalTargets?:{id:number;type:string;position:Vec3}[];name:string;entities:EntityView[];typeCount:number;manifest:string;camera?:CameraView;topology?:NativeTopologyView;terrain?:{x:number;y:number;z:number;id?:number;paintable?:boolean;colors?:import('./terrain-paint').TerrainFaceColors}[];waters?:WaterView[]}
 export type Tile=0|1|2;
-export interface WorldEntry {id:string;title:string;levelId:string;x:number;y:number;prototype?:{template:string;sourceId:number}}
+export interface WorldEntry {id:string;title:string;levelId:string;x:number;y:number;z?:number;unlocks?:[first?:string|null,second?:string|null,third?:string|null];unlockAny?:boolean;prototype?:{template:string;sourceId:number};appearance?:string}
 export interface WorldLevel {folderId?:string;id:string;title:string;project:EditorProject}
-export interface WorldProject {native?:import('./native-project').NativeDocumentMeta;levelGroups?:import('./native-project').LevelFolder[];sourceEvidence?:import('./core/compatibility').SourceEvidence;format:'sinking-star-world';version:1|2|3;id:string;name:string;sourceHash:string;sourceBuild:string;map:{width:number;height:number;tiles:Tile[];spawn:[number,number];entries:WorldEntry[];objects?:EditOp[];editor?:EditorMetadata};levels:WorldLevel[]}
+export interface WorldMap {width:number;height:number;tiles:Tile[];origin?:[number,number];voxels?:Vec3[];spawn:[number,number];spawnZ?:number;entries:WorldEntry[];objects?:EditOp[];editor?:EditorMetadata}
+export interface WorldProject {native?:import('./native-project').NativeDocumentMeta;levelGroups?:import('./native-project').LevelFolder[];sourceEvidence?:import('./core/compatibility').SourceEvidence;format:'sinking-star-world';version:1|2|3|4;id:string;name:string;sourceHash:string;sourceBuild:string;map:WorldMap;levels:WorldLevel[]}
 export interface WorldIssue {severity:'error'|'warning';message:string;entryId?:string;levelId?:string;entityId?:number;entityIds?:number[];category?:'reference'|'channel'|'dependency'|'native'}
 export interface PrefabView {key:string;label:string;type:string;template:string;sourceId:number;values?:Record<string,number|boolean>}
 export interface NativeLevelRegion {id:string;title:string;layer:'ground'|'underground'|'sky'|'other';levels:string[];cell?:[number,number];cells?:[number,number][];subregions?:{cell:[number,number];levels:string[]}[];nameSource?:'native-volume'|'overlap'|'unmarked';areaKey?:string}
@@ -94,6 +102,12 @@ export interface EditorApi {
  cameraObject(p:EditorProject,request:CameraObjectRequest):Promise<CameraConfig>;
  viewGiverLink(p:EditorProject,request:ViewGiverLinkRequest):Promise<ViewGiverLinkResult>;
   regionCapture(p:EditorProject,selection:RegionSelection):Promise<RegionBundle>;
+  worldRegionCapture?(w:WorldProject,scene:string,selection:RegionSelection,job?:string):Promise<RegionBundle>;
+  worldRegionPaste?(request:RegionPasteRequest,job?:string):Promise<WorldProject>;
+  cancelRegionJob?(job:string):Promise<void>;
+  onRegionProgress?(callback:(job:string,phase:string)=>void):()=>void;
+  regionClipboard?(bundle?:RegionBundle):Promise<RegionBundle|null>;
+  onRegionClipboardChange?(callback:()=>void):()=>void;
   regionPreview(bundle:RegionBundle):Promise<LevelView>;
   assemblyList():Promise<AssemblyItem[]>;
   assemblySave(bundle:RegionBundle):Promise<AssemblyItem>;

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { EditorApi } from '../shared';
+import type {ProjectTabsApi,ProjectTabState} from '../project-tabs';
 const invoke=(method:string,...args:unknown[])=>ipcRenderer.invoke(`editor:${method}`,...args);
 const api:EditorApi={
 profileAsset:request=>invoke('profileAsset',request),savePerformanceReport:json=>invoke('savePerformanceReport',json),
@@ -23,6 +24,9 @@ nativeSave:(...args:any[])=>invoke('nativeSave',...args),
 nativeLoad:(...args:any[])=>invoke('nativeLoad',...args),inspectCompatibility:()=>invoke('inspectCompatibility'),updateCheck:()=>invoke('updateCheck'),updateDownload:()=>invoke('updateDownload'),updateInstall:()=>invoke('updateInstall'),
  quickSlotsRead:()=>invoke('quickSlotsRead'),quickSlotsWrite:v=>invoke('quickSlotsWrite',v),
  cameraObject:(p,r)=>invoke('cameraObject',p,r),viewGiverLink:(p,r)=>invoke('viewGiverLink',p,r),
+ worldRegionPaste:(request,job)=>invoke('worldRegionPaste',request,job),worldRegionCapture:(w,scene,selection,job)=>invoke('worldRegionCapture',w,scene,selection,job),
+ cancelRegionJob:job=>invoke('cancelRegionJob',job),onRegionProgress:callback=>{const listener=(_event:unknown,job:string,phase:string)=>callback(job,phase);ipcRenderer.on('editor:region-progress',listener);return()=>{ipcRenderer.removeListener('editor:region-progress',listener);};},regionClipboard:b=>invoke('regionClipboard',b),
+ onRegionClipboardChange:callback=>{const listener=()=>callback();ipcRenderer.on('editor:region-clipboard-changed',listener);return()=>{ipcRenderer.removeListener('editor:region-clipboard-changed',listener);};},
  regionCapture:(p,s)=>invoke("regionCapture",p,s),regionPreview:b=>invoke("regionPreview",b),assemblyList:()=>invoke("assemblyList"),assemblySave:b=>invoke("assemblySave",b),assemblyRemove:id=>invoke("assemblyRemove",id),assemblyImport:()=>invoke("assemblyImport"),assemblyExport:b=>invoke("assemblyExport",b),recoveryWrite:w=>invoke("recoveryWrite",w),recoveryList:w=>invoke("recoveryList",w),recoveryRestore:(w,id)=>invoke("recoveryRestore",w,id),runValidate:(w,r)=>invoke("runValidate",w,r),runPlan:(w,r)=>invoke("runPlan",w,r),nativeRunPlan:(p,r)=>invoke("nativeRunPlan",p,r),nativeRunLaunch:(p,r,c)=>invoke("nativeRunLaunch",p,r,c),runLaunch:(w,r,c)=>invoke("runLaunch",w,r,c),
   previewMesh:r=>invoke('previewMesh',r),worldStartup:()=>invoke('worldStartup'),levelCreateBlank:(w,h)=>invoke('levelCreateBlank',w,h),presetPreview:k=>invoke('presetPreview',k),thumbnailRead:k=>invoke('thumbnailRead',k),thumbnailWrite:(k,p)=>invoke('thumbnailWrite',k,p),
   worldRecreations:()=>invoke('worldRecreations'),
@@ -32,3 +36,16 @@ nativeLoad:(...args:any[])=>invoke('nativeLoad',...args),inspectCompatibility:()
   connect:path=>invoke('connect',path),chooseGame:()=>invoke('chooseGame'),openLevel:n=>invoke('openLevel',n),previewUpdate:r=>invoke('previewUpdate',r),preview:p=>invoke('preview',p),
   save:p=>invoke('save',p),load:()=>invoke('load'),build:p=>invoke('build',p),prepare:()=>invoke('prepare'),deploy:p=>invoke('deploy',p),launch:()=>invoke('launch'),restore:()=>invoke('restore'),reveal:()=>invoke('reveal')
 };contextBridge.exposeInMainWorld('editor',api);
+if(process.argv.includes('--sstar-project-tabs')){
+  const tabs:ProjectTabsApi={
+    state:()=>ipcRenderer.invoke('project-tabs:state'),
+    action:(action,id,before,point)=>ipcRenderer.invoke('project-tabs:action',action,id,before,point),
+    report:value=>ipcRenderer.send('project-tabs:report',value),
+    onState:listener=>{
+      const receive=(_event:unknown,value:ProjectTabState)=>listener(value);
+      ipcRenderer.on('project-tabs:state',receive);
+      return()=>{ipcRenderer.removeListener('project-tabs:state',receive);};
+    }
+  };
+  contextBridge.exposeInMainWorld('projectTabs',tabs);
+}

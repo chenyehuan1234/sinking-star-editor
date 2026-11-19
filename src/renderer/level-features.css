@@ -1,0 +1,17 @@
+.s-level-setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;align-items:end;margin-block:7px}
+.s-level-setting .s-field{margin:0}
+.s-level-setting>small{padding-block:5px}
+.s-level-setting .s-error{grid-column:1/-1;padding:0}
+.s-beam-swatches{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-block:8px}
+.s-beam-swatches button{min-width:0;display:flex;align-items:center;gap:6px;text-align:left}
+.s-beam-swatches button::before{content:"";width:10px;height:10px;flex:none;border-radius:2px;background:var(--beam)}
+.s-beam-swatches button[aria-pressed=true]{border-color:var(--beam)}
+.s-beam-swatches button[aria-pressed=mixed]{border-style:dashed;border-color:var(--beam)}
+.s-paint-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-block:7px}
+.s-terrain-paint-toolbar{flex:none}
+.s-terrain-paint-toolbar>button{flex:none}
+.s-terrain-paint-toolbar input[type=color],.s-paint-actions input[type=color],.s-terrain-palette input[type=color]{box-sizing:border-box;width:28px;height:24px;padding:2px;cursor:pointer}
+.s-terrain-palette{border-top:1px solid var(--s-line,#52616a);margin-block:9px;padding-block:7px}
+.s-terrain-palette label{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-block:5px}
+.s-terrain-palette label span{flex:1}
+.s-screen-power-preview[aria-pressed=true]{border-color:#72d0f4;color:#9fe3fa}

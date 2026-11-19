@@ -1,0 +1,23 @@
+.project-window{position:fixed;inset:0;background:#171e23;color:#dce3e7;font:12px/1.45 system-ui,sans-serif}
+.project-strip{height:36px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 9px;background:#151b1f;border-bottom:1px solid #354148}
+.project-tabs{height:100%;display:flex;align-items:stretch;min-width:0;overflow:auto hidden;scrollbar-width:none}
+.project-tab{display:flex;position:relative;min-width:102px;max-width:210px;flex:0 0 auto;align-items:center;margin-top:3px;border:1px solid transparent;border-radius:5px 5px 0 0}
+.project-tab.active{background:#263138;border-color:#44535b;border-bottom-color:#263138}
+.project-tab.dragging{opacity:.6}
+.project-tab.insert-before::before,.project-tab-end{content:"";width:2px;background:#e2bf7b;align-self:stretch}
+.project-tab.insert-before::before{position:absolute;inset:0 auto 0 0}
+.project-strip button,.project-window-empty button{border:0;background:transparent;color:inherit;cursor:pointer;font:inherit}
+.project-strip button:hover,.project-window-empty button:hover{background:#303b42}
+.project-strip button:focus-visible,.project-window-empty button:focus-visible{outline:2px solid #e2bf7b;outline-offset:-2px}
+.project-tab button[role=tab]{display:flex;align-items:center;gap:6px;min-width:0;flex:1;height:100%;padding:0 7px}
+.project-tab button[role=tab] span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-tab svg,.project-tab i{flex:none}
+.project-tab i{width:6px;height:6px;border-radius:50%;background:#e2bf7b}
+.project-tab .project-close,.project-tab-actions button{display:grid;place-items:center;width:25px;height:25px;padding:0;border-radius:4px}
+.project-tab .project-close{margin-right:3px}
+.project-tab-actions{display:flex;gap:3px;flex:none}
+.project-tab-error{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#efa389}
+.project-window-empty{position:absolute;inset:36px 0 0;display:grid;justify-items:center;align-content:center;gap:10px;color:#e2bf7b}
+.project-window-empty h1{margin:0;color:#dce3e7;font-size:20px}
+.project-window-empty div{display:flex;gap:8px}
+.project-window-empty button{padding:7px 12px;border:1px solid #46545d;border-radius:5px;color:#dce3e7}

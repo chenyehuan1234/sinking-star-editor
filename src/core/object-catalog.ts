@@ -67,7 +67,7 @@ export function buildObjectCatalog(pkg:GamePackage,codec:PropertyCodec,build:str
   const typeViews:ObjectTypeView[]=types.map(type=>{const def=OBJECT_BY_TYPE.get(type)!;return{...def,fields:objectFields(codec,type),...(counts.get(type)??{instances:0,completeInstances:0}),presetCount:list.filter(p=>p.type===type).length};});
   return{version:1,schemaRevision:4,sourceHash:sha256(pkg.buffer),exeHash:codec.reflection.hash,build,generatedAt:new Date().toISOString(),types:typeViews,presets:list,totals:{levels:levels.length,entities,types:types.length,meshes:assetFiles.filter(n=>n.endsWith('.compressed_mesh')).length,textures:assetFiles.filter(n=>n.endsWith('.texture')).length,presets:list.length}};
 }
-export function validateNativeProperties(codec:PropertyCodec,type:string,values:Record<string,NativeValue>){
+export function validateNativeProperties(codec:PropertyCodec,type:string,values:Record<string,NativeValue>,previous?:EntityRecord){
   if(!values||typeof values!=='object'||Array.isArray(values)||Object.keys(values).length>128)throw new Error('对象属性无效');
   const fields=objectFields(codec,type);
   for(const[name,value]of Object.entries(values)){
@@ -79,7 +79,7 @@ export function validateNativeProperties(codec:PropertyCodec,type:string,values:
     else{let n:bigint;try{if(typeof value==='number'&&!Number.isSafeInteger(value)||typeof value!=='number'&&typeof value!=='string')throw Error();n=BigInt(value as number|string);}catch{throw new Error(`${f.label} 必须是整数`);}
       if(f.kind==='reference'&&(n<0n||n>0xffffffffn))throw new Error('对象引用超出范围');
       if(f.kind==='enum'&&f.options&&!f.options.some(o=>BigInt(o.value)===n))throw new Error(`${f.label} 不属于原生枚举`);
-      if(f.kind==='flags'&&f.options){const mask=f.options.reduce((a,o)=>a|BigInt(o.value),0n);if(n<0n||(n&~mask)!==0n)throw new Error(`${f.label} 含有未知标志`);}
+      if(f.kind==='flags'&&f.options){const mask=f.options.reduce((a,o)=>a|BigInt(o.value),0n);const before=type==='Artifact'&&name==='p3_wand_flags'&&previous?BigInt(String(codec.get(previous,name,0))):0n;if(n<0n||(n&~mask)!==(before&~mask))throw new Error(`${f.label} 含有未知标志`);}
       const schema=codec.schema(type).find(s=>s.name===name);if(schema?.kind==='int'&&[1,2,4,8].includes(schema.size)){const bits=BigInt(schema.size*8),min=schema.signed?-(1n<<(bits-1n)):0n,max=schema.signed?(1n<<(bits-1n))-1n:(1n<<bits)-1n;if(n<min||n>max)throw new Error(`${f.label} 超出原生字段范围`);}
     }
   }

@@ -128,7 +128,7 @@ export class EditorService {
   async verifySourceHash(){await this.unchanged();if(sha256(await fs.readFile(path.join(this.gamePath,'data/levels.package')))!==this.sourceHash)throw new Error('游戏源包哈希发生变化，操作已停止');}
   async openLevel(name:string){await this.unchanged();return levelView(this.pkg,name,undefined,this.codec);}
   async preview(p:EditorProject){await this.checkProject(p);const worker=await this.previewWorker();return worker?worker.request<import('../shared').LevelView>('preview',p):levelView(this.pkg,p.template,applyProject(this.pkg,p,this.codec),this.codec);}
-  async previewUpdate(r:PreviewRequest):Promise<PreviewDelta>{if(typeof r.scene!=='string'||r.scene.length>200||!Number.isSafeInteger(r.revision)||r.revision<0||Boolean(r.project)===Boolean(r.world))throw Error('预览请求无效');if(r.project)await this.checkProject(r.project);else await this.checkWorld(r.world!);const worker=await this.previewWorker();if(worker)return worker.request('update',r);return diffPreview(null,r.project?await this.preview(r.project):await this.worldPreview(r.world!),r);}
+  async previewUpdate(r:PreviewRequest,previewOwner?:string):Promise<PreviewDelta>{if(typeof r.scene!=='string'||r.scene.length>200||!Number.isSafeInteger(r.revision)||r.revision<0||Boolean(r.project)===Boolean(r.world))throw Error('预览请求无效');if(r.project)await this.checkProject(r.project);else await this.checkWorld(r.world!);const worker=await this.previewWorker();if(worker)return worker.request('update',{...r,previewOwner});return diffPreview(null,r.project?await this.preview(r.project):await this.worldPreview(r.world!),r);}
   async viewGiverLink(p:EditorProject,r:import('../shared').ViewGiverLinkRequest){await this.checkProject(p);if(!this.codec)throw Error('卷轴关联需要原生类型信息');const worker=await this.previewWorker();return worker?worker.request<import('../shared').ViewGiverLinkResult>('view-giver-link',{project:p,request:r}):linkViewGiver(this.pkg,this.codec,p,r);}
   async cameraObject(p:EditorProject,request:CameraObjectRequest){await this.checkProject(p);const c=this.codec;if(!c)throw Error('相机编辑需要原生类型信息');const file=applyProject(this.pkg,p,c),reserved=reservedEntityIds(p.operations,file.records.map(r=>r.id),p.camera);let edit;
    if(request.action==='delete')edit={kind:'delete' as const,ids:[request.id]};
@@ -147,7 +147,7 @@ export class EditorService {
       const c=await new Promise<ObjectCatalog>((resolve,reject)=>{const worker=new Worker(path.join(path.dirname(this.workerFile),'catalog-worker.cjs'));worker.once('message',m=>{void worker.terminate();m.error?reject(new Error(m.error)):resolve(m.value);});worker.once('error',reject);worker.once('exit',code=>{if(code!==0&&code!==1)reject(new Error('对象扫描线程异常退出'));});worker.postMessage({root:this.gamePath,build:this.build});});
       await atomicWrite(file,JSON.stringify(c));return c;})();
   }
-  async worldPreview(w:WorldProject){if(w.native)return (await this.nativeRegion({project:nativeDocument(w),session:w.id,revision:0,cellId:'world',overview:true})).view;await this.checkWorld(w);const worker=await this.previewWorker();if(worker)return worker.request<import('../shared').LevelView>('worldPreview',w);if(!w.map.tiles.some(Boolean)&&!w.map.objects?.length&&!w.map.entries.length)return{name:'overworld',entities:[],typeCount:88,manifest:'',terrain:[]};return levelView(this.pkg,'overworld',this.compiler!.previewMap(w),this.codec);}
+  async worldPreview(w:WorldProject){if(w.native)return (await this.nativeRegion({project:nativeDocument(w),session:w.id,revision:0,cellId:'world',overview:true})).view;await this.checkWorld(w);const worker=await this.previewWorker();if(worker)return worker.request<import('../shared').LevelView>('worldPreview',w);if(!(w.map.voxels?.length||w.map.tiles.some(Boolean))&&!w.map.objects?.length&&!w.map.entries.length)return{name:'overworld',entities:[],typeCount:88,manifest:'',terrain:[]};return levelView(this.pkg,'overworld',this.compiler!.previewMap(w),this.codec);}
   async buildProject(p:EditorProject){
     await this.checkProject(p);
     const source=await fs.readFile(path.join(this.gamePath,'data/levels.package'));
@@ -247,11 +247,11 @@ export class EditorService {
   async nativeValidate(project:NativeWorldProject):Promise<WorldIssue[]>{await this.nativeIndex(project);const worker=await this.previewWorker();return worker!.request('native-validate',{project,build:this.build});}
   async nativeSearch(project:NativeWorldProject,query:string):Promise<{id:number;type:string;name:string;position:Vec3;cellId:string}[]>{await this.unchanged();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-search',{project,query,build:this.build});}
   async nativeIndex(project?:NativeWorldProject):Promise<NativeWorldIndex>{await this.unchanged();if(project){validateNativeWorld(project);if(project.sourceHash!==this.sourceHash||project.sourceBuild!==this.build)throw Error('原版世界来源不匹配');}const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-index',{project,build:this.build});}
-  async nativePreviewUpdate(r:import('../v08-types').NativeViewportPreviewRequest):Promise<PreviewDelta>{
+  async nativePreviewUpdate(r:import('../v08-types').NativeViewportPreviewRequest,previewOwner?:string):Promise<PreviewDelta>{
     await this.unchanged();
     if(typeof r.scene!=='string'||r.scene.length>200||r.scene!==r.project.id+':world'||r.cellId!=='world'||r.baseRevision!==undefined&&(!Number.isSafeInteger(r.baseRevision)||r.baseRevision<0||r.baseRevision>=r.revision))throw Error('大地图预览修订无效');
     const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');
-    return worker.request('native-preview-update',{...r,build:this.build});
+    return worker.request('native-preview-update',{...r,build:this.build,previewOwner});
   }
   async nativeRegion(r:NativeRegionRequest):Promise<NativeRegionResult>{await this.unchanged();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-region',{...r,build:this.build});}
   async nativeDeploy(project:NativeWorldProject):Promise<string>{
@@ -296,8 +296,46 @@ export class EditorService {
     return `已整体部署 ${w.levels.length} 个小关卡和 ${w.map.entries.length} 个入口。所有入口可直接进入。`;
   }
   async worldLaunch(_w:WorldProject,_quickEntry?:string,_initialLevel?:string,_fresh=false):Promise<string>{return blockPlaytest();}
+  onRegionProgress?:(job:string,phase:string)=>void;
+  private regionJobs=new Map<string,Int32Array>();
+  cancelRegionJob(job:string){const signal=this.regionJobs.get(job);if(signal)Atomics.store(signal,0,1);}
+  private async regionJob<T>(job:string|undefined,execute:(signal:SharedArrayBuffer|undefined,progress:(phase:string)=>void)=>Promise<T>){
+    if(job!==undefined&&(!/^[a-f0-9-]{36}$/.test(job)||this.regionJobs.has(job)))throw Error('区域任务编号无效');
+    const signal=job?new Int32Array(new SharedArrayBuffer(4)):undefined;
+    if(job&&signal)this.regionJobs.set(job,signal);
+    try{
+      const result=await execute(signal?.buffer as SharedArrayBuffer|undefined,phase=>{if(job&&!Atomics.load(signal!,0))this.onRegionProgress?.(job,phase);});
+      if(signal&&Atomics.load(signal,0))throw Error('已取消区域操作');
+      return result;
+    }finally{if(job)this.regionJobs.delete(job);}
+  }
+  async worldRegionPaste(request:import('../shared').RegionPasteRequest,job?:string){
+   return this.regionJob(job,async(signal,progress)=>{
+    const {world,scene,bundle}=request;
+    if(world.native){validateNativeWorld(nativeDocument(world));await this.unchanged();}
+    else await this.checkWorld(world);
+    if(world.sourceHash!==this.sourceHash||world.sourceBuild!==this.build||bundle.sourceHash!==this.sourceHash||bundle.sourceBuild!==this.build)throw Error('区域与目标工程的游戏来源不一致');
+    if(scene!=='world'&&!world.levels.some(level=>level.id===scene))throw Error('目标关卡已不存在');
+    const worker=await this.previewWorker();
+    if(!worker)throw Error('区域粘贴需要后台预览进程');
+    const updated=await worker.request<WorldProject>('world-region-paste',{...request,build:this.build,signal},progress);
+    if(updated.native)validateNativeWorld(nativeDocument(updated));else validateWorld(updated);
+    return updated;
+   });
+  }
+  async worldRegionCapture(world:WorldProject,scene:string,selection:RegionSelection,job?:string){
+   return this.regionJob(job,async(signal,progress)=>{
+    if(world.native){validateNativeWorld(nativeDocument(world));await this.unchanged();}
+    else await this.checkWorld(world);
+    if(world.sourceHash!==this.sourceHash||world.sourceBuild!==this.build)throw Error('区域来源与当前游戏版本不一致');
+    if(scene!=='world'&&!world.levels.some(level=>level.id===scene))throw Error('源关卡已不存在');
+    const worker=await this.previewWorker();
+    if(!worker)throw Error('区域复制需要后台预览进程');
+    return worker.request<RegionBundle>('world-region-capture',{world,scene,selection,build:this.build,signal},progress);
+   });
+  }
   async regionCapture(p:EditorProject,selection:RegionSelection){await this.checkProject(p);const worker=await this.previewWorker();if(worker)return worker.request<RegionBundle>('capture',{project:p,selection});return captureRegion(this.codec!,applyProject(this.pkg,p,this.codec),p,selection,projectSources(p));}
-  async regionPreview(bundle:RegionBundle){validateBundle(bundle);if(bundle.sourceHash!==this.sourceHash||bundle.sourceBuild!==this.build)throw Error('组合与当前游戏版本不一致');const source=parseEntities(this.pkg.get('data-common/mirror_1.entities')),file={...source,records:[]};const p:EditorProject={format:'sinking-star-project',version:3,sourceHash:this.sourceHash,sourceBuild:this.build,template:'mirror_1',name:'region_preview',operations:[{kind:'stamp',id:900*0x100000+1,bundle,position:[0,0,0],yaw:0}]};return levelView(this.pkg,'mirror_1',applyProject(this.pkg,p,this.codec,file),this.codec);}
+  async regionPreview(bundle:RegionBundle){validateBundle(bundle);if(bundle.sourceHash!==this.sourceHash||bundle.sourceBuild!==this.build)throw Error('组合与当前游戏版本不一致');const source=parseEntities(this.pkg.get('data-common/mirror_1.entities')),file={...source,records:[]};const p:EditorProject={format:'sinking-star-project',version:3,sourceHash:this.sourceHash,sourceBuild:this.build,template:'mirror_1',name:'region_preview',operations:[{kind:'stamp',id:900*0x100000+1,bundle:bundle.version===2?{...bundle,transfer:undefined,records:bundle.records.slice(0,200),terrain:bundle.terrain.slice(0,1024)}:bundle,position:[0,0,0],yaw:0}]};return levelView(this.pkg,'mirror_1',applyProject(this.pkg,p,this.codec,file),this.codec);}
   async runValidate(w:WorldProject,r:RunRequest){const scoped=scopedWorld(w,r);await this.checkWorld(scoped);const issues=await this.worldValidate(scoped);if(r.mode!=='world')for(const l of scoped.levels){const f=applyProject(this.pkg,l.project,this.codec);for(const e of f.records.filter(e=>e.type==='Door'))for(const field of ['target_level','switch_to_level_set']){const name=String(this.codec!.get(e,field,''));if(name&&!['intro','overworld'].includes(name)&&!scoped.levels.some(t=>[t.id,t.project.name,t.project.template,'ed_'+scoped.id+'_'+t.id].includes(name)))issues.push({severity:'error',levelId:l.id,entityId:e.id,message:l.title+'：出口依赖范围外关卡 '+name+'，请加入测试组或修改出口'});}}return issues;}
   async cleanupTemporary(){await this.assertStopped();return cleanupTemporarySaves(this.workspace);}
   private requireChoice(choice?:PlaytestChoice){if(!choice||[choice.temporary,choice.profileId,choice.newProfileName,choice.resetProfileId].filter(Boolean).length!==1||[choice.profileId,choice.resetProfileId].some(id=>id!==undefined&&!/^[a-f0-9]{12}$/.test(id)))throw Error('请选择兼容测试存档，或明确输入名称新建存档');}

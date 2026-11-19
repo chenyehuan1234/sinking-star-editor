@@ -2,13 +2,17 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，在同一个工作台编辑完整原版世界及小关。原安装只读，试玩使用隔离测试档。
 
-**v0.9.0-alpha.9 测试版。** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.9.0-alpha.9) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [验收步骤](docs/V09-ACCEPTANCE.md)
+**v0.10.0** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.10.0) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues) · [验收步骤](docs/V09-ACCEPTANCE.md)
 
-游戏更新后替换现有试玩副本，首次复制和更新均显示实际进度。「操作设置 → 性能诊断」可记录选择、拖动、放置及素材读取耗时。下载包含 Windows x64 安装程序、免安装 ZIP 和 SHA-256 校验文件，无需另装 Node.js。[本版更新](docs/RELEASE-V09-ALPHA9.md) · [性能基准与空间盘点](docs/PERFORMANCE.md)
+- 顶部工程标签可切换、重排和拖出独立窗口。区域复制支持跨工程，保留地形、水域、玩法物件、入口与关联小关。
+- 小关和自制大地图支持地板、墙面默认色与局部刷色。新增下落、荷叶、飞石和小车时序，以及西 1 式分屏通电高亮和三棱镜色卡。
+- 分屏模板省略每屏尺寸时按原生 6×6 读取。新建分屏显式保存 16×16。[v0.10.0 发布说明](docs/RELEASE-NOTES.md#v0100--多工程与关卡机制)
+
+游戏更新后替换现有试玩副本，首次复制和更新均显示实际进度。「操作设置 → 性能诊断」可记录选择、拖动、放置及素材读取耗时。下载包含 Windows x64 安装程序、免安装 ZIP 和 SHA-256 校验文件，无需另装 Node.js。[alpha.9 副本更新](docs/RELEASE-V09-ALPHA9.md) · [性能基准与空间盘点](docs/PERFORMANCE.md)
 
 镜头栏集中展示本关画面规则、镜头清单、取景和特殊控制区域。双击镜头直接取景，“完成镜头编辑”恢复原自由视角。分屏边界开关位于画布上方图标栏，默认开启。[alpha.8 镜头工作台与取景更新](docs/RELEASE-V09-ALPHA8.md)
 
-这是 v0.9 大版本的测试版。需要已安装的 Steam 原游戏，不附带原生资源；程序未签名。当前原生检查版本为 Build 26466613。未知程序版本未经存档隔离验证时，阻止试玩启动。
+需要已安装的 Steam 原游戏，不附带原生资源；程序未签名。当前原生检查版本为 Build 26466613。未知程序版本未经存档隔离验证时，阻止试玩启动。
 
 本版统一分屏规划、有限边界和导航，支持整套布局平移、一步撤销及返回大地图恢复视角；数字属性即时预览并自动提交，频道支持精确整数增减，连续输入合并撤销。地形外观、场景装饰、环境特效与辅助独立显示，水流默认展示全部可见水域。见 [alpha.6 说明](docs/RELEASE-V09-ALPHA6.md)及[镜头操作](docs/CAMERA-SWITCHING.md)。镜头编辑与原生运行能力分别说明；静态参考与游戏内切换分别验收。
 
@@ -55,8 +59,8 @@
 
 需要 Windows x64，以及通过 Steam 安装的《沉星之序 / Order of the Sinking Star》。下载包不包含原游戏资源，不需要另装 Node.js。
 
-- **安装版**：下载 `SinkingStarEditor-0.9.0-alpha.6-Setup.exe`，按向导安装。
-- **免安装版**：下载 `SinkingStarEditor-0.9.0-alpha.6-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
+- **安装版**：下载 `SinkingStarEditor-0.10.0-Setup.exe`，按向导安装。
+- **免安装版**：下载 `SinkingStarEditor-0.10.0-x64.zip`，完整解压后打开文件夹中的编辑器。保留整个文件夹，不要只移动 exe。
 - GitHub 自动生成的 **Source code** 压缩包供开发者使用，不是可运行的软件下载。
 
 启动时先检查已保存的目录，再查找 Steam 默认库和其他磁盘的游戏库。只有一个有效安装时自动连接；多个安装可选择。没有找到时，点击“选择游戏文件夹”，选择包含 `sinking_star.exe` 的目录，不是 Steam 总目录。

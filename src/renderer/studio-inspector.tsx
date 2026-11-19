@@ -6,9 +6,11 @@ import {configureGate,gateDraft,gateLibraryDraft} from '../gate-config';
 import {gateDisplayName} from '../gate-library';
 import {GateDirectionControl} from './gate-controls';
 import {assetFamilies} from '../asset-variants';
-import {channelHue} from './scene-display';
+import {categoryOf,channelHue} from './scene-display';
+import {terrainTint} from '../terrain-paint';
 import{CharacterControlInspector}from'./character-control';
 import React,{useEffect,useMemo,useRef,useState}from'react';import * as T from'three';import type{EditOp,EntityView,Vec3}from'../shared';import type{ObjectCatalog,ObjectField,NativeValue,ObjectPreset}from'../catalog-types';
+import {PrismInspector} from './prism-inspector';
 import{PROFILE_FIELDS,lockedProfileField as profileField}from'../profile-metadata';
 import{Icon,IconButton,Modal,typeLabel}from'./studio-ui';import{NativeThumbnail}from'./thumbnails';import{AssetLibrary}from'./asset-library';
 // Keep the renderer independent of the binary codec: profile metadata only.
@@ -53,6 +55,14 @@ export function StudioInspector({level,onLinkView,onEditLinkedCamera,entities,al
   {sameType&&entity.type==='Guy'&&<CharacterControlInspector entities={entities} all={all} busy={busy} onApply={onApply} onSelect={onSelectGroup} onPick={()=>onPick('turn_order_id',entities.map(e=>e.id))} onClone={onCloneControl}/>}
   {sameType&&entity.type==='Ocean_Map'&&onEditWater&&<button className="s-text-button" onClick={onEditWater}><Icon name="flow"/>编辑水域与水流</button>}
   {sameType&&entity.type==='View_Giver'&&level&&onLinkView&&<ViewGiverInspector entities={entities} level={level} busy={busy} onLink={onLinkView} onEdit={onEditLinkedCamera}/>}
+  {entities.every(e=>e.editable&&['Inanimate','Decal'].includes(e.type)&&categoryOf(e)==='terrainArt')&&<section className="s-terrain-palette">
+    <label><span>地形模型染色</span><input type="color" aria-label="地形模型染色" disabled={busy} value={'#'+new T.Color().setRGB(...(entity.tint??[1,1,1])).getHexString()} onChange={e=>{
+      const [red,green,blue]=terrainTint(e.target.value);
+      onApply(entities.map(entity=>({kind:'properties',id:entity.id,values:{'tint_color_a.x':red,'tint_color_a.y':green,'tint_color_a.z':blue}})));
+    }}/></label>
+    <small className="s-muted">适用于支持染色的原生材质。</small>
+  </section>}
+  {entities.every(e=>e.prismPreset!==undefined)&&<PrismInspector entities={entities} busy={busy} onApply={onApply}/>}
   {!!normal.length&&<details className="s-inspector-section" open><summary>玩法参数</summary>{normal.map(renderField)}</details>}{!!ref.length&&<details className="s-inspector-section" open><summary>关联</summary>{ref.map(renderField)}</details>}<details className="s-inspector-section"><summary>高级</summary><div className="s-resource"><span>原生类型</span><code>{entity.type}</code></div><div className="s-resource"><span>原生模型</span><code>{entity.mesh}</code></div>{advanced.map(renderField)}{entity.type==='View_Giver'&&<>{fields.filter(f=>f.name==='group_id').map(renderField)}<p className="s-muted">所属存在组控制对象的存在状态，与卷轴解锁哪个镜头无关。</p></>}</details>
   {sameType&&Boolean(catalog?.types.find(t=>t.type===entity.type)?.dependencies.length)&&<p className="s-muted">原生依赖：{catalog?.types.find(t=>t.type===entity.type)?.dependencies.join('、')}。请结合原生场景检查。</p>}{profileOpen&&<Modal title={`选择${typeLabel(entity.type)}原版配置`} onClose={()=>setProfileOpen(false)} className="s-profile-modal"><AssetLibrary catalog={catalog} filterType={entity.type} compact onChoose={profile}/></Modal>}</div>;
 }

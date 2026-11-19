@@ -48,16 +48,23 @@ test('真实主进程的启动、部署与旧进度重置 IPC 均被拦截，未
   try {
     const handlers=new Map<string,(event:unknown,...args:unknown[])=>Promise<unknown>>();
     let shown!:()=>void;const ready=new Promise<void>(resolve=>{shown=resolve;});
-    let window:any;
+    let view:FakeView;
     class FakeWindow {
-      webContents={mainFrame:{},on(){},setWindowOpenHandler(){},session:{setPermissionRequestHandler(){}}};
-      constructor(){window=this;}
-      removeMenu(){} async loadFile(){} show(){shown();} focus(){}
+      webContents={mainFrame:{},on(){},send(){},setWindowOpenHandler(){},session:{setPermissionRequestHandler(){}}};
+      contentView={addChildView(){}};
+      removeMenu(){} async loadFile(){} show(){shown();} focus(){} on(){} setTitle(){}
+      isDestroyed(){return false;}
+      getContentBounds(){return {width:1200,height:800};}
+    }
+    class FakeView {
+      webContents={id:1,mainFrame:{},on(){},focus(){},setWindowOpenHandler(){},isDestroyed:()=>false,async loadFile(){}};
+      constructor(){view=this;}
+      setBounds(){} setVisible(){}
     }
     const electron={
       app:{isPackaged:true,setName(){},requestSingleInstanceLock:()=>true,whenReady:()=>Promise.resolve(),getPath:()=>root,on(){},quit(){}},
-      BrowserWindow:FakeWindow,Menu:{setApplicationMenu(){}},dialog:{},shell:{},
-      ipcMain:{handle:(name:string,handler:any)=>handlers.set(name,handler)}
+      BrowserWindow:FakeWindow,WebContentsView:FakeView,Menu:{setApplicationMenu(){}},dialog:{},shell:{},
+      ipcMain:{handle:(name:string,handler:any)=>handlers.set(name,handler),on(){}}
     };
     const output=await build({entryPoints:['src/main/main.ts'],bundle:true,platform:'node',format:'cjs',write:false,
       plugins:[{name:'mock-electron',setup(b){b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'mock'}));
@@ -65,7 +72,7 @@ test('真实主进程的启动、部署与旧进度重置 IPC 均被拦截，未
     const context=vm.createContext({__electron:electron,require:createRequire(import.meta.url),module:{exports:{}},exports:{},
       __dirname:root,__filename:path.join(root,'main.cjs'),process:{...process,env:{}},Buffer,console,setTimeout,clearTimeout,URL});
     vm.runInContext(output.outputFiles[0].text,context);await ready;
-    const event={sender:window.webContents,senderFrame:window.webContents.mainFrame};
+    const event={sender:view!.webContents,senderFrame:view!.webContents.mainFrame};
     for(const method of ['launch','worldLaunch','worldReset']) {
       const handler=handlers.get('editor:'+method);assert.ok(handler,method);
       await assert.rejects(()=>handler(event,undefined,undefined),(e:any)=>e.code==='PLAYTEST_SUSPENDED'&&e.message===PLAYTEST_SUSPENSION);

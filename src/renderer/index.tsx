@@ -4,6 +4,7 @@ import {createRoot} from 'react-dom/client';
 import type {Catalog,EditorProject,EditOp,EntityView,LevelView,Vec3} from '../shared';
 import './style.css';
 import{StudioApp as WorldApp}from'./studio-app';
+import {ProjectTabs} from './project-tabs';
 
 const names:Record<string,string>={Guy:'角色',Mirror:'魔镜',Rock:'石头',Door:'出口',Wall_Set:'墙体组',Marker:'标记',Switch:'开关',Gate:'门闸',Teleporter:'传送器',Gem:'宝石',Gem_Slot:'宝石插槽',Inanimate:'场景摆件',Settings:'关卡设置',Camera_Control:'相机',Sun:'太阳',Sky:'天空',Wind:'风',Fog:'雾',Ocean_Map:'水面',Light_Probe:'光照探针',Decal:'贴花'};
 const glyphs:Record<string,string>={Guy:'♟',Mirror:'◈',Rock:'⬡',Door:'◎',Wall_Set:'▦',Marker:'＋',Switch:'⊙',Gate:'▥',Teleporter:'↔',Gem:'◆',Gem_Slot:'◇'};
@@ -129,4 +130,5 @@ export function MapCanvas({level,selected,setSelected,onMove,showScene,zoom,fitK
   </svg>;
 }
 
-createRoot(document.getElementById('root')!).render(<WorldApp/>);
+const tabStrip=new URLSearchParams(location.search).get('view')==='project-tabs';
+createRoot(document.getElementById('root')!).render(tabStrip?<ProjectTabs/>:<WorldApp/>);

@@ -1,4 +1,5 @@
-import type {EditorProject,LevelView,Vec3,WorldIssue} from '../shared';
+import type {EditorProject,LevelView,RegionSelection,Vec3,WorldIssue,WorldProject} from '../shared';
+import {captureWorldRegion} from './world-region';
 import type {NativeWorldProject,NativeWorldIndex,NativeRegionRequest,NativeRegionResult} from '../v08-types';
 import {nativeOperations,nativeScene} from '../native-project';
 import {NativeWorldEngine,validateNativeWorld} from './native-world';
@@ -23,6 +24,11 @@ export class UnifiedNativeWorldEngine extends NativeWorldEngine {
   if(!file){file=project.operations.length||p.camera||p.topology?applyProject(this.pkg,project,this.codec,{...this.file,types:[...this.file.types],records:[...this.file.records]}):this.file;this.snapshots.set(key,file);if(this.snapshots.size>2)this.snapshots.delete(this.snapshots.keys().next().value!);}
   return file;
  }
+ regionFile(p:NativeWorldProject){return this.snapshot(p);}
+ captureRegion(p:NativeWorldProject,workbench:WorldProject,selection:RegionSelection,progress?:(phase?:string)=>void){
+  const source=this.worldProject(p);
+  return captureWorldRegion(this.codec,this.snapshot(p),workbench,'world',source,selection,projectSources(source),level=>applyProject(this.pkg,level,this.codec),progress);
+ }
  override index(p?:NativeWorldProject):NativeWorldIndex {
   const index=super.index(p?this.plain(p):undefined);
   const links=p?.version===5?this.snapshot(p).records.filter(e=>e.type==='Level_Entry').map(e=>({id:e.id,target:String(this.codec.get(e,'level_name','')),position:position(e)??[0,0,0] as Vec3})):index.cells.flatMap(c=>c.entries.map(e=>({id:e.id,target:e.name,position:e.position})));const settings=this.file.records.find(e=>e.type==='Settings')!,lower=Number(this.codec.get(settings,'underground_barrier',-4)),upper=Number(this.codec.get(settings,'skyground_barrier',10)),zs=links.map(e=>e.position[2]),heightRanges=[{title:'地下',min:Math.floor(Math.min(...zs)),max:Math.ceil(lower)-1},{title:'地表',min:Math.ceil(lower),max:Math.floor(upper)},{title:'天空',min:Math.floor(upper)+1,max:Math.ceil(Math.max(...zs))}];return {...index,heightRanges,entryCount:links.length,levels:p?.version===5?['overworld',...p.scenes!.map(l=>l.id)]:index.levels,entryLinks:links};
@@ -45,7 +51,7 @@ export class UnifiedNativeWorldEngine extends NativeWorldEngine {
   for(let i=0;i<records.length;i++){const group=groups.get(Number(this.codec.get(records[i],'group_id',0)));if(group&&!ids.has(group.id)){ids.add(group.id);records.push(group);}}
   let view:LevelView;
   if(r.overview){view={name:'overworld',entities:levelView(this.pkg,'overworld',{...this.file,records},this.codec).entities.map(e=>({...e,mesh:''})),typeCount:this.file.types.length,manifest:'',topology:this.index(r.project).topology,terrain:[]};const terrain=levelView(this.pkg,'overworld',{...this.file,records:file.records.filter(e=>e.type==='Wall_Set')},this.codec,bounds).terrain??[],coarse=new Map<string,{x:number;y:number;z:number}>();for(const c of terrain){const x=Math.floor(c.x/4)*4+1.5,y=Math.floor(c.y/4)*4+1.5,key=x+','+y+','+Math.floor(c.z/4),old=coarse.get(key);if(!old||old.z<c.z)coarse.set(key,{x,y,z:c.z});}view.terrain=[...coarse.values()];view.overview=true;}
-  else {view=levelView(this.pkg,'overworld',{...this.file,records},this.codec,bounds);for(const w of view.waters??[]){const x=Math.max(w.x,Math.ceil(bounds.min[0])),y=Math.max(w.y,Math.ceil(bounds.min[1])),width=Math.max(0,Math.min(w.x+w.width,Math.ceil(bounds.max[0]))-x),height=Math.max(0,Math.min(w.y+w.height,Math.ceil(bounds.max[1]))-y),cells:number[]=[];for(let j=0;j<height;j++)for(let i=0;i<width;i++)cells.push(w.cells[(y+j-w.y)*w.width+x+i-w.x]);Object.assign(w,{x,y,width,height,cells});}}
+  else {view=levelView(this.pkg,'overworld',{...file,records},this.codec,bounds);for(const w of view.waters??[]){const x=Math.max(w.x,Math.ceil(bounds.min[0])),y=Math.max(w.y,Math.ceil(bounds.min[1])),width=Math.max(0,Math.min(w.x+w.width,Math.ceil(bounds.max[0]))-x),height=Math.max(0,Math.min(w.y+w.height,Math.ceil(bounds.max[1]))-y),cells:number[]=[];for(let j=0;j<height;j++)for(let i=0;i<width;i++)cells.push(w.cells[(y+j-w.y)*w.width+x+i-w.x]);Object.assign(w,{x,y,width,height,cells});}}
   view.partial=true;const visibleIds=new Set(view.entities.map(e=>e.id)),targets=new Set(view.entities.flatMap(e=>(e.nativeProperties??[]).filter(p=>p.field.kind==='reference'&&Number(p.value)&&!visibleIds.has(Number(p.value))).map(p=>Number(p.value))));view.externalTargets=file.records.filter(e=>targets.has(e.id)).map(e=>({id:e.id,type:e.type,position:position(e)??[0,0,0] as Vec3}));
   const result={session:r.session,revision:r.revision,cellId:'world',view,recordCount:records.length,elapsedMs:performance.now()-start,nextId:this.availableId(file)};
   this.windows.set(key,result);if(this.windows.size>6)this.windows.delete(this.windows.keys().next().value!);return result;

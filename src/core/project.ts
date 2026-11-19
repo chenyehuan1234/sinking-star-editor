@@ -2,7 +2,7 @@ import {resolveEntityAppearance} from '../render-purpose';
 import{applyWater,waterView,validateWaterOp,WATER_TEMPLATE}from'./water';
 import {validateEditor,gameplayWorld,gameplayProject} from '../editor-organization';
 import{applyCharacterControl}from'./character-control';import{applyTopology,topologyView,validateTopology}from'./topology';
-import{applyStamp,validateBundle}from'./regions';
+import{applyStamp,stampPaint,validateBundle}from'./regions';
 import { GamePackage } from './package';
 import { baseFields, canEdit, EDITABLE, parseEntities, patchTransform, position, writeEntities, yawOf, type EntityFile } from './entities';
 import type { EditorProject, LevelView, Vec3 } from '../shared';
@@ -10,6 +10,11 @@ import{PropertyCodec}from'./properties';
 import{MECHANISM_TYPES,REMOVABLE_TYPES,mechanismProperties,validateProperties,transform,rotationValues}from'./mechanisms';
 import {editableType,placeNative} from './placement';
 import {objectFields,validateNativeProperties,nativeFieldDefault} from './object-catalog';
+import {applyLevelSettings,levelSettingsView} from './level-settings';
+import {validateLevelSettings,type LevelSettings} from '../level-settings';
+import {applyTerrainPaint,generatedTerrainName,paintSurfaceTemplate} from './terrain-paint';
+import {faceKey,faceNormals,validateTerrainFaces,validateTerrainPalette,type TerrainFacePaint,type TerrainPalette} from '../terrain-paint';
+import {defaultPrismColors} from '../prism-settings';
 import {applyTerrain} from './terrain';
 import {mergeManifests} from './manifests';
 import {blankFile,updateBlankBounds} from './blank';
@@ -22,7 +27,13 @@ export function validateProject(value: unknown): asserts value is EditorProject 
   if(p.base){if(![2,3].includes(p.version)||!['blank','template'].includes(p.base.kind))throw new Error('无效的场景基础');if(p.base.kind==='blank'&&![p.base.width,p.base.height].every(n=>Number.isInteger(n)&&n>=4&&n<=128))throw new Error('空白场景尺寸无效');if(p.base.kind==='template'&&p.base.template!==p.template)throw new Error('模板基础与资源模板不一致');}
   validateEditor(p.editor);validateCamera(p.camera);validateTopology(p.topology);
   for(const o of p.operations){
-    if(!o||!['water','waterCreate','waterResize','control','stamp','transform','clone','delete','properties','prefab','terrain','profile','duplicate'].includes(o.kind)||!Number.isInteger(o.id)||o.id<0||o.id>0xffffffff)throw new Error('无效的编辑操作');
+    if(!o||!['terrainPaint','levelSettings','water','waterCreate','waterResize','control','stamp','transform','clone','delete','properties','prefab','terrain','profile','duplicate'].includes(o.kind)||!Number.isInteger(o.id)||o.id<0||o.id>0xffffffff)throw new Error('无效的编辑操作');
+    if(o.kind==='levelSettings')validateLevelSettings(o.values);
+    if(o.kind==='terrainPaint'){
+      if(o.defaults===undefined&&o.faces===undefined)throw Error('缺少地形颜色');
+      if(o.defaults!==undefined)validateTerrainPalette(o.defaults);
+      if(o.faces!==undefined)validateTerrainFaces(o.faces,4096);
+    }
     if(o.kind==='water'||o.kind==='waterCreate'||o.kind==='waterResize')validateWaterOp(o);
     if(o.kind==='control'&&(!Array.isArray(o.ids)||!o.ids.includes(o.id)||!o.ids.length||o.ids.length>2000||new Set(o.ids).size!==o.ids.length||o.ids.some(id=>!Number.isInteger(id)||id<1||id>0xffffffff)||o.targetId!==undefined&&(!Number.isInteger(o.targetId)||o.targetId<1||o.targetId>0xffffffff)))throw Error('原生角色控制设置无效');
     if(o.kind==='profile'&&(!validName(o.template)||!Number.isInteger(o.sourceId)||o.sourceId<0||o.sourceId>0xffffffff))throw new Error('原版配置无效');
@@ -44,25 +55,36 @@ export function validName(s: unknown): s is string {return typeof s==='string'&&
 export function applyProject(pkg:GamePackage,project:EditorProject,codec?:PropertyCodec,base?:EntityFile):EntityFile {
   validateProject(project);
   const f=base??(project.base?.kind==='blank'?(codec?blankFile(pkg,codec,project.base.width,project.base.height):(()=>{throw new Error('空白场景需要游戏类型信息');})()):parseEntities(pkg.get(`data-common/${project.template}.entities`)));
+  const settings:LevelSettings={};
+  let palette:TerrainPalette={};
+  const paint=new Map<string,TerrainFacePaint>();
+  const applyPaint=(rows:TerrainFacePaint[])=>{for(const row of rows){const key=faceKey(row.cell,row.face);if(row.color===null)paint.delete(key);else paint.set(key,row);}};
   for(const o of project.operations){
+    if(o.kind==='terrainPaint'){if(o.defaults!==undefined)palette=o.defaults;if(o.faces)applyPaint(o.faces);continue;}
+    if(o.kind==='levelSettings'){if(!codec)throw Error('关卡设置需要原生类型信息');Object.assign(settings,o.values);continue;}
     if(o.kind==='water'||o.kind==='waterCreate'||o.kind==='waterResize'){if(!codec)throw Error('水流编辑需要原生类型信息');applyWater(pkg,codec,f,o);continue;}
     if(o.kind==='control'){if(!codec)throw Error('角色同步控制需要原生类型信息');applyCharacterControl(codec,f,o);continue;}
-    if(o.kind==='stamp'){if(!codec)throw new Error('区域放置需要类型信息');applyStamp(pkg,codec,f,o);continue;}
+    if(o.kind==='stamp'){if(!codec)throw new Error('区域放置需要类型信息');applyStamp(pkg,codec,f,o);if(o.bundle.terrainPaint?.length)applyPaint(stampPaint(o));continue;}
     if(o.kind==='duplicate'){if(!codec)throw new Error('批量复制需要类型信息');if(o.copies.some(p=>!editableType(f.records.find(r=>r.id===p.id)?.type??'')))throw new Error('不能复制内部对象');duplicateRecords(codec,f,o);continue;}
-    if(o.kind==='terrain'){if(!codec)throw new Error('地形编辑需要游戏类型信息');applyTerrain(pkg,codec,f,o);continue;}
+    if(o.kind==='terrain'){if(!codec)throw new Error('地形编辑需要游戏类型信息');applyTerrain(pkg,codec,f,o);for(const {x,y,z,solid} of o.cells)if(!solid)faceNormals.forEach((_,face)=>paint.delete(faceKey([x,y,z],face)));continue;}
     if(o.kind==='prefab'){
       if(!codec)throw new Error('机关预设需要游戏反射信息');
       placeNative(pkg,codec,f,o);continue;
     }
     const index=f.records.findIndex(r=>r.id===o.id),r=f.records[index];
     if(!r||!(codec?editableType(r.type)&&codec.parse(r).complete:canEdit(r)))throw new Error(`实体 ${o.id} 不存在或尚不支持修改`);
-    if(o.kind==='profile'){if(!codec)throw new Error('配置切换需要类型信息');f.records[index]=applyProfile(pkg,codec,r,o);}
+    if(o.kind==='profile'){if(!codec)throw new Error('配置切换需要类型信息');f.records[index]=applyProfile(pkg,codec,r,o);f.prismPresets?.delete(r.id);}
     else if(o.kind==='transform'){
       let out=codec?transform(codec,r,o.position,o.yaw):patchTransform(r,o.position,o.yaw);
       if(codec&&(o.rotation||o.scale)){const values:Record<string,number>={};if(o.rotation)Object.assign(values,rotationValues(r.type,o.rotation));o.scale?.forEach((v,i)=>values['scale.'+'xyz'[i]]=v);out=codec.patch(out,values);}f.records[index]=out;
     }
     else if(o.kind==='properties'){
-      if(!codec)throw new Error('属性编辑需要反射信息');validateNativeProperties(codec,r.type,o.values);f.records[index]=codec.patch(r,o.values);
+      if(!codec)throw new Error('属性编辑需要反射信息');validateNativeProperties(codec,r.type,o.values,r);
+      if(r.type==='Artifact'&&Number(codec.get(r,'kind'))===2&&Object.hasOwn(o.values,'p3_wand_flags')){
+        f.prismPresets??=new Map();
+        if(!f.prismPresets.has(r.id))f.prismPresets.set(r.id,Number(codec.get(r,'p3_wand_flags',defaultPrismColors)));
+      }
+      f.records[index]=codec.patch(r,o.values);
     }
     else if(o.kind==='clone'){
       if(!(codec?editableType(r.type):['Mirror','Rock'].includes(r.type)))throw new Error('此对象不能复制');
@@ -75,7 +97,8 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
     }
   }
   if(project.base?.kind==='blank'&&codec&&!project.topology)updateBlankBounds(codec,f);
-  if(codec){applyCamera(codec,f,project.camera,pkg);applyTopology(codec,f,project.topology);
+  if(!codec&&(paint.size||Object.keys(palette).length))throw Error('地形配色需要原生类型信息');
+  if(codec){applyLevelSettings(codec,f,settings);applyCamera(codec,f,project.camera,pkg);applyTopology(codec,f,project.topology);applyTerrainPaint(codec,f,palette,paint);
     // Resolve authoring IDs after camera edits. Native named links then follow a
     // rename without an old rename in history redirecting a newer association.
     const links=new Map<number,number>();
@@ -88,22 +111,28 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
 export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:PropertyCodec,bounds?:{min:Vec3;max:Vec3}):LevelView {
   if(!validName(name))throw new Error('无效关卡名称');
   const f=file??parseEntities(pkg.get(`data-common/${name}.entities`));
-  const terrain:{x:number;y:number;z:number;id?:number}[]=[];
+  const terrain:NonNullable<LevelView['terrain']>=[];
   if(codec)for(const r of f.records.filter(r=>r.type==='Wall_Set')){
     const parsed=codec.parse(r),values=new Map(parsed.fields.map(f=>[f.schema.name,f.value]));if(!parsed.complete||Number(values.get('kind')??0)!==0)continue;const get=(s:string,d=0)=>Number(values.get(s)??d),p=position(r)??[0,0,0];
     const sx=get('wall_data.dimensions.x'),sy=get('wall_data.dimensions.y'),sz=get('wall_data.dimensions.z'),slots=(values.get('wall_data.bits.slots')??[])as string[];const cx=get('wall_data.corner.x'),cy=get('wall_data.corner.y'),cz=get('wall_data.corner.z'),bits=slots.map(v=>BigInt(v));
     if(sx*sy*sz>1000000||sx<1||sy<1||sz<1)continue;
+    const generated=generatedTerrainName(String(values.get('entity_name')??''));
     const terrainLimit=bounds?Infinity:30000,corner=[p[0]+cx,p[1]+cy,p[2]+cz+1],dims=[sx,sy,sz],lo=dims.map((_,i)=>bounds?Math.max(0,Math.ceil(bounds.min[i]-corner[i])):0),hi=dims.map((n,i)=>bounds?Math.min(n-1,Math.floor(bounds.max[i]-corner[i])):n-1);
-    for(let z=lo[2];z<=hi[2]&&terrain.length<terrainLimit;z++)for(let y=lo[1];y<=hi[1]&&terrain.length<terrainLimit;y++)for(let x=lo[0];x<=hi[0]&&terrain.length<terrainLimit;x++){const i=(z*sy+y)*sx+x;if(((bits[i>>6]??0n)&(1n<<BigInt(i%64)))!==0n)terrain.push({id:r.id,x:corner[0]+x,y:corner[1]+y,z:corner[2]+z});}
+    for(let z=lo[2];z<=hi[2]&&terrain.length<terrainLimit;z++)for(let y=lo[1];y<=hi[1]&&terrain.length<terrainLimit;y++)for(let x=lo[0];x<=hi[0]&&terrain.length<terrainLimit;x++){const i=(z*sy+y)*sx+x;if(((bits[i>>6]??0n)&(1n<<BigInt(i%64)))!==0n){
+      const cell={id:r.id,x:corner[0]+x,y:corner[1]+y,z:corner[2]+z};
+      const colors=generated?f.terrainColors?.get([cell.x,cell.y,cell.z-1].join(',')):undefined;
+      terrain.push(generated?{...cell,paintable:true,...(colors?{colors}:{})}:cell);
+    }}
   }
   const waters=codec?f.records.filter(r=>r.type==='Ocean_Map'&&codec.parse(r).complete).map(r=>waterView(codec,f,r)):[];
-  return {name,typeCount:f.types.length,terrain,waters,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
+  return {name,typeCount:f.types.length,terrain,waters,levelSettings:codec?levelSettingsView(codec,f):undefined,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
     const field=baseFields(r.diff).fields.find(f=>f.id===0x1f);
     const editable=codec?editableType(r.type)&&codec.parse(r).complete:canEdit(r);
     const raw=codec?Object.fromEntries(codec.parse(r).fields.map(f=>[f.schema.name,f.value])):{};
     const vector=(n:string,d:number)=>['x','y','z'].map(a=>Number(raw[n+'.'+a]??d))as[number,number,number];
-    const nativeProperties=codec&&editable?objectFields(codec,r.type).filter(f=>f.access==='design'&&!/^(position|orientation|scale|visual_position|tint_color_[ab])\./.test(f.name)).map(field=>({field,value:raw[field.name]??nativeFieldDefault(r.type,field.name,field.kind),defaulted:raw[field.name]===undefined})):undefined;
-    return resolveEntityAppearance(pkg,{nativeFlags:String(raw.entity_flags??0),id:r.id,type:r.type,position:position(r),yaw:yawOf(r),editable,bytes:r.diff.length,mesh:codec?String(raw.mesh??''):field?r.diff.toString('utf8',field.value,field.end):'',cloneable:editable&&(codec?editableType(r.type):['Mirror','Rock'].includes(r.type)),properties:codec?mechanismProperties(codec,r):[],scale:vector('scale',1),rotation:[...vector('orientation',0),Number(raw['orientation.w']??1)]as[number,number,number,number],tint:vector('tint_color_a',1),materials:Array.isArray(raw.materials)?raw.materials as string[]:[],accessoryMask:r.type==='Monster'?Number(raw.accessory_mask??0):undefined,generatedSurface:['Inanimate','Wall_Set'].includes(r.type)&&String(raw.entity_name??'').startsWith('editor_voxel_'),nativeProperties});
+    const prism=r.type==='Artifact'&&Number(raw.kind)===2;
+    const nativeProperties=codec&&editable?objectFields(codec,r.type).filter(f=>f.access==='design'&&!/^(position|orientation|scale|visual_position|tint_color_[ab])\./.test(f.name)).map(field=>({field,value:raw[field.name]??(prism&&field.name==='p3_wand_flags'?defaultPrismColors:nativeFieldDefault(r.type,field.name,field.kind)),defaulted:raw[field.name]===undefined})):undefined;
+    return resolveEntityAppearance(pkg,{nativeFlags:String(raw.entity_flags??0),id:r.id,type:r.type,position:position(r),yaw:yawOf(r),editable,bytes:r.diff.length,mesh:codec?String(raw.mesh??''):field?r.diff.toString('utf8',field.value,field.end):'',cloneable:editable&&(codec?editableType(r.type):['Mirror','Rock'].includes(r.type)),properties:codec?mechanismProperties(codec,r):[],scale:vector('scale',1),rotation:[...vector('orientation',0),Number(raw['orientation.w']??1)]as[number,number,number,number],tint:vector('tint_color_a',1),materials:Array.isArray(raw.materials)?raw.materials as string[]:[],accessoryMask:r.type==='Monster'?Number(raw.accessory_mask??0):undefined,generatedSurface:['Inanimate','Wall_Set'].includes(r.type)&&String(raw.entity_name??'').startsWith('editor_voxel_'),nativeProperties,prismPreset:prism?(f.prismPresets?.get(r.id)??Number(raw.p3_wand_flags??defaultPrismColors)):undefined});
   })};
 }
 
@@ -133,4 +162,4 @@ export function buildChanges(pkg:GamePackage,p:EditorProject,codec?:PropertyCode
   const manifest=sources.length===1?pkg.get(`data-common/${p.template}.level_manifest`):mergeManifests(sources.map(n=>pkg.get(`data-common/${n}.level_manifest`).toString()));
   return new Map([[`data-common/${p.name}.entities`,writeEntities(f)],[`data-common/${p.name}.level_manifest`,manifest]]);
 }
-export function projectSources(p:EditorProject){return[...new Set([p.template,...(p.camera?.edits??[]).flatMap(e=>e.kind==='clone'&&e.sourceTemplate?[e.sourceTemplate]:[]),...p.operations.flatMap(o=>o.kind==='waterCreate'?['mirror_1',WATER_TEMPLATE]:o.kind==='stamp'?o.bundle.sources:o.kind==='prefab'||o.kind==='profile'?[o.template]:o.kind==='properties'&&o.sourceTemplate?[o.sourceTemplate]:[]),...p.base?.kind==='blank'||p.operations.some(o=>o.kind==='terrain'||o.kind==='stamp')?['3d_intro_heroes','heroes1_1']:[]])];}
+export function projectSources(p:EditorProject){return[...new Set([p.template,...p.operations.some(o=>o.kind==='terrainPaint'||o.kind==='stamp'&&!!o.bundle.terrainPaint?.length)?[paintSurfaceTemplate]:[],...(p.camera?.edits??[]).flatMap(e=>e.kind==='clone'&&e.sourceTemplate?[e.sourceTemplate]:[]),...p.operations.flatMap(o=>o.kind==='waterCreate'?['mirror_1',WATER_TEMPLATE]:o.kind==='stamp'?o.bundle.sources:o.kind==='prefab'||o.kind==='profile'?[o.template]:o.kind==='properties'&&o.sourceTemplate?[o.sourceTemplate]:[]),...p.base?.kind==='blank'||p.operations.some(o=>o.kind==='terrain'||o.kind==='stamp')?['3d_intro_heroes','heroes1_1']:[]])];}

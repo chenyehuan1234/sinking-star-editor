@@ -1,10 +1,12 @@
+import {newScreenSize} from './level-settings';
 import {Box3,Vector3} from 'three';
 import type {CameraConfig,LevelView,Vec3} from './shared';
 import type {CameraPlan} from './editor-organization';
 
 export function screenLayout(level:LevelView,config?:CameraConfig){
- const size=config?.screenSize??level.camera?.screenSize??[16,16],origin=config?.origin??level.camera?.origin??[0,0];
- return{size,origin,enabled:config?.mode==='screens'||config?.mode!=='single'&&!!level.camera?.perScreen};
+ const enabled=config?.mode==='screens'||config?.mode!=='single'&&!!level.camera?.perScreen;
+ const size=config?.screenSize??(level.camera?.perScreen?level.camera.screenSize:[newScreenSize,newScreenSize] as [number,number]);
+ return{size,origin:config?.origin??level.camera?.origin??[0,0],enabled};
 }
 /** Native integer positions are cell centres; screen edges lie half a cell before origin. */
 export function screenAt(point:Vec3,origin:[number,number],size:[number,number]):[number,number]{return[Math.floor((point[0]-origin[0]+.5)/size[0]),Math.floor((point[1]-origin[1]+.5)/size[1])];}
