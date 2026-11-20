@@ -45,7 +45,7 @@ test('工作台直接校验并隔离启动指定范围，无需选择存档',asy
   service.assertStopped=async()=>{events.push('stopped');};
   service.runValidate=async()=>{events.push('validate');return [];};
   service.worldDeploy=async scoped=>{events.push(scoped.levels.map(level=>level.id).join(','));return 'deployed';};
-  Object.assign(service,{exeHash:'e5d5d928fab492fdd5ef978133e00c85b897144850aaed8b3291d758980c1a4a',startPlaytest:async (level:string,fresh:boolean)=>{events.push(level);if(fresh)events.push('fresh');return 'started';}});
+  Object.assign(service,{isolationReady:true,startPlaytest:async (level:string,fresh:boolean)=>{events.push(level);if(fresh)events.push('fresh');return 'started';}});
   assert.equal(await service.runLaunch(world,{mode:'single',levelIds:['b']}),'started');
   assert.deepEqual(events.slice(0,3),['stopped','validate','b']);
   assert.match(events[3],/^ed_[a-f0-9]{12}_b$/);
@@ -64,8 +64,8 @@ test('未经存档路径验证的游戏程序在普通和原版世界部署前�
  const world=newWorld('a'.repeat(64),'test');
  const run={mode:'world' as const,levelIds:[]};
  service.worldDeploy=service.nativeDeploy=async()=>{throw Error('不应在版本检查前部署');};
- await assert.rejects(()=>service.runLaunch(world,run),/独立存档路径尚未验证/);
- await assert.rejects(()=>service.nativeRunLaunch(undefined!,run),/独立存档路径尚未验证/);
+ await assert.rejects(()=>service.runLaunch(world,run),/无法识别当前游戏的存档路径/);
+ await assert.rejects(()=>service.nativeRunLaunch(undefined!,run),/无法识别当前游戏的存档路径/);
 });
 
 test('暂停策略不拦截编辑、保存、预览、校验与构建命令',()=>{

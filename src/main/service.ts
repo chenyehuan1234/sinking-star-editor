@@ -6,7 +6,7 @@ import {decodeGateKey,gateValues} from '../gate-config';
 import {nativeQuaternion} from '../editor-math';
 import {rotationValues} from '../core/mechanisms';
 import {testRevision} from './test-profiles';
-import {SOURCE_EXE,RUNTIME_EXE,assertIsolationSupported,isolationSupported,isolationUnavailable,patchSaveDirectory,preparePlaytestSaves} from './save-isolation';
+import {SOURCE_EXE,RUNTIME_EXE,isolationSupported,isolationUnavailable,patchSaveDirectory,preparePlaytestSaves,verifyRuntimeSavePath} from './save-isolation';
 import {gameplayWorld} from '../editor-organization';
 import type {PlaytestChoice,PlaytestPlan,TestContext} from '../v08-types';
 import {queueCacheTrim} from './storage';
@@ -125,7 +125,7 @@ export class EditorService {
       await atomicWrite(path.join(stage,'manifest.json'),JSON.stringify({format:'sstar-runtime-export',version:1,sourceHash:this.sourceHash,sourceBuild:this.build,scope:request.scope,files:entries},null,2));await fs.rename(stage,out);return{path:out,files:entries.length+1,hash:sha256(output)};
     }catch(e){await fs.rm(stage,{recursive:true,force:true});throw e;}
   }
-  gamePath='';pkg!:GamePackage;sourceHash='';private exeHash='';build='unknown';private stamp='';private busy=false;
+  gamePath='';pkg!:GamePackage;sourceHash='';private exeHash='';private isolationReady=false;build='unknown';private stamp='';private busy=false;
   readonly testRoot:string;
   codec?:PropertyCodec;private compiler?:WorldCompiler;readonly campaigns:CampaignManager;
   private previews?:PreviewWorker;
@@ -153,7 +153,7 @@ export class EditorService {
     // A failed new connection must leave the previously usable installation intact.
     await this.previews?.dispose();this.previews=undefined;await this.assets?.dispose();this.objects=undefined;this.pkg=pkg;this.sourceHash=sourceHash;this.exeHash=sha256(exe);this.gamePath=root;this.stamp=`${st.size}:${st.mtimeMs}`;this.codec=codec;this.assetFiles=assetFiles;this.build=build;
     this.assets=codec?new NativeAssets(root,this.workspace,sourceHash+codec.reflection.hash,assetFiles,materials!,this.workerFile):undefined;if(this.assets){const assets=this.assets;registerMaterialResolver(this.pkg,name=>assets.material(name).shader);}
-    this.schemaCache='';this.compiler=codec?new WorldCompiler(pkg,codec):undefined;
+    this.schemaCache='';this.compiler=codec?new WorldCompiler(pkg,codec):undefined;this.isolationReady=isolationSupported(exe);
     const checkedNovember19=this.sourceHash==='b78c8cb3796fd0bf370461b267a299dc107d90d407f4fd59c75778d98f778653'&&this.exeHash==='e5d5d928fab492fdd5ef978133e00c85b897144850aaed8b3291d758980c1a4a';
     let runtimeVerified=false;try{const e=JSON.parse(await fs.readFile(path.join(this.workspace,'playtest-evidence.json'),'utf8'));runtimeVerified=e.runtimeVerified===true&&e.sourceHash===this.sourceHash;}catch{}
     return {gamePath:root,sourceHash:this.sourceHash,build:this.build,workspace:this.workspace,compatibility:checkedNovember19?'Build 26787118 已通过原生数据检查':((this.sourceHash==='d747e5d9b8f540c9c6b90e8e987bd74a8c7f8f2f0672fce189403128f1f3117c'&&this.codec?.reflection.hash==='d802098b7cb85eadfc733b88d1554042fad950c572e916febea3f669a474a549')||(this.sourceHash==='408aba3676925faea0c823f8c231e30844feffe9c32ae42644d273ef31863589'&&this.codec?.reflection.hash==='0ae10a513dae25286fe93d0db4fa8a2df9a473bc07e1734e12bc1ad30166db1c')||(this.sourceHash==='a736bb1c2b6d44b80fb6de5b30a1f93308ebac0d3ead0e7c022b58a0eee47314'&&this.exeHash==='978b302fd0952e4ea8d869553aec875d9c635278a7d0f8cdb752f5a797a370aa'))?'数据回归版本；游戏内运行仍需实测':'当前版本未经回归；已通过结构解析，试玩需实测',levels:pkg.entries.filter(e=>e.name.endsWith('.entities')).map(e=>path.basename(e.name,'.entities')),regions,runtimeVerified};
@@ -433,21 +433,23 @@ export class EditorService {
     return this.isolatedRunPlan(context);
   }
   private async isolatedRunPlan(context:TestContext):Promise<PlaytestPlan>{
-    const supported=isolationSupported(this.exeHash);
-    return {context,compatible:[],incompatible:[],supported,preparation:await this.preparationEstimate(),reason:supported?'试玩使用独立存档目录':isolationUnavailable};
+    return {context,compatible:[],incompatible:[],supported:this.isolationReady,preparation:await this.preparationEstimate(),reason:this.isolationReady?'试玩前自动核对独立存档目录':isolationUnavailable};
   }
   private async startPlaytest(initialLevel:string,fresh=false,fromLibrary=false){
     this.onPlaytestProgress?.('准备独立试玩存档…');
     await this.assertStopped();
     const source=await fs.readFile(path.join(this.testRoot,SOURCE_EXE));
     if(sha256(source)!==this.exeHash)throw Error('试玩程序已变化，请重新准备试玩副本');
-    assertIsolationSupported(this.exeHash);
     const file=path.join(this.testRoot,RUNTIME_EXE);
     await managedPath(this.workspace,file);
-    const save=await preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{fresh,library:fromLibrary});
-    const program=patchSaveDirectory(source,save.id);
-    await atomicWrite(file,program.buffer);
-    if(sha256(await fs.readFile(file))!==program.hash)throw Error('独立试玩程序校验失败');
+    const save=await preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{fresh,library:fromLibrary,verify:async bound=>{
+      const program=patchSaveDirectory(source,bound.id);
+      await atomicWrite(file,program.buffer);
+      if(sha256(await fs.readFile(file))!==program.hash)throw Error('独立试玩程序校验失败');
+      this.onPlaytestProgress?.('核对试玩副本的存档路径…');
+      await this.assertStopped();
+      await verifyRuntimeSavePath(file,this.testRoot,bound.alias,bound.saves);
+    }});
     await this.assertStopped();
     this.onPlaytestProgress?.('启动独立试玩…');
     const child=spawn(file,[],{cwd:this.testRoot,stdio:'ignore',detached:true,windowsHide:false});
@@ -461,7 +463,7 @@ export class EditorService {
   }
   async runLaunch(w:WorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice,entryLevel?:string){
     const fresh=freshWorldRun(r);
-    assertIsolationSupported(this.exeHash);
+    if(!this.isolationReady)throw Error(isolationUnavailable);
     this.onPlaytestProgress?.('检查试玩范围与原生依赖…');
     await this.assertStopped();
     const issues=await this.runValidate(w,r),errors=issues.filter(i=>i.severity==='error');
@@ -473,7 +475,7 @@ export class EditorService {
     return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',fresh,Boolean(entryLevel));
   }
   async nativeRunLaunch(p:NativeWorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice){
-    assertIsolationSupported(this.exeHash);
+    if(!this.isolationReady)throw Error(isolationUnavailable);
     await this.assertStopped();
     await this.checkNativeRun(p,r);
     if(p.version===5){
