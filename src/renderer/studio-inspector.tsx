@@ -29,6 +29,49 @@ export function BufferInput({value,onCommit,onPreview,label,type='number',step='
  const input=<input ref={element} inputMode={numeric?'decimal':undefined} disabled={disabled} aria-label={label} type={numeric&&integer?'text':type} step={integer?'1':step} value={draft} placeholder="—" onFocus={begin} onPointerDown={e=>{const r=e.currentTarget.getBoundingClientRect();stepper.current=numeric&&e.clientX>r.right-18;}} onPointerUp={()=>{stepper.current=false;}} onCompositionStart={()=>{composing.current=true;clear();}} onCompositionEnd={e=>{composing.current=false;change(e.currentTarget.value);}} onChange={e=>change(e.target.value)} onBlur={e=>{clear();if(!cancelled.current)submit(e.currentTarget.value);active.current=false;setEditing(false);setDraft(live.current.value);cancelled.current=false;}} onKeyDown={e=>{if(numeric&&integer&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();increment(e.key==='ArrowUp'?1:-1);return;}stepper.current=['ArrowUp','ArrowDown'].includes(e.key);if(e.key==='Enter'&&!e.nativeEvent.isComposing){submit(e.currentTarget.value);e.currentTarget.blur();}if(e.key==='Escape'&&!e.nativeEvent.isComposing){clear();cancelled.current=true;setDraft(lastSent.current);live.current.onPreview?.(lastSent.current);e.currentTarget.blur();e.stopPropagation();}}}/>;
  return numeric&&integer?<span className="s-integer-input">{input}<button type="button" tabIndex={-1} disabled={disabled} aria-label={'减小 '+label} onPointerDown={e=>e.preventDefault()} onClick={()=>increment(-1)}>−</button><button type="button" tabIndex={-1} disabled={disabled} aria-label={'增大 '+label} onPointerDown={e=>e.preventDefault()} onClick={()=>increment(1)}>+</button></span>:input;
 }
+const transformRows=[['position','位置'],['rotation','旋转'],['scale','缩放']] as const;
+type TransformKind=typeof transformRows[number][0];
+type InspectorIcon=Parameters<typeof Icon>[0]['name'];
+
+export function InspectorObject({title,detail,icon,disabled,children}:{title:string;detail:string;icon:InspectorIcon;disabled?:boolean;children:React.ReactNode}){
+ return <div className="s-inspector-content"><fieldset className="s-inspector-fields" disabled={disabled}>
+  <div className="s-object-header"><span className="s-object-icon"><Icon name={icon} size={22}/></span><div><strong>{title}</strong><small>{detail}</small></div></div>
+  {children}
+ </fieldset></div>;
+}
+
+export function InspectorTransform({value,onCommit,onPreview,disabled,integerPosition,point,direction}:{value:(kind:TransformKind,axis:number)=>string;onCommit:(kind:TransformKind,axis:number,value:string)=>void;onPreview?:(kind:TransformKind,axis:number,value:string)=>void;disabled?:(kind:TransformKind)=>boolean;integerPosition?:boolean;point:React.ReactNode;direction:React.ReactNode}){
+ return <details className="s-inspector-section" open><summary>变换</summary>
+  {transformRows.map(([kind,label])=><div className="s-vector-field" key={kind}>
+   <span>{label}</span><div>{['X','Y','Z'].map((axis,index)=><label key={axis} className={'axis-'+axis.toLowerCase()}><span>{axis}</span>
+    <BufferInput label={label+' '+axis} value={value(kind,index)} integer={kind==='position'&&integerPosition} disabled={disabled?.(kind)}
+     onPreview={onPreview?s=>onPreview(kind,index,s):undefined} onCommit={s=>onCommit(kind,index,s)}/>
+   </label>)}</div>{kind==='position'&&point}
+  </div>)}
+  {direction}
+ </details>;
+}
+
+export function InspectorDirections({active,onChange,disabled}:{active:(angle:number)=>boolean;onChange:(angle:number)=>void;disabled?:boolean}){
+ return <div className="s-direction-row"><span>朝向</span>{['+X','+Y','−X','−Y'].map((axis,index)=>{
+  const angle=index*90,pressed=active(angle);
+  return <button type="button" key={axis} className={pressed?'active':''} aria-pressed={pressed} disabled={disabled} aria-label={'朝向 '+angle+' 度'} title={'世界 '+axis+' · '+angle+'°'} onClick={()=>onChange(angle)}>{axis}</button>;
+ })}</div>;
+}
+
+export function InspectorProfileButton({preset,icon='cube',title,caption,ariaLabel,expanded,onClick}:{preset?:ObjectPreset;icon?:InspectorIcon;title:string;caption:string;ariaLabel?:string;expanded?:boolean;onClick:()=>void}){
+ return <button type="button" className="s-current-profile" aria-label={ariaLabel} aria-expanded={expanded} onClick={onClick}>
+  {preset?<NativeThumbnail preset={preset}/>:<span className="s-thumb placeholder"><Icon name={icon}/></span>}
+  <span><strong>{title}</strong><small>{caption}</small></span><Icon name="chevron"/>
+ </button>;
+}
+
+export function InspectorProfilePicker({type,catalog,onChoose,onClose,children}:{type:string;catalog:ObjectCatalog|null;onChoose:(preset:ObjectPreset)=>void;onClose:()=>void;children?:React.ReactNode}){
+ return <Modal title={'选择'+typeLabel(type)+'原版配置'} onClose={onClose} className="s-profile-modal">
+  <AssetLibrary catalog={catalog} filterType={type} compact onChoose={onChoose}/>{children}
+ </Modal>;
+}
+
 function common(entities:EntityView[],get:(e:EntityView)=>unknown){const values=entities.map(get);return values.every(v=>JSON.stringify(v)===JSON.stringify(values[0]))?(typeof values[0]==='number'&&!Number.isInteger(values[0])?String(Number(values[0].toFixed(3))):String(values[0]??'')):'';}
 const profileCache=new WeakMap<ObjectCatalog,Map<string,ObjectPreset[]>>();
 export function StudioInspector({level,references,onLinkView,onEditLinkedCamera,entities,all,catalog,onApply,onDraft,onPick,picking,busy,onSelectGroup,onCloneControl,onEditWater}:{level?:LevelView|null;references?:ReferenceControls;onLinkView?:(r:ViewGiverLinkRequest)=>void;onEditLinkedCamera?:(id:number)=>void;entities:EntityView[];all:EntityView[];catalog:ObjectCatalog|null;onApply:(ops:EditOp[])=>void;onDraft:(ops:EditOp[])=>void;onPick:(field:string,ids:number[])=>void;picking:string|null;busy:boolean;onSelectGroup?:(ids:number[])=>void;onCloneControl?:()=>void;onEditWater?:()=>void}){
@@ -56,9 +99,27 @@ export function StudioInspector({level,references,onLinkView,onEditLinkedCamera,
   const ref=fields.filter(f=>f.kind==='reference'&&f.name!=='group_id'&&(!freezer||!isFreezerCondition(f.name))&&!(entity.type==='Guy'&&f.name==='turn_order_id')&&!(entity.type==='View_Giver'&&['group_id','map_overview_id','map_overview_id_2'].includes(f.name))),normal=fields.filter(f=>f.kind!=='reference'&&!['entity_name','mesh','materials'].includes(f.name)&&!profileField(entity.type,f.name)&&(!freezer||!freezerFields.has(f.name))&&!['string','resource','array'].includes(f.kind)),advanced=fields.filter(f=>f.kind!=='reference'&&['string','resource','array'].includes(f.kind)&&f.name!=='entity_name'&&!(entity.type==='Door'&&f.name==='target_level'&&references)&&!(entity.type==='Level_Entry'&&f.name==='level_name'&&references)&&!profileField(entity.type,f.name));
   const currentPreset=presets.find(p=>p.mesh===entity.mesh&&(PROFILE_FIELDS[entity.type]??[]).every(k=>String(entity.nativeProperties?.find(f=>f.field.name===k)?.field.kind==='boolean'?Boolean(p.signature[k]??p.values[k]??0):p.signature[k]??p.values[k]??0)===String(entity.nativeProperties?.find(f=>f.field.name===k)?.value??0)));
   let shownPreset=currentPreset;if(currentPreset?.type==='Gate'&&catalog&&entity.tint){try{const d=gateDraft(currentPreset);shownPreset=configureGate(catalog,currentPreset,{...d,colors:[...entity.tint,d.colors![3],...d.colors!.slice(4)]});}catch{}}
-  return <div className="s-inspector-content" key={key}><div className="s-object-header"><span className="s-object-icon"><Icon name={entity.type==='Guy'?'user':'cube'} size={22}/></span><div><strong>{entities.length>1?`${entities.length} 个物件`:typeLabel(entity.type)}</strong><small>{entities.length===1?`#${entity.id}`:sameType?typeLabel(entity.type):'多种类型'}</small></div></div>{entities.length===1&&fields.some(f=>f.name==='entity_name')&&<label className="s-field">名称<BufferInput type="text" label="物件名称" value={values('entity_name')} onCommit={v=>property('entity_name',v)}/></label>}
-  <details className="s-inspector-section" open><summary>变换</summary>{(['position','rotation','scale']as const).map((kind,i)=><div className="s-vector-field" key={kind}><span>{['位置','旋转','缩放'][i]}</span><div>{['X','Y','Z'].map((axis,n)=><label key={axis} className={'axis-'+axis.toLowerCase()}><span>{axis}</span><BufferInput label={`${['位置','旋转','缩放'][i]} ${axis}`} disabled={kind!=='position'&&entities.some(e=>['Wall_Set','Ocean_Map'].includes(e.type))} value={common(entities,e=>{if(kind==='rotation'){const q=new T.Euler().setFromQuaternion(new T.Quaternion(...(e.rotation??[0,0,0,1])),'XYZ');return Math.round([q.x,q.y,q.z][n]*180/Math.PI*100)/100;}return(kind==='position'?e.position:e.scale)?.[n]??(kind==='position'?0:1);})} onPreview={v=>vector(kind,n,v,true)} onCommit={v=>vector(kind,n,v)}/></label>)}</div>{kind==='position'&&<PointPickButton label="物件位置" value={entity.position??[0,0,0]} integer={!['Inanimate','Decal'].includes(entity.type)} disabled={entities.length!==1||busy} reason={entities.length!==1?'请选择单个物件取点':''} onCommit={position=>onApply([{kind:'transform',id:entity.id,position}])}/>}</div>)}{entities.every(e=>e.type==='Gate')?<GateDirectionControl catalog={catalog} entities={entities} onApply={onApply} disabled={busy}/>:<div className="s-direction-row"><span>朝向</span>{['+X','+Y','−X','−Y'].map((label,n)=><button className={entities.every(e=>Math.abs((((e.yaw-n*90)%360)+540)%360-180)<.1)?'active':''} aria-pressed={entities.every(e=>Math.abs((((e.yaw-n*90)%360)+540)%360-180)<.1)} key={label} disabled={entities.some(e=>['Wall_Set','Ocean_Map'].includes(e.type))} aria-label={`朝向 ${n*90} 度`} title={`世界 ${label} · ${n*90}°，与屏幕方向无关`} onClick={()=>onApply(entities.map(e=>({kind:'transform',id:e.id,yaw:n*90})))}>{label}</button>)}</div>}</details>
-  {sameType&&presets.length>0&&<details className="s-inspector-section" open><summary>原版配置 <small>外观与能力绑定</small></summary><button className="s-current-profile" onClick={()=>setProfileOpen(true)}>{shownPreset?<NativeThumbnail preset={shownPreset}/>:<span className="s-thumb placeholder"><Icon name="cube"/></span>}<span><strong>{currentPreset?(currentPreset.type==='Gate'?gateDisplayName(currentPreset):currentPreset.label):'当前原版配置'}</strong><small>点击更换完整配置</small></span><Icon name="chevron"/></button><button className="s-text-button" aria-expanded={showProfiles} onClick={()=>setShowProfiles(v=>!v)}>{showProfiles?'收起常用配置':'展开常用配置'}</button>{showProfiles&&<div className="s-profile-strip">{presets.slice(0,6).map(p=><button key={p.key} title={p.label} className={p.key===currentPreset?.key?'active':''} disabled={busy} onClick={()=>profile(p)}><NativeThumbnail preset={p.type==='Gate'&&catalog?configureGate(catalog,p,gateLibraryDraft(catalog,p)):p}/></button>)}</div>}</details>}
+  if(entities.some(e=>e.id===level?.managedSpawnId))return <InspectorObject key={key} icon="user" title="大地图主角" detail="出生位置">
+   <InspectorTransform value={(kind,axis)=>kind==='position'?common(entities,e=>e.position?.[axis]??0):''}
+    onCommit={vector} onPreview={(kind,axis,value)=>vector(kind,axis,value,true)}
+    disabled={kind=>kind!=='position'} integerPosition
+    point={<PointPickButton label="物件位置" value={entity.position??[0,0,0]} integer disabled={entities.length!==1||busy} onCommit={position=>onApply([{kind:'transform',id:entity.id,position}])}/>}
+    direction={null}/>
+  </InspectorObject>;
+  return <InspectorObject key={key} icon={entity.type==='Guy'?'user':'cube'} title={entities.length>1?entities.length+' 个物件':typeLabel(entity.type)} detail={entities.length===1?'#'+entity.id:sameType?typeLabel(entity.type):'多种类型'}>
+  {entities.length===1&&fields.some(f=>f.name==='entity_name')&&<label className="s-field">名称<BufferInput type="text" label="物件名称" value={values('entity_name')} onCommit={v=>property('entity_name',v)}/></label>}
+  <InspectorTransform value={(kind,axis)=>common(entities,e=>{
+   if(kind==='rotation'){
+    const rotation=new T.Euler().setFromQuaternion(new T.Quaternion(...(e.rotation??[0,0,0,1])),'XYZ');
+    return Math.round([rotation.x,rotation.y,rotation.z][axis]*180/Math.PI*100)/100;
+   }
+   return (kind==='position'?e.position:e.scale)?.[axis]??(kind==='position'?0:1);
+  })} onCommit={vector} onPreview={(kind,axis,value)=>vector(kind,axis,value,true)}
+   disabled={kind=>kind!=='position'&&entities.some(e=>['Wall_Set','Ocean_Map'].includes(e.type))}
+   point={<PointPickButton label="物件位置" value={entity.position??[0,0,0]} integer={!['Inanimate','Decal'].includes(entity.type)} disabled={entities.length!==1||busy} reason={entities.length!==1?'请选择单个物件取点':''} onCommit={position=>onApply([{kind:'transform',id:entity.id,position}])}/>}
+   direction={entities.every(e=>e.type==='Gate')?<GateDirectionControl catalog={catalog} entities={entities} onApply={onApply} disabled={busy}/>
+    :<InspectorDirections active={angle=>entities.every(e=>Math.abs((((e.yaw-angle)%360)+540)%360-180)<.1)} disabled={entities.some(e=>['Wall_Set','Ocean_Map'].includes(e.type))} onChange={yaw=>onApply(entities.map(e=>({kind:'transform',id:e.id,yaw})))}/>}/>
+  {sameType&&presets.length>0&&<details className="s-inspector-section" open><summary>原版配置 <small>外观与能力绑定</small></summary><InspectorProfileButton preset={shownPreset} title={currentPreset?(currentPreset.type==='Gate'?gateDisplayName(currentPreset):currentPreset.label):'当前原版配置'} caption="点击更换完整配置" onClick={()=>setProfileOpen(true)}/><button className="s-text-button" aria-expanded={showProfiles} onClick={()=>setShowProfiles(v=>!v)}>{showProfiles?'收起常用配置':'展开常用配置'}</button>{showProfiles&&<div className="s-profile-strip">{presets.slice(0,6).map(p=><button key={p.key} title={p.label} className={p.key===currentPreset?.key?'active':''} disabled={busy} onClick={()=>profile(p)}><NativeThumbnail preset={p.type==='Gate'&&catalog?configureGate(catalog,p,gateLibraryDraft(catalog,p)):p}/></button>)}</div>}</details>}
   {freezer&&references&&<FreezerReferences key={key} entities={entities} level={level} controls={references} fields={fields} busy={busy} onRule={value=>property('unlock_is_or_gate',value)} renderField={renderField}/>}
   {sameType&&entity.type==='Door'&&references&&fields.filter(f=>f.name==='target_level').map(renderField)}
   {sameType&&entity.type==='Guy'&&<CharacterControlInspector entities={entities} all={all} busy={busy} onApply={onApply} onSelect={onSelectGroup} onPick={()=>onPick('turn_order_id',entities.map(e=>e.id))} onClone={onCloneControl}/>}
@@ -73,5 +134,5 @@ export function StudioInspector({level,references,onLinkView,onEditLinkedCamera,
   </section>}
   {entities.every(e=>e.prismPreset!==undefined)&&<PrismInspector entities={entities} busy={busy} onApply={onApply}/>}
   {!!normal.length&&<details className="s-inspector-section" open><summary>玩法参数</summary>{normal.map(renderField)}</details>}{!!ref.length&&<details className="s-inspector-section" open><summary>关联</summary>{ref.map(renderField)}</details>}<details className="s-inspector-section"><summary>高级</summary><div className="s-resource"><span>原生类型</span><code>{entity.type}</code></div><div className="s-resource"><span>原生模型</span><code>{entity.mesh}</code></div>{advanced.map(renderField)}{fields.some(f=>f.name==='group_id')&&<>{fields.filter(f=>f.name==='group_id').map(renderField)}<p className="s-muted">原生分组可控制游戏中出现或消失、整体变换。整理场景请用「编辑分组」。</p></>}</details>
-  {sameType&&Boolean(catalog?.types.find(t=>t.type===entity.type)?.dependencies.length)&&<p className="s-muted">原生依赖：{catalog?.types.find(t=>t.type===entity.type)?.dependencies.join('、')}。请结合原生场景检查。</p>}{profileOpen&&<Modal title={`选择${typeLabel(entity.type)}原版配置`} onClose={()=>setProfileOpen(false)} className="s-profile-modal"><AssetLibrary catalog={catalog} filterType={entity.type} compact onChoose={profile}/></Modal>}</div>;
+  {sameType&&Boolean(catalog?.types.find(t=>t.type===entity.type)?.dependencies.length)&&<p className="s-muted">原生依赖：{catalog?.types.find(t=>t.type===entity.type)?.dependencies.join('、')}。请结合原生场景检查。</p>}{profileOpen&&<InspectorProfilePicker type={entity.type} catalog={catalog} onClose={()=>setProfileOpen(false)} onChoose={profile}/>}</InspectorObject>;
 }

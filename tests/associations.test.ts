@@ -43,6 +43,12 @@ test('新冰封屏障独立放置，入口引用随地图保存、重排及区�
  const standalone=applyProject(pkg,{...project,operations:[place]},codec,{prefix:original.prefix,types:original.types,records:[]});
  assert.deepEqual(standalone.records.filter(r=>r.type==='Judge'||r.type==='Freezer').map(r=>r.type),['Freezer']);
  assert.equal(codec.get(standalone.records[0],'partial_solve_count'),-1);
+ const entityFlags=codec.reflection.flatten('Undoable_Entity_Data').find(field=>field.name==='entity_flags')!;
+ const flags=new Map(codec.reflection.enumValues(entityFlags.type).map(flag=>[flag.name,BigInt(flag.value)]));
+ const groupFlags=flags.get('IN_EXISTENCE_GROUP')!|flags.get('CURRENTLY_EXISTS')!|flags.get('PLAYABLE_IN_PRELUDE')!;
+ const noGravity=flags.get('DOES_NOT_FALL')!;
+ assert.notEqual(BigInt(String(codec.get(template,'entity_flags')))&groupFlags,0n);
+ assert.equal(BigInt(String(codec.get(standalone.records[0],'entity_flags')))&(groupFlags|noGravity),noGravity);
  const legacy=applyProject(pkg,{...project,operations:[{...place,standaloneFreezer:undefined,assembly:true}]},codec,{prefix:original.prefix,types:original.types,records:[]});
  assert.equal(legacy.records.find(r=>r.id===Number(codec.get(legacy.records[0],'unlocked_by_id')))?.type,'Judge');
  const world=upgradeSpatialWorld(newWorld(hash,'fixture'));
@@ -70,7 +76,11 @@ test('新冰封屏障独立放置，入口引用随地图保存、重排及区�
   options:{expand:false,skipConflicts:false,includeDependencies:false,unlocks:{}}});
  check(compiler.previewMap(pasted),id,pasted.map.entries[0].id);
  const runtime=parseEntities(compiler.build(pasted).changes.get('data-common/overworld.entities')!);
- assert.equal(codec.get(runtime.records.find(r=>r.type==='Freezer')!,'unlocked_by_id'),runtime.records.find(r=>r.type==='Level_Entry')?.id);
+ const barrier=runtime.records.find(r=>r.type==='Freezer')!;
+ assert.equal(codec.get(barrier,'unlocked_by_id'),runtime.records.find(r=>r.type==='Level_Entry')?.id);
+ assert.equal(codec.get(barrier,'unfrozen'),false);
+ assert.equal(codec.get(barrier,'group_id'),0);
+ assert.equal(BigInt(String(codec.get(barrier,'entity_flags')))&(groupFlags|noGravity),noGravity);
  const outer=captureWorldRegion(codec,reordered,cloned,'world',project,{ids:[],bounds:{min:[7,5,0],max:[7,5,0]}},['overworld'],p=>compiler.file(p.template));
  const outside={world:pasted,scene:'world',bundle:outer,at:[2,2,0] as [number,number,number],yaw:0,id:id+1,
   options:{expand:false,skipConflicts:false,includeDependencies:false,unlocks:{}}};

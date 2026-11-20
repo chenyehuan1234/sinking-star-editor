@@ -1,10 +1,20 @@
-import React,{useEffect,useMemo,useRef,useState}from'react';import{commandDefinitions,helpBindingConflicts,defaultBindings,defaultMouse,commandScopes,bindingsOverlap,keyChord,prettyChord,validateBindings,validateMouse,type Bindings,type CommandId,type MousePreferences,type CommandScope}from'../input-config';
+import React,{useEffect,useMemo,useRef,useState}from'react';import{commandDefinitions,helpBindingConflicts,defaultBindings,defaultMouse,commandScopes,bindingsOverlap,keyChord,prettyChord,validateBindings,validateMouse,migrateNumpadNudge,type Bindings,type CommandId,type MousePreferences,type CommandScope}from'../input-config';
 export{commandDefinitions,prettyChord};export type{CommandId};
 const read=<T,>(key:string,fallback:T):T=>{try{return JSON.parse(localStorage.getItem('sstar07:'+key)??'null')??fallback;}catch{return fallback;}};
 export function preference<T>(key:string,fallback:T){return read(key,fallback);}
 let bindingCache:Bindings|undefined,mouseCache:MousePreferences|undefined;
 export function setPreference(key:string,value:unknown){if(key==='bindings')bindingCache=undefined;if(key==='mouse')mouseCache=undefined;localStorage.setItem('sstar07:'+key,JSON.stringify(value));window.dispatchEvent(new Event('sstar07:preferences'));}
-export function getBindings(){if(bindingCache)return bindingCache;try{return bindingCache=validateBindings(read('bindings',defaultBindings()));}catch{return bindingCache=defaultBindings();}}
+export function getBindings(){
+ if(bindingCache)return bindingCache;
+ try{
+  const bindings=validateBindings(read('bindings',defaultBindings()));
+  if(read('bindingsNumpadV1',false))return bindingCache=bindings;
+  bindingCache=migrateNumpadNudge(bindings);
+  localStorage.setItem('sstar07:bindings',JSON.stringify(bindingCache));
+  localStorage.setItem('sstar07:bindingsNumpadV1','true');
+  return bindingCache;
+ }catch{return bindingCache=defaultBindings();}
+}
 export function getMouse(){if(mouseCache)return mouseCache;try{return mouseCache=validateMouse(read('mouse',defaultMouse()));}catch{return mouseCache=defaultMouse();}}
 window.addEventListener('storage',e=>{if(e.key==='sstar07:bindings'||e.key==='sstar07:mouse'||e.key===null){bindingCache=undefined;mouseCache=undefined;window.dispatchEvent(new Event('sstar07:preferences'));}});
 let listening=false;const handlers=new Set<{priority:number;scope?:()=>CommandScope;run:(id:CommandId,e:KeyboardEvent)=>boolean}>();

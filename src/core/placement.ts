@@ -7,6 +7,19 @@ import {transform} from './mechanisms';
 import type {PrefabOp} from '../shared';
 
 export function editableType(type:string){const d=OBJECT_BY_TYPE.get(type);return Boolean(d&&!['internal','excluded'].includes(d.placement));}
+export function independentFreezer(c:PropertyCodec,r:EntityRecord){
+  if(r.type!=='Freezer'||Number(c.get(r,'group_id'))!==0)return r;
+  const flags=BigInt(String(c.get(r,'entity_flags')));
+  if(!flags)return r;
+  const type=c.reflection.flatten('Undoable_Entity_Data').find(f=>f.name==='entity_flags')?.type;
+  if(!type)return r;
+  const groupState=c.reflection.enumValues(type).reduce((mask,flag)=>{
+    return ['PLAYABLE_IN_PRELUDE','IN_EXISTENCE_GROUP','CURRENTLY_EXISTS','EXISTS_FOR_COSMETIC_TRANSITION_PURPOSES_ONLY','EXISTS_FOR_COSMETIC_GROUP_FADE_TRANSITION_ONLY'].includes(flag.name)
+      ?mask|BigInt(flag.value):mask;
+  },0n);
+  const next=flags&~groupState;
+  return next===flags?r:c.patch(r,{entity_flags:next.toString()});
+}
 export function placeNative(pkg:GamePackage,c:PropertyCodec,f:EntityFile,op:PrefabOp){
   const source=parseEntities(pkg.get(`data-common/${op.template}.entities`)),root=source.records.find(r=>r.id===op.sourceId);
   if(!root||!editableType(root.type)||!c.parse(root).complete)throw new Error('该对象尚不能独立解析，请使用它的原版关卡模板');
@@ -33,6 +46,7 @@ export function placeNative(pkg:GamePackage,c:PropertyCodec,f:EntityFile,op:Pref
     out={...transform(c,out,p),id:ids.get(r.id)!,typeIndex:f.types.indexOf(r.type)};
     if(out.typeIndex<0)throw new Error('当前实体类型表不支持此对象');
     if(r===root&&op.values){validateNativeProperties(c,r.type,op.values);out=c.patch(out,op.values);}
+    if(op.standaloneFreezer&&r===root)out=independentFreezer(c,out);
     f.records.push(out);
   }
 }

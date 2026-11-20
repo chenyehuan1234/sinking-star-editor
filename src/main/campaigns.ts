@@ -4,6 +4,52 @@ interface Owner {format:'sinking-star-test-campaign';worldId:string;sourceHash:s
 interface Session {worldId:string;sourceHash:string;active:boolean}
 export class CampaignManager {
   constructor(readonly workspace:string,readonly saves=path.join(os.homedir(),'Saved Games','Order of the Sinking Star')){}
+  private async sharedPlaytestDirectory(create=false,fresh=false){
+    if(create)await fs.mkdir(this.saves,{recursive:true});
+    const name=fresh?'Editor_Playtest_Fresh':'Editor_Playtest';
+    const root=await fs.realpath(this.saves),dir=path.join(root,name);
+    const owner=path.join(dir,'_editor-shared-playtest.json');
+    if(create){
+      try{
+        await fs.mkdir(dir);
+        await fs.writeFile(owner,JSON.stringify({format:'sstar-shared-playtest',version:1}),{flag:'wx'});
+      }catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
+    }
+    const folder=await fs.lstat(dir);
+    if(!folder.isDirectory()||folder.isSymbolicLink()||await fs.realpath(dir)!==dir)throw Error('目录 '+name+' 已被其他存档占用');
+    const marker=await fs.lstat(owner).catch(()=>null);
+    if(!marker?.isFile()||marker.isSymbolicLink())throw Error('目录 '+name+' 已被其他存档占用');
+    const metadata=JSON.parse(await fs.readFile(owner,'utf8'));
+    if(metadata.format!=='sstar-shared-playtest'||metadata.version!==1)throw Error('目录 '+name+' 已被其他存档占用');
+    return dir;
+  }
+  async startSharedPlaytest(current:string,fresh=false){
+    if(!/^[a-zA-Z0-9_.-]{1,116}$/.test(current)||current==='.'||current.includes('..'))throw Error('试玩起始关卡无效');
+    const directory=await this.sharedPlaytestDirectory(true,fresh);
+    const file=path.join(directory,'Status.sokoban_status');
+    const data=await this.readSharedStatus(file);
+    if(fresh){
+      const histories=(await fs.readdir(directory,{withFileTypes:true})).filter(entry=>/\.history(?:\.[\w.-]+)?$|^Status\.sokoban_status\.[\w.-]+$/i.test(entry.name));
+      if(histories.some(entry=>!entry.isFile()||entry.isSymbolicLink()))throw Error('从头试玩的旧进度包含异常文件');
+      for(const entry of histories)await fs.unlink(path.join(directory,entry.name));
+    }
+    // The rivers backdrop crashes when it is first drawn on the affected build.
+    await this.write(file,writeCampaign(!fresh&&data?data:newCampaign(),{current,menu:'menu_heroes_a',time:apolloNow()}));
+  }
+  async finishSharedPlaytest(fresh=false){
+    const directory=await this.sharedPlaytestDirectory(false,fresh);
+    const file=path.join(directory,'Status.sokoban_status'),data=await this.readSharedStatus(file);
+    if(!data)return;
+    // Let Steam resume its most recently played regular campaign on next launch.
+    await this.write(file,writeCampaign(data,{time:0n}));
+    await fs.utimes(file,new Date(0),new Date(0));
+  }
+  private async readSharedStatus(file:string){
+    const stat=await fs.lstat(file).catch(error=>{if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;return null;});
+    if(!stat)return null;
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)throw Error('试玩战役状态文件无效');
+    return fs.readFile(file);
+  }
   directory(id:string){if(!/^[a-f0-9]{12}$/.test(id))throw new Error('测试战役标识无效');return path.join(this.saves,`Editor_${id}`);}
   private sessionPath(){return path.join(this.workspace,'campaign-session.json');}
   private async write(file:string,data:Buffer|string){const temp=file+`.${process.pid}.tmp`;await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(temp,data);await fs.rename(temp,file);}

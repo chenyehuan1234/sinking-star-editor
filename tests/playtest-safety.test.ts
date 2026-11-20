@@ -7,13 +7,15 @@ import vm from 'node:vm';
 import {createRequire} from 'node:module';
 import {build} from 'esbuild';
 import {EditorService} from '../src/main/service';
+import {newWorld} from '../src/core/world';
+import {createBlank} from '../src/core/blank';
 import {PLAYTEST_SUSPENSION,assertPlaytestCommand} from '../src/playtest-policy';
 import type {WorldProject} from '../src/shared';
 
 const suspended=(error:unknown)=>error instanceof Error &&
   (error as Error & {code?:string}).code==='PLAYTEST_SUSPENDED' && error.message===PLAYTEST_SUSPENSION;
 
-test('新旧服务启动接口在部署、校验、战役切换前拒绝，输入与文件保持原样',async()=>{
+test('旧启动接口在部署、校验、战役切换前拒绝，输入与文件保持原样',async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'sstar-launch-block-'));
   try {
     const service=new EditorService(path.join(root,'workspace'));
@@ -28,13 +30,33 @@ test('新旧服务启动接口在部署、校验、战役切换前拒绝，输�
     const original=JSON.stringify(world);
     await assert.rejects(()=>service.launch(),suspended);
     await assert.rejects(()=>service.worldLaunch(world,'entry','overworld',true),suspended);
-    for(const mode of ['single','subset','world'] as const)
-      await assert.rejects(()=>service.runLaunch(world,{mode,levelIds:['a']}),/请选择兼容测试存档/);
     assert.equal(JSON.stringify(world),original);
     assert.equal(await fs.readFile(path.join(campaign,'overworld.history'),'utf8'),'unchanged world');
     assert.equal(await fs.readFile(path.join(campaign,'Status.sokoban_status'),'utf8'),'unchanged status');
     await assert.rejects(()=>fs.access(service.workspace),{code:'ENOENT'});
   } finally {await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('工作台直接校验和启动指定范围，无需独立存档选择',async()=>{
+  const service=new EditorService(path.join(os.tmpdir(),'sstar-direct-run-fixture'));
+  const world=newWorld('a'.repeat(64),'test');
+  for(const id of ['a','b'])world.levels.push({id,title:id,project:createBlank(world.sourceHash,world.sourceBuild)});
+  const events:string[]=[];
+  service.assertStopped=async()=>{events.push('stopped');};
+  service.runValidate=async()=>{events.push('validate');return [];};
+  service.worldDeploy=async scoped=>{events.push(scoped.levels.map(level=>level.id).join(','));return 'deployed';};
+  Object.assign(service,{startPlaytest:async (level:string,fresh:boolean)=>{events.push(level);if(fresh)events.push('fresh');return 'started';}});
+  assert.equal(await service.runLaunch(world,{mode:'single',levelIds:['b']}),'started');
+  assert.deepEqual(events.slice(0,3),['stopped','validate','b']);
+  assert.match(events[3],/^ed_[a-f0-9]{12}_b$/);
+  events.length=0;
+  assert.equal(await service.runLaunch(world,{mode:'world',levelIds:[],start:'fresh'}),'started');
+  assert.deepEqual(events,['stopped','validate','a,b','overworld','fresh']);
+  await assert.rejects(()=>service.runLaunch(world,{mode:'single',levelIds:['a'],start:'fresh'}),/从头试玩只适用于整个工程/);
+  service.runValidate=async()=>[{severity:'error',message:'missing exit'}];
+  events.length=0;
+  await assert.rejects(()=>service.runLaunch(world,{mode:'single',levelIds:['a']}),/missing exit/);
+  assert.deepEqual(events,['stopped']);
 });
 
 test('暂停策略不拦截编辑、保存、预览、校验与构建命令',()=>{

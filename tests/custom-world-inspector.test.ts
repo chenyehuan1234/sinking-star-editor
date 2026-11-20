@@ -34,6 +34,7 @@ test('自制大地图入口属性、镜头与分屏保存重开后写入原生�
  const aux=cameraView(codec,compiler.previewMap(world)).controls.find(c=>!c.primary&&!c.overview&&c.name==='extra_view');
  assert.ok(aux);
  world.map.camera={...world.map.camera,mode:'screens',screenSize:[8,9],origin:[2,2],screenCameraId:main.id};
+ world.map.spawn=[5,6];
  const saved=path.join(service.workspace,'custom-world.sstar-world.json');
  fs.writeFileSync(saved,JSON.stringify({...world,sourceEvidence:service.evidence(world)}));
  const reopened=JSON.parse(fs.readFileSync(saved,'utf8')) as typeof world;
@@ -45,6 +46,13 @@ test('自制大地图入口属性、镜头与分屏保存重开后写入原生�
  assert.deepEqual(camera.origin,[2,2]);
  assert.ok(camera.controls.some(c=>c.id===aux.id));
  const built=compiler.build(reopened),map=parseEntities(built.changes.get('data-common/overworld.entities')!);
+ const spawn=map.records.find(r=>r.id===view.managedSpawnId)!;
+ assert.equal(spawn.type,'Guy');
+ assert.equal(codec.get(spawn,'position.x'),5);
+ assert.equal(codec.get(spawn,'position.y'),6);
+ const spawnView=view.entities.find(entity=>entity.id===view.managedSpawnId)!;
+ assert.deepEqual(spawnView.position,[5,6,0]);
+ assert.equal(spawnView.cloneable,false);
  const entry=map.records.find(r=>r.id===view.managedEntryIds?.second)!;
  assert.equal(codec.get(entry,'mesh'),codec.get(source,'mesh'));
  assert.equal(codec.get(entry,'style'),1);

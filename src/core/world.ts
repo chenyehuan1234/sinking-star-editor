@@ -17,6 +17,7 @@ export {mergeManifests} from './manifests';
 const HUB_NAMESPACE=800;
 import {mapProject} from '../scene-project';
 import {compatiblePreview,copyReplayBase} from './compatible-preview';
+import {independentFreezer} from './placement';
 
 export function newWorld(hash:string,build:string):WorldProject {
   const id=globalThis.crypto.randomUUID().replaceAll('-','').slice(0,12),width=32,height=32;
@@ -158,11 +159,15 @@ export class WorldCompiler {
       if(Object.keys(fields).length)r=c.patch(r,fields);
       records.push({...r,id:entryIds.get(e.id)!});
     }
-    const result={prefix:Buffer.from(original.prefix),types:[...original.types],records,managedEntryIds:entryIds,replayIssues:entryIssues.length?entryIssues:undefined};
+    const result={prefix:Buffer.from(original.prefix),types:[...original.types],records,managedEntryIds:entryIds,managedSpawnId:queen.id,replayIssues:entryIssues.length?entryIssues:undefined};
     // Source environment IDs remain stable, while fresh terrain and entrances use a disjoint namespace.
     if(new Set(records.map(r=>r.id)).size!==records.length)throw new Error('地图实体 ID 冲突');
     const project=mapProject(w);
     const built=preview?compatiblePreview(project,candidate=>applyProject(this.pkg,candidate,c,copyReplayBase(result))):applyProject(this.pkg,project,c,result);
+    // Older region snapshots can still contain transient flags from the source puzzle.
+    for(const [index,record] of built.records.entries()){
+      if(record.type==='Freezer')built.records[index]=independentFreezer(c,record);
+    }
     if(spatial&&m.objects?.length){
       const positions:Vec3[]=[];
       for(const r of built.records){
@@ -181,7 +186,7 @@ export class WorldCompiler {
     const issues=worldIssues(w);if(issues.some(i=>i.severity==='error'))throw new Error(issues.filter(i=>i.severity==='error').map(i=>i.message).join('\n'));
     const selected=quickEntry?w.map.entries.find(e=>e.id===quickEntry):undefined;if(quickEntry&&!selected)throw new Error('快速选关入口不存在');
     const spawn:Vec3=selected?[selected.x,selected.y,selected.z??0]:mapSpawn(w.map);
-    const revision=(Number.parseInt(sha256('world-compiler-5'+JSON.stringify(gameplayWorld(w))).slice(0,7),16)%0x3fffffff)+1000;
+    const revision=(Number.parseInt(sha256('world-compiler-6'+JSON.stringify(gameplayWorld(w))).slice(0,7),16)%0x3fffffff)+1000;
     const changes=new Map<string,Buffer>(),resources:WorldBuild['resources']=[],levelNames:Record<string,string>={};
     for(const l of w.levels)levelNames[l.id]=`ed_${w.id}_${l.id}`;
     for(const l of w.levels){

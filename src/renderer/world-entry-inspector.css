@@ -1,11 +1,1 @@
-.s-managed-entry .s-object-header small{display:block}
-.s-managed-entry .s-vector-field{grid-template-columns:46px minmax(0,1fr) auto}
-.s-managed-entry .s-association-row select{flex:1;min-width:0}
 .s-managed-entry-actions,.s-world-camera-actions{display:flex;gap:6px;flex-wrap:wrap}
-.s-managed-entry-styles{display:grid;gap:4px;margin-block:6px}
-.s-entry-style-card{display:flex;align-items:center;gap:8px;width:100%;height:50px;text-align:left;padding:3px 6px}
-.s-entry-style-card .s-thumb{width:42px;height:42px;flex:none;object-fit:contain}
-.s-entry-style-card span:last-child{display:grid;min-width:0}
-.s-entry-style-card :is(strong,small){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.s-entry-style-card small{color:var(--tone-9bb1bf,#9bb1bf)}
-.s-entry-style-card[aria-pressed=true]{border-color:var(--tone-e9bd73,#e9bd73)}

@@ -6,13 +6,10 @@ import {entryKey} from '../editor-organization';
 import type {EntityView,Vec3,WorldEntry,WorldProject} from '../shared';
 import {AssociationPicker} from './association-picker';
 import {PointPickButton} from './point-picker';
-import {BufferInput} from './studio-inspector';
+import {BufferInput,InspectorDirections,InspectorObject,InspectorProfileButton,InspectorProfilePicker,InspectorTransform} from './studio-inspector';
 import {Icon} from './studio-ui';
-import {NativeThumbnail} from './thumbnails';
-import {VirtualList} from './virtual-list';
 import './world-entry-inspector.css';
 
-const axes=['X','Y','Z'] as const;
 const zero:Vec3=[0,0,0],unit:Vec3=[1,1,1],identity:[number,number,number,number]=[0,0,0,1];
 const displayNumber=(n:number)=>String(Number(n.toFixed(4)));
 function angles(rotation:typeof identity):Vec3{
@@ -26,10 +23,10 @@ function shape(p:ObjectPreset){
  return [points,state,size>0?displayNumber(size)+' 倍':''].filter(Boolean).join(' · ');
 }
 
-export function WorldEntryInspector({world,entry,entity,catalog,levels,targets,locked,onEdit,onMove,onOpen,onDelete,onFolder,onEditorGroup,onGroups,locate,hover}:{
+export function WorldEntryInspector({world,entry,entity,catalog,levels,targets,locked,onEdit,onTransform,onOpen,onDelete,onFolder,onEditorGroup,onGroups,locate,hover}:{
  world:WorldProject;entry:WorldEntry;entity?:EntityView;catalog:ObjectCatalog|null;
  levels:AssociationTarget[];targets:AssociationTarget[];locked:boolean;
- onEdit:(change:(entry:WorldEntry)=>void)=>void;onMove:(position:Vec3)=>void;
+ onEdit:(change:(entry:WorldEntry)=>void)=>void;onTransform:(changes:Pick<Partial<WorldEntry>,'rotation'|'scale'>&{position?:Vec3})=>void;
  onOpen:()=>void;onDelete:()=>void;onFolder:(id:string)=>void;
  onEditorGroup:(id:string)=>void;onGroups:()=>void;
  locate:(target:AssociationTarget)=>void;hover:(target?:AssociationTarget)=>void;
@@ -48,30 +45,22 @@ export function WorldEntryInspector({world,entry,entity,catalog,levels,targets,l
   onEdit(e=>{delete e.appearance;e.prototype=p?{template:p.template,sourceId:p.sourceId}:undefined;});
   setStylesOpen(false);
  }
- const vector=(name:string,values:Vec3,onAxis:(axis:number,value:number)=>void,extra?:React.ReactNode,integer=false)=><div className="s-vector-field">
-  <span>{name}</span><div>{axes.map((axis,i)=><label key={axis} className={'axis-'+axis.toLowerCase()}><span>{axis}</span><BufferInput label={'入口'+name+' '+axis} value={displayNumber(values[i])} integer={integer} onCommit={value=>onAxis(i,Number(value))}/></label>)}</div>{extra}
- </div>;
- return <fieldset disabled={locked} className="s-inspector-content s-managed-entry">
-  <div className="s-object-header"><span className="s-object-icon"><Icon name="entry" size={22}/></span><div><strong>关卡入口</strong><small>{level?.title??'未关联关卡'}</small></div></div>
+ return <InspectorObject disabled={locked} icon="entry" title="关卡入口" detail={level?.title??'未关联关卡'}>
   <label className="s-field">名称<BufferInput type="text" label="入口名称" value={entry.title} onCommit={title=>onEdit(e=>{e.title=title;})}/></label>
   <AssociationPicker label="入口目标关卡" items={levels} value={entry.levelId} allowClear={false} onChange={id=>onEdit(e=>{e.levelId=id;})}/>
   <div className="s-managed-entry-actions"><button className="s-text-button" disabled={!level} onClick={onOpen}><Icon name="cube"/>编辑目标关卡</button></div>
-  <details open className="s-inspector-section"><summary>变换</summary>
-   {vector('位置',position,(i,value)=>{const next=[...position] as Vec3;next[i]=value;onMove(next);},<PointPickButton label="入口位置" value={position} integer onCommit={onMove}/>,true)}
-   {vector('旋转',rotation,(i,value)=>{if(Math.abs(value)>36000)return;onEdit(e=>{const next=angles(e.rotation??baseRotation);next[i]=value;e.rotation=new Quaternion().setFromEuler(new Euler(...next.map(MathUtils.degToRad) as Vec3)).toArray();});})}
-   {vector('缩放',scale,(i,value)=>{if(Math.abs(value)<.0001||Math.abs(value)>10000)return;onEdit(e=>{const next=[...(e.scale??baseScale)] as Vec3;next[i]=value;e.scale=next;});})}
-  </details>
+  <InspectorTransform value={(kind,i)=>displayNumber({position,rotation,scale}[kind][i])} integerPosition onCommit={(kind,i,text)=>{
+   const value=Number(text);
+   if(!Number.isFinite(value))return;
+   if(kind==='position'){const next=[...position] as Vec3;next[i]=Math.round(value);onTransform({position:next});}
+   else if(kind==='rotation'&&Math.abs(value)<=36000){const next=[...rotation] as Vec3;next[i]=value;onTransform({rotation:new Quaternion().setFromEuler(new Euler(...next.map(MathUtils.degToRad) as Vec3)).toArray()});}
+   else if(kind==='scale'&&Math.abs(value)>=.0001&&Math.abs(value)<=10000){const next=[...scale] as Vec3;next[i]=value;onTransform({scale:next});}
+  }} point={<PointPickButton label="入口位置" value={position} integer disabled={locked} onCommit={position=>onTransform({position})}/>}
+   direction={<InspectorDirections disabled={locked} active={angle=>Math.abs((((rotation[2]-angle)%360)+540)%360-180)<.1}
+    onChange={angle=>onTransform({rotation:new Quaternion().setFromEuler(new Euler(0,0,MathUtils.degToRad(angle))).toArray()})}/>}/>
   <details open className="s-inspector-section"><summary>原版配置</summary>
-   <button type="button" className="s-current-profile" aria-label="选择入口原生样式" aria-expanded={stylesOpen} onClick={()=>setStylesOpen(v=>!v)}>
-    {current?<NativeThumbnail preset={current}/>:<span className="s-thumb placeholder"><Icon name="entry" size={24}/></span>}
-    <span><strong>{entry.appearance?'复制的原生样式':current?shape(current):'默认原生入口'}</strong><small>点击更换入口外观</small></span><Icon name="chevron"/>
-   </button>
-   {stylesOpen&&<div className="s-managed-entry-styles">
-    <button className="s-text-button" type="button" onClick={()=>applyStyle()}>采用默认原生样式</button>
-    <VirtualList label="入口外观图卡" items={presets} rowHeight={54} height={260} revealIndex={current?presets.indexOf(current):-1} render={p=><button type="button" className="s-entry-style-card" aria-pressed={p===current} onClick={()=>applyStyle(p)} title={p.label+' · '+p.template}>
-     <NativeThumbnail preset={p}/><span><strong>{shape(p)}</strong><small>{p.template}</small></span>
-    </button>}/>
-   </div>}
+   <InspectorProfileButton preset={current} icon="entry" ariaLabel="选择入口原生样式" expanded={stylesOpen}
+    title={entry.appearance?'复制的原生样式':current?shape(current):'默认原生入口'} caption="点击更换入口外观" onClick={()=>setStylesOpen(v=>!v)}/>
    <label className="s-field">入口大小<BufferInput label="入口大小" step="0.05" value={displayNumber(entry.size??Number(nativeValue(entity,'size')??current?.values.size??0))} onCommit={text=>{const size=Number(text);if(size>=0&&size<=10000)onEdit(e=>{e.size=size;});}}/></label>
    {entry.size!==undefined&&<button className="s-text-button" onClick={()=>onEdit(e=>{delete e.size;})}>沿用样式大小</button>}
   </details>
@@ -86,5 +75,8 @@ export function WorldEntryInspector({world,entry,entity,catalog,levels,targets,l
     onChange={id=>onEdit(e=>{const values:NonNullable<WorldEntry['unlocks']>=[...(e.unlocks??[])];values[i]=id?id.slice(6):null;e.unlocks=values;})} onLocate={locate} onHover={hover}/>)}
   </details>
   <button className="s-text-button danger" onClick={onDelete}><Icon name="trash"/>删除入口</button>
- </fieldset>;
+  {stylesOpen&&!locked&&<InspectorProfilePicker type="Level_Entry" catalog={catalog} onClose={()=>setStylesOpen(false)} onChoose={applyStyle}>
+   <button className="s-text-button" type="button" onClick={()=>applyStyle()}>采用默认原生样式</button>
+  </InspectorProfilePicker>}
+ </InspectorObject>;
 }
