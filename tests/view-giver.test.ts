@@ -7,7 +7,7 @@ import {applyProject,levelView} from '../src/core/project';import {createBlank} 
 import {cameraEditConfig,newCameraClone,sourceCamera} from '../src/core/camera-objects';
 import {linkViewGiver} from '../src/core/view-giver';import {cameraViewGivers} from '../src/camera-switching';
 import {validateReferences} from '../src/core/mechanisms';
-import type {EditorProject,EntityView,ViewGiverLinkRequest} from '../src/shared';
+import type {CameraPose,EditorProject,EntityView,ViewGiverLinkRequest} from '../src/shared';
 
 test('视角卷轴与相机辅助模型按类型区分，默认可见可选，不受装饰开关误隐藏',()=>{
  const e={id:1,type:'View_Giver',editable:true,mesh:'GAME_EX_CamControl_Scroll',position:[0,0,0],bytes:0,yaw:0,cloneable:true}as EntityView;
@@ -38,6 +38,17 @@ test('已有辅助镜头直接关联，重复选择不增加相机；批量卷�
  const again=link(first.project,first.cameraId);assert.equal(again.copied,false);assert.equal(view(again.project).camera!.controls.length,count);
  const other=structuredClone(p.operations[0]);other.id=id+500;again.project.operations.push(other);
  const both=link(again.project,first.cameraId,'view',[id,id+500]);assert.deepEqual(cameraViewGivers(view(both.project)).map(g=>g.cameras.map(v=>v.id)),[[first.cameraId],[first.cameraId]]);
+});
+
+test('规则分屏主镜头关联卷轴时复制普通取景，卷轴不继承分屏姿态和视角',{skip:!available},()=>{
+ const p=fixture(),main=view(p).camera!.controls[0],nativePose:CameraPose={position:[4,-8,14],target:[2,3,0],up:[0,0,1]};
+ p.camera={mode:'screens',screenCameraId:main.id,controls:[{id:main.id,nativePose,fov:48,screenFov:30,pose:{position:[0,-4,8],target:[0,0,0],up:[0,0,1]}}]};
+ const result=link(p,main.id),after=view(result.project),linked=cameraViewGivers(after)[0].cameras[0];
+ assert.equal(linked.id,result.cameraId);
+ assert.deepEqual(linked.position,[4,-8,14]);
+ assert.equal(linked.fov,48);
+ assert.equal(after.camera!.controls.find(camera=>camera.id===main.id)!.fov,30);
+ assert.equal(result.project.camera!.controls!.find(control=>control.id===linked.id)!.pose,undefined);
 });
 
 test('辅助镜头改名同步原生名称关联，保存重开与撤销均保持正确目标',{skip:!available},()=>{

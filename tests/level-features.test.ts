@@ -13,8 +13,8 @@ import {newWorld,WorldCompiler} from '../src/core/world';
 import {upgradeSpatialWorld} from '../src/world-space';
 import {levelSettingsFields} from '../src/level-settings';
 import {withPrismColors} from '../src/prism-settings';
-import {terrainTint} from '../src/terrain-paint';
-import {changedPowerRooms} from '../src/room-power';
+import {terrainPlacementFaces,terrainTint} from '../src/terrain-paint';
+import {changedPowerRooms,roomBoundaryOpacity,roomPowerObjects} from '../src/room-power';
 import {diffPreview} from '../src/preview-delta';
 import type {EditorProject,EditOp,Vec3} from '../src/shared';
 
@@ -44,6 +44,14 @@ test('西 1 保留 6×6，镜头改构图不动分屏，新增分屏显式写入
   const view=levelView(pkg,west.template,record,codec);
   assert.deepEqual(view.camera!.screenSize,[6,6]);
   assert.equal(Math.round(view.levelSettings!.roomGlow!*10),7);
+  assert.ok(Math.abs(roomBoundaryOpacity(view.levelSettings)-.7)<1e-6);
+  const noBoundary=levelView(pkg,'annoying_orange_v3',undefined,codec);
+  assert.equal(noBoundary.camera!.perScreen,true);
+  assert.equal(roomBoundaryOpacity(noBoundary.levelSettings),0);
+  assert.ok(noBoundary.entities.some(e=>e.type==='Gem_Slot'));
+  const hidden=levelView(pkg,west.template,applyProject(pkg,{...west,operations:[{kind:'levelSettings',id:0,values:{roomGlow:0}}]},codec),codec);
+  assert.equal(roomBoundaryOpacity(hidden.levelSettings),0);
+  assert.deepEqual(roomPowerObjects(hidden,{size:[6,6],origin:[0,0]},0),roomPowerObjects(view,{size:[6,6],origin:[0,0]},0));
   assert.ok(changedPowerRooms(view,{size:[6,6],origin:[0,0]},{size:[6,6],origin:[1,0]},0)>0);
   assert.equal(changedPowerRooms(view,{size:[6,6],origin:[0,0]},{size:[6,6],origin:[6,0]},0),0);
   const beamRooms=levelView(pkg,'beam_rooms',undefined,codec);
@@ -52,6 +60,26 @@ test('西 1 保留 6×6，镜头改构图不动分屏，新增分屏显式写入
   assert.equal(beamRooms.entities.filter(e=>e.type==='Promesst_Light').length,4);
   const generated=applyProject(pkg,{...createBlank(hash,'test',4,4),camera:{mode:'screens'}},codec);
   assert.deepEqual(levelView(pkg,'mirror_1',generated,codec).camera!.screenSize,[16,16]);
+});
+
+test('铺设地板和墙体分别保留每笔颜色和关卡默认色',{skip:!native},()=>{
+  const {pkg,codec,hash}=source();
+  const blank={...createBlank(hash,'test',4,4),version:3 as const};
+  const floor:Vec3=[4,0,-1],wall:Vec3=[4,1,0];
+  const operations:EditOp[]=[
+    {kind:'terrainPaint',id:0,defaults:{floor:'#a3b7ad',wall:'#8998ad'}},
+    {kind:'terrain',id:0,cells:[floor,wall].map(([x,y,z])=>({x,y,z,solid:true}))},
+    {kind:'terrainPaint',id:0,faces:[...terrainPlacementFaces([floor],'floor','#229988'),...terrainPlacementFaces([wall],'wall','#b4875b')]},
+  ];
+  const view=levelView(pkg,blank.template,applyProject(pkg,{...blank,operations},codec),codec);
+  const ground=view.terrain!.find(c=>c.x===0&&c.y===0&&c.z===0)!;
+  const floorCell=view.terrain!.find(c=>c.x===4&&c.y===0&&c.z===0)!;
+  const wallCell=view.terrain!.find(c=>c.x===4&&c.y===1&&c.z===1)!;
+  assert.equal(ground.colors?.[4],'#a3b7ad');
+  assert.equal(floorCell.colors?.[4],'#229988');
+  assert.equal(floorCell.colors?.[0],'#8998ad');
+  assert.equal(wallCell.colors?.[4],'#a3b7ad');
+  assert.deepEqual([0,1,2,3].map(face=>wallCell.colors?.[face]),Array(4).fill('#b4875b'));
 });
 
 test('原生 Settings 写回四类时间和高亮，三棱镜写回保留原版来源',{skip:!native},()=>{

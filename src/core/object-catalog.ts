@@ -1,10 +1,11 @@
+import {freezerTargetTypes,isFreezerCondition} from '../association';
 import {gateForceDefaults} from '../gate-appearance';
 import{GamePackage,sha256}from'./package';
 import{parseEntities,type EntityRecord}from'./entities';
 import{PropertyCodec}from'./properties';
 import{OBJECT_BY_TYPE,CHARACTER_LABELS}from'./object-definitions';
 import type{NativeValue,ObjectCatalog,ObjectDefinition,ObjectField,ObjectPreset,ObjectTypeView}from'../catalog-types';
-const COMMON:Record<string,string>={entity_name:'名称',group_id:'所属组合／存在组',mesh:'模型',materials:'材质',...Object.fromEntries(['position','scale','orientation','tint_color_a','tint_color_b'].flatMap(n=>['x','y','z',...(n.startsWith('tint')||n==='orientation'?['w']:[])].map(a=>[n+'.'+a,n==='position'?'位置 '+a.toUpperCase():n==='scale'?'缩放 '+a.toUpperCase():n==='orientation'?'旋转四元数 '+a:'颜色 '+n.slice(-1).toUpperCase()+'.'+a])))};
+const COMMON:Record<string,string>={entity_name:'名称',group_id:'原生分组',mesh:'模型',materials:'材质',...Object.fromEntries(['position','scale','orientation','tint_color_a','tint_color_b'].flatMap(n=>['x','y','z',...(n.startsWith('tint')||n==='orientation'?['w']:[])].map(a=>[n+'.'+a,n==='position'?'位置 '+a.toUpperCase():n==='scale'?'缩放 '+a.toUpperCase():n==='orientation'?'旋转四元数 '+a:'颜色 '+n.slice(-1).toUpperCase()+'.'+a])))};
 const SIGNATURES:Record<string,string[]>={Guy:['skill_flags','inventory_flags'],Monster:['constant_flags','accessory_mask'],Rock:['properties','speed_mod'],Mirror:['is_magic','is_vertical','is_vertical_downward','mirrorable'],Switch:['special_type'],Gate:['is_monster_gate','notted','sideways','negate_direction','height'],Teleporter:['teleporter_type'],Promesst_Light:['color','reflected_vertically','vertical_down','vertical_up'],Fence:['is_floor','blocking'],Rover:['mirrorable'],Lily:['nonmoving'],Wardrobe:['skill_flags','inventory_flags'],Artifact:['kind','p3_wand_flags']};
 const FALLBACKS:Record<string,NativeValue>={'Mirror.is_magic':true,'Gate.height':1,'Fence.blocking':true,'Teleporter.enabled_t_target':1};
 export function nativeFieldDefault(type:string,name:string,kind:string):NativeValue{return FALLBACKS[type+'.'+name]??(type==='Gate'?gateForceDefaults[name]:undefined)??(kind==='boolean'?false:kind==='resource'||kind==='string'?'':kind==='array'?[]:/^tint_color_/.test(name)?1:0);}
@@ -18,7 +19,7 @@ export function objectFields(codec:PropertyCodec,type:string):ObjectField[]{
     const deprecated=/deprecated/i.test(f.name),runtime=f.notes.includes('NoSerialize')||f.notes.includes('DoNotDisplay')||f.notes.includes('ReadOnly');
     const label=def?.fields[f.name]??COMMON[f.name]??f.name;
     const access:ObjectField['access']=deprecated?'deprecated':runtime?'runtime':def?.fields[f.name]||COMMON[f.name]?'design':'internal';
-    const targets=f.name==='group_id'?['Group']:type==='Teleporter'&&f.name==='target_id'?['Teleporter','Marker']:type==='Stairs'&&f.name==='other_end_id'?['Stairs']:type==='Stairs'&&f.name==='platform_id'?['Elevator_Platform']:type==='Activator'&&/^spawner_\d+$/.test(f.name)?['Spawner']:undefined;
+    const targets=f.name==='group_id'?['Group']:type==='Freezer'&&isFreezerCondition(f.name)?freezerTargetTypes:type==='Teleporter'&&f.name==='target_id'?['Teleporter','Marker']:type==='Stairs'&&f.name==='other_end_id'?['Stairs']:type==='Stairs'&&f.name==='platform_id'?['Elevator_Platform']:type==='Activator'&&/^spawner_\d+$/.test(f.name)?['Spawner']:undefined;
     return{name:f.name,label,kind,size:f.type.size,index:f.index,notes:[...f.notes],access,options:options.length?options:undefined,targets};
   });
   byType.set(type,result);return result;
@@ -38,7 +39,7 @@ function presetLabel(type:string,mesh:string,sig:Record<string,NativeValue>){
 // Text-only cache migration keeps preset identities and avoids rescanning native resources.
 export function currentCatalogLabels(catalog:ObjectCatalog):ObjectCatalog{
   const def=OBJECT_BY_TYPE.get('View_Giver')!;
-  return{...catalog,types:catalog.types.map(t=>t.type==='View_Giver'?{...t,label:def.label,description:def.description,dependencies:def.dependencies,fields:t.fields.map(f=>({...f,label:def.fields[f.name]??f.label}))}:t),presets:catalog.presets.map(p=>p.type==='View_Giver'?{...p,label: presetLabel(p.type,p.mesh,p.signature)}:p)};
+  return{...catalog,types:catalog.types.map(t=>t.type==='View_Giver'?{...t,label:def.label,description:def.description,dependencies:def.dependencies,fields:t.fields.map(f=>({...f,label:def.fields[f.name]??f.label}))}:t),presets:catalog.presets.map(p=>p.type==='View_Giver'?{...p,label: presetLabel(p.type,p.mesh,p.signature)}:p.type==='Freezer'?{...p,placement:'single',tags:[]}:p)};
 }
 export function buildObjectCatalog(pkg:GamePackage,codec:PropertyCodec,build:string,assetFiles:string[]):ObjectCatalog{
   const levels=pkg.entries.filter(e=>e.name.endsWith('.entities'));

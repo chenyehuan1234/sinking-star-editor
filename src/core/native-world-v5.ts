@@ -8,11 +8,19 @@ import {parseEntities,writeEntities,position,type EntityFile} from './entities';
 import {applyProject,levelView,projectSources} from './project';
 import {validateReferences} from './mechanisms';
 import {mergeManifests} from './manifests';
+import {editableType} from './placement';
+import type {IndexedAssociation} from '../association';
 
 /** Keep the original world as the base; viewport windows and scene folders never rebuild the hub. */
 export class UnifiedNativeWorldEngine extends NativeWorldEngine {
  private snapshots=new Map<string,EntityFile>();
  private windows=new Map<string,NativeRegionResult>();
+ private associationCache=new WeakMap<EntityFile,IndexedAssociation[]>();
+ private originalReferenceIssues?:Set<string>;
+ private changedWorldReferences(file:EntityFile){
+  this.originalReferenceIssues??=new Set(validateReferences(this.codec,this.file,{transient:true,nativeWorld:true}));
+  return validateReferences(this.codec,file,{transient:true,nativeWorld:true}).filter(message=>!this.originalReferenceIssues!.has(message));
+ }
  private plain(p:NativeWorldProject):NativeWorldProject {
   validateNativeWorld(p);if(p.version===4)return p;
   const cell=super.index().cells[0].id;
@@ -25,6 +33,20 @@ export class UnifiedNativeWorldEngine extends NativeWorldEngine {
   return file;
  }
  regionFile(p:NativeWorldProject){return this.snapshot(p);}
+ associations(p:NativeWorldProject){
+  const file=this.snapshot(p),cached=this.associationCache.get(file);
+  if(cached)return cached;
+  const scenery=new Set(['Inanimate','Decal','Animating','Procedurally_Animating','Particle_Source']);
+  const rows=file.records.flatMap<IndexedAssociation>(record=>{
+   if(!editableType(record.type)||scenery.has(record.type))return [];
+   const c=this.codec;
+   const valid=record.type==='Switch'?Number(c.get(record,'special_type'))===0:record.type==='Gate'&&!c.get(record,'is_monster_gate',false);
+   const name=String(c.get(record,'entity_name',''))||(record.type==='Level_Entry'?String(c.get(record,'level_name','')):'');
+   return [{id:record.id,type:record.type,name,position:position(record),channel:valid?String(c.get(record,'flavor',0)):undefined}];
+  });
+  this.associationCache.set(file,rows);
+  return rows;
+ }
  captureRegion(p:NativeWorldProject,workbench:WorldProject,selection:RegionSelection,progress?:(phase?:string)=>void){
   const source=this.worldProject(p);
   return captureWorldRegion(this.codec,this.snapshot(p),workbench,'world',source,selection,projectSources(source),level=>applyProject(this.pkg,level,this.codec),progress);
@@ -59,6 +81,7 @@ export class UnifiedNativeWorldEngine extends NativeWorldEngine {
  private availableId(file:EntityFile){return Math.max(900*0x100000,...file.records.filter(r=>r.id>>>20===900).map(r=>r.id))+1;}
  validate(p:NativeWorldProject):WorldIssue[] {
   const index=this.index(p),issues:WorldIssue[]=[],names=new Set(index.levels);
+  if(nativeOperations(p).length)for(const message of this.changedWorldReferences(this.snapshot(p)))issues.push({severity:'error',entityId:Number(message.match(/#(\d+)/)?.[1])||undefined,message:'大世界：'+message});
   for(const entry of index.entryLinks??[])if(!names.has(entry.target))issues.push({severity:'error',entityId:entry.id,message:'入口 #'+entry.id+' 关联的关卡不存在：'+entry.target});
   if(p.version===5)for(const l of p.scenes!){const project=l.project;if(project.template===l.id&&project.base?.kind!=='blank'&&!project.operations.length&&!project.camera&&!project.topology)continue;
    try{const f=applyProject(this.pkg,project,this.codec);if(!f.records.some(r=>r.type==='Guy'))issues.push({severity:'error',levelId:l.id,message:l.title+'：缺少主角'});if(project.base?.kind==='blank'&&!f.records.some(r=>r.type==='Door'))issues.push({severity:'error',levelId:l.id,message:l.title+'：缺少出口'});for(const message of validateReferences(this.codec,f))issues.push({severity:'error',levelId:l.id,message:l.title+'：'+message});}catch(e){issues.push({severity:'error',levelId:l.id,message:l.title+'：'+String(e)});}
@@ -77,8 +100,7 @@ export class UnifiedNativeWorldEngine extends NativeWorldEngine {
   if(p.version===4)return super.build(p);this.index(p);
   const changes=new Map<string,Buffer>(),removed=new Set<string>(),resources:{source:string;target:string}[]=[],base=super.index(),names=new Set(p.scenes!.map(l=>l.id));
   const unchanged=(l:NonNullable<NativeWorldProject['scenes']>[number])=>base.levels.includes(l.id)&&l.project.template===l.id&&l.project.base?.kind!=='blank'&&!l.project.operations.length&&!l.project.camera&&!l.project.topology; if(!nativeOperations(p).length&&!p.camera&&!p.topology&&p.scenes!.every(unchanged)&&names.size===base.levels.length-1)return {buffer:this.pkg.buffer,changed:[],resources:[]};
-  const file=this.snapshot(p),baseline=new Set(validateReferences(this.codec,this.file,{transient:true,nativeWorld:true}));
-  const problems=validateReferences(this.codec,file,{transient:true,nativeWorld:true}).filter(v=>!baseline.has(v));if(problems.length)throw Error('大世界无效引用：'+problems.slice(0,8).join('；'));
+  const file=this.snapshot(p),problems=this.changedWorldReferences(file);if(problems.length)throw Error('大世界无效引用：'+problems.slice(0,8).join('；'));
   for(const r of file.records)if(r.type==='Level_Entry'&&!names.has(String(this.codec.get(r,'level_name',''))))throw Error('入口 #'+r.id+' 关联的关卡不存在，请先处理入口');
   if(nativeOperations(p).length||p.camera||p.topology){changes.set('data-common/overworld.entities',writeEntities(file));const sources=projectSources(this.worldProject(p));if(sources.some(n=>n!=='overworld'))changes.set('data-common/overworld.level_manifest',mergeManifests(sources.map(n=>this.pkg.get('data-common/'+n+'.level_manifest').toString())));}
   for(const l of p.scenes!){const project=l.project,original=base.levels.includes(l.id);if(original&&project.template===l.id&&project.base?.kind!=='blank'&&!project.operations.length&&!project.camera&&!project.topology)continue;

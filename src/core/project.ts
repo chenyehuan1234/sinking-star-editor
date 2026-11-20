@@ -1,3 +1,5 @@
+import {isFreezerCondition} from '../association';
+import {copyMissingEntryReferences,entryReferenceKey,resolveManagedEntry} from './entry-references';
 import {resolveEntityAppearance} from '../render-purpose';
 import{applyWater,waterView,validateWaterOp,WATER_TEMPLATE}from'./water';
 import {validateEditor,gameplayWorld,gameplayProject} from '../editor-organization';
@@ -46,8 +48,9 @@ export function validateProject(value: unknown): asserts value is EditorProject 
     if(o.kind==='transform'&&o.yaw!==undefined&&(!Number.isFinite(o.yaw)||Math.abs(o.yaw)>36000))throw new Error('朝向无效');
     if(o.kind==='transform')for(const [key,length]of[['rotation',4],['scale',3]]as const){const a=o[key];if(a!==undefined&&(!Array.isArray(a)||a.length!==length||!a.every(v=>Number.isFinite(v)&&Math.abs(v)<=10000)||(key==='rotation'&&Math.abs(Math.hypot(...a)-1)>.01)||(key==='scale'&&a.some(v=>Math.abs(v)<.0001))))throw new Error('旋转或缩放无效');}
     if(o.kind==='clone'&&(!Number.isInteger(o.newId)||o.newId<1||o.newId>0xffffffff||!Array.isArray(o.position)))throw new Error('复制实体 ID 或坐标无效');
-    if(o.kind==='prefab'&&(!validName(o.template)||!Number.isInteger(o.sourceId)||o.sourceId<0||o.sourceId>0xffffffff||!Array.isArray(o.position)))throw new Error('物件预设无效');
+    if(o.kind==='prefab'&&(!validName(o.template)||!Number.isInteger(o.sourceId)||o.sourceId<0||o.sourceId>0xffffffff||!Array.isArray(o.position)||o.standaloneFreezer!==undefined&&(typeof o.standaloneFreezer!=='boolean'||o.standaloneFreezer&&o.assembly)))throw new Error('物件预设无效');
     if(o.kind==='properties'&&o.sourceTemplate!==undefined&&!validName(o.sourceTemplate))throw new Error('属性资源来源无效');
+    if(o.kind==='properties'&&o.entryTargets!==undefined&&(!o.entryTargets||typeof o.entryTargets!=='object'||Array.isArray(o.entryTargets)||Object.entries(o.entryTargets).some(([field,id])=>!isFreezerCondition(field)||!validName(id)||o.values?.[field]!==0)))throw Error('解冻条件入口引用无效');
     if(o.kind==='properties'&&o.viewCameraId!==undefined&&(!Number.isInteger(o.viewCameraId)||o.viewCameraId<0||o.viewCameraId>0xffffffff||typeof o.values.viewpoint_name!=='string'))throw Error('卷轴镜头标识无效');
   }
 }
@@ -84,21 +87,29 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
         f.prismPresets??=new Map();
         if(!f.prismPresets.has(r.id))f.prismPresets.set(r.id,Number(codec.get(r,'p3_wand_flags',defaultPrismColors)));
       }
-      f.records[index]=codec.patch(r,o.values);
+      const values={...o.values};
+      for(const field of Object.keys(values))f.missingEntryTargets?.delete(entryReferenceKey(r.id,field));
+      if(o.entryTargets){
+        if(r.type!=='Freezer')throw Error('入口条件仅应用于冰封屏障');
+        for(const [field,target] of Object.entries(o.entryTargets))values[field]=resolveManagedEntry(f,r.id,field,target);
+      }
+      f.records[index]=codec.patch(r,values);
     }
     else if(o.kind==='clone'){
       if(!(codec?editableType(r.type):['Mirror','Rock'].includes(r.type)))throw new Error('此对象不能复制');
       if(f.records.some(r=>r.id===o.newId)||(o.newId>>>20)!==(r.id>>>20))throw new Error('新实体 ID 冲突或命名空间不匹配');
       const cloned=codec?codec.patch(transform(codec,r,o.position),{entity_name:''}):patchTransform(r,o.position);
       f.records.push({...cloned,id:o.newId});
+      copyMissingEntryReferences(f,r.id,o.newId);
     }else{
       if(!(codec?editableType(r.type):['Mirror','Rock'].includes(r.type)))throw new Error('此对象不能删除');
       f.records.splice(index,1);
+      for(const key of f.missingEntryTargets?.keys()??[])if(key.startsWith(r.id+':'))f.missingEntryTargets?.delete(key);
     }
   }
   if(project.base?.kind==='blank'&&codec&&!project.topology)updateBlankBounds(codec,f);
   if(!codec&&(paint.size||Object.keys(palette).length))throw Error('地形配色需要原生类型信息');
-  if(codec){applyLevelSettings(codec,f,settings);applyCamera(codec,f,project.camera,pkg);applyTopology(codec,f,project.topology);applyTerrainPaint(codec,f,palette,paint);
+  if(codec){applyLevelSettings(codec,f,settings);applyTopology(codec,f,project.topology);applyCamera(codec,f,project.camera,pkg);applyTerrainPaint(codec,f,palette,paint);
     // Resolve authoring IDs after camera edits. Native named links then follow a
     // rename without an old rename in history redirecting a newer association.
     const links=new Map<number,number>();
@@ -125,7 +136,7 @@ export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:Pr
     }}
   }
   const waters=codec?f.records.filter(r=>r.type==='Ocean_Map'&&codec.parse(r).complete).map(r=>waterView(codec,f,r)):[];
-  return {name,typeCount:f.types.length,terrain,waters,levelSettings:codec?levelSettingsView(codec,f):undefined,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
+  return {name,typeCount:f.types.length,terrain,waters,managedEntryIds:f.managedEntryIds?Object.fromEntries(f.managedEntryIds):undefined,missingEntryTargets:f.missingEntryTargets?Object.fromEntries(f.missingEntryTargets):undefined,levelSettings:codec?levelSettingsView(codec,f):undefined,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
     const field=baseFields(r.diff).fields.find(f=>f.id===0x1f);
     const editable=codec?editableType(r.type)&&codec.parse(r).complete:canEdit(r);
     const raw=codec?Object.fromEntries(codec.parse(r).fields.map(f=>[f.schema.name,f.value])):{};

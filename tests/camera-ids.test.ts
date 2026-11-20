@@ -72,7 +72,8 @@ const game=process.env.SINKING_STAR_GAME??'',available=fs.existsSync(game+'/sink
 const pkg=available?new GamePackage(fs.readFileSync(game+'/data/levels.package')):null;
 const codec=available?new PropertyCodec(new ExeReflection(fs.readFileSync(game+'/sinking_star.exe'))):null;
 function blank(){return createBlank(sha256(pkg!.buffer),'native-test');}
-const cameraObject=(p:EditorProject,r:CameraObjectRequest)=>EditorService.prototype.cameraObject.call({pkg,codec,checkProject:async()=>{}}as unknown as EditorService,p,r);
+const service=Object.assign(new EditorService('workspace'),{pkg,codec,checkProject:async()=>{}});
+const cameraObject=(p:EditorProject,r:CameraObjectRequest)=>service.cameraObject(p,r);
 function scroll(p:EditorProject,id:number){const source=parseEntities(pkg!.get('data-common/3d_intro_heroes.entities')).records.find(r=>r.type==='View_Giver');assert.ok(source);p.operations.push({kind:'prefab',id,template:'3d_intro_heroes',sourceId:source.id,position:[2,3,0]});}
 function unique(p:EditorProject){const f=applyProject(pkg!,JSON.parse(JSON.stringify(p)),codec!);assert.equal(new Set(f.records.map(r=>r.id)).size,f.records.length);assert.deepEqual(validateReferences(codec!,f),[]);return f;}
 

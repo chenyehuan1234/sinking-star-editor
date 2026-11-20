@@ -27,6 +27,7 @@ export function placeNative(pkg:GamePackage,c:PropertyCodec,f:EntityFile,op:Pref
     const clear:Record<string,PropertyValue>={entity_name:''};
     for(const field of c.parse(r).fields)if(field.schema.pid)clear[field.schema.name]=ids.get(Number(field.value))??0;
     else if(field.schema.pidArray)clear[field.schema.name]=(field.value as number[]).flatMap(n=>ids.has(n)?[ids.get(n)!]:[]);
+    if(op.standaloneFreezer&&r===root&&r.type==='Freezer')Object.assign(clear,{judge_unlock_level:0,partial_solve_count:-1,unfrozen:false,unlock_is_or_gate:false,hide_requirements:false,fast_unfreeze:false,disappear_to_nothing:false});
     let out=c.patch(r,clear);
     const p=['x','y','z'].map((a,i)=>Number(c.get(r,'position.'+a))-origin[i]+op.position[i])as[number,number,number];
     out={...transform(c,out,p),id:ids.get(r.id)!,typeIndex:f.types.indexOf(r.type)};

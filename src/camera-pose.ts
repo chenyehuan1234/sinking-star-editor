@@ -23,3 +23,10 @@ export function fitPose(p:CameraPose,bounds:Box3,fov:number,aspect:number,keepTa
 /** Native camera local +X looks forward, local +Z is the image up direction. */
 export function nativePoseRotation(p:CameraPose):[number,number,number,number]{const n=normalizedPose(p),x=vector(n.target).sub(vector(n.position)).normalize(),y=vector(n.up).cross(x).normalize(),z=x.clone().cross(y);return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x,y,z)).normalize().toArray()as[number,number,number,number];}
 export function nativeScreenPose(p:CameraPose){const n=normalizedPose(p),direction=vector(n.target).sub(vector(n.position)).normalize(),right=direction.clone().cross(vector(n.up)).normalize(),up=n.position[2]-n.target[2],south=-n.position[1]||0,look=-n.target[1]||0;if(Math.abs(n.position[0])>1e-5||Math.abs(n.target[0])>1e-5||right.distanceTo(new Vector3(1,0,0))>1e-5||up<.1||up>2000||south<0||south>2000||Math.abs(look)>2000)return null;return{upDistance:up,southDistance:south,lookAtSouthDistance:look};}
+/** Write the supported components even if native runtime cannot express X/roll.
+ * Rejecting the whole pose used to leave unrelated, stale distance parameters.
+ */
+export function nativeScreenParameters(p:CameraPose){
+ validatePose(p);const up=p.position[2]-p.target[2],south=-p.position[1]||0,look=-p.target[1]||0;
+ return{...(up>=.1&&up<=2000?{upDistance:up}:{}),...(south>=0&&south<=2000?{southDistance:south}:{}),...(Math.abs(look)<=2000?{lookAtSouthDistance:look}:{})};
+}

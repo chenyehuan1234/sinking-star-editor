@@ -1,3 +1,5 @@
+import {isFreezerCondition} from '../association';
+import {resolveManagedEntry} from './entry-references';
 import{nativeWaterCells,waterLayout,waterView}from'./water';import{rotatedWaterValue}from'../water-edit';
 import{copiedControlValues}from'./character-control';
 import type{RegionBundle,RegionSelection,EditorProject,StampOp,Vec3}from'../shared';
@@ -10,6 +12,7 @@ export function validateRegionTransfer(bundle:RegionBundle){
   validateBundle(bundle);
   const transfer=bundle.transfer;
   if(!transfer)return;
+  if(transfer.conditionLinks&&(!Array.isArray(transfer.conditionLinks)||transfer.conditionLinks.length>400000||transfer.conditionLinks.some(l=>!isFreezerCondition(l.field)||!Number.isInteger(l.sourceId)||!Number.isInteger(l.targetId)||l.targetId<=0||l.targetId>0xffffffff)))throw Error('区域的冰封屏障条件无效');
   const id=(n:number)=>Number.isInteger(n)&&n>0&&n<=0xffffffff;
   const point=(p:Vec3)=>Array.isArray(p)&&p.length===3&&p.every(n=>Number.isFinite(n)&&Math.abs(n)<10000);
   if(bundle.version!==2||!point(transfer.size)||transfer.size.some(n=>!Number.isInteger(n)||n<1)||
@@ -106,6 +109,16 @@ export function applyStamp(pkg:GamePackage,c:PropertyCodec,file:EntityFile,op:St
  const occupied=new Set(file.records.filter(r=>['Switch','Gate'].includes(r.type)).map(r=>String(c.get(r,'flavor')))),channels=new Map<string,number>();for(const r of op.bundle.records.filter(r=>!shared&&['Switch','Gate'].includes(r.type))){const raw={...r,typeIndex:file.types.indexOf(r.type),diff:Buffer.from(r.diff,'base64')},old=String(c.get(raw,'flavor'));if(!channels.has(old)){let n=1;while(occupied.has(String(n)))n++;channels.set(old,n);occupied.add(String(n));}}
  const controls=copiedControlValues(c,op.bundle.records.map(r=>({...r,typeIndex:file.types.indexOf(r.type),diff:Buffer.from(r.diff,'base64')})),ids,op.bundle.copyPolicy? !preserve:op.bundle.associations!=='shared',preserve);
  for(const snap of op.bundle.records){let r:EntityRecord={...snap,id:ids.get(snap.id)!,typeIndex:file.types.indexOf(snap.type),diff:Buffer.from(snap.diff,'base64')};if(r.typeIndex<0||!c.parse(r).complete)throw Error('组合包含当前游戏无法解析的对象');const values:Record<string,PropertyValue>={};for(const f of c.parse(r).fields){if(op.bundle.copyPolicy&&f.schema.pid&&Number(f.value)&&!ids.has(Number(f.value))&&!['turn_order_id','transmute_stashed_turn_order_id'].includes(f.schema.name)&&(!preserve||!file.records.some(r=>r.id===Number(f.value))))(file.analysisWarnings??=[]).push({entityId:r.id,field:f.schema.name,message:'跨关或独立副本清除了外部关联 '+f.schema.name+' → #'+f.value+'，请重新关联'});if(f.schema.pid)values[f.schema.name]=ids.get(Number(f.value))??((op.bundle.copyPolicy?preserve&&file.records.some(r=>r.id===Number(f.value)):op.bundle.associations==='shared')?Number(f.value):0);if(f.schema.pidArray)values[f.schema.name]=(f.value as number[]).flatMap(n=>ids.has(n)?[ids.get(n)!]:(op.bundle.copyPolicy?preserve&&file.records.some(r=>r.id===n):op.bundle.associations==='shared')?[n]:[]);}Object.assign(values,controls.get(snap.id));
+  if(op.conditionTargets?.[snap.id]){
+    if(snap.type!=='Freezer')throw Error('条件目标仅应用于冰封屏障');
+    for(const [field,target] of Object.entries(op.conditionTargets[snap.id])){
+      if(!isFreezerCondition(field))throw Error('冰封屏障条件无效');
+      if(typeof target==='string')values[field]=resolveManagedEntry(file,r.id,field,target);
+      else if(Number.isSafeInteger(target)&&target<=0&&target>=-0xffffffff&&(target===0||ids.has(-target)&&op.bundle.records.some(e=>e.id===-target&&e.type==='Level_Entry')))values[field]=target===0?0:ids.get(-target)!;
+      else if(Number.isSafeInteger(target)&&file.records.some(e=>e.id===target&&e.type==='Level_Entry'))values[field]=target;
+      else throw Error('冰封屏障关联的入口不存在');
+    }
+  }
   if(snap.type==='Level_Entry'){
     const binding=op.entries?.[snap.id];
     if(!binding||typeof binding.level!=='string'||!Array.isArray(binding.externalUnlocks)||binding.externalUnlocks.length!==3)throw Error('复制入口缺少目标关卡');

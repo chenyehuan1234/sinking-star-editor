@@ -10,6 +10,7 @@ export const levelSettingsFields = {
 
 export type LevelSetting = keyof typeof levelSettingsFields;
 export type LevelSettings = Partial<Record<LevelSetting,number>>;
+export type LevelSettingsView = LevelSettings & {spotlight?:boolean};
 export const timingFields = ['fallingRate','lilyInterval','skipInterval','roverInterval'] as const;
 export const nativeScreenSize = 6;
 export const newScreenSize = 16;

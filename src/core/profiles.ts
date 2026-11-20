@@ -1,3 +1,4 @@
+import {copyMissingEntryReferences} from './entry-references';
 import{copiedControlValues}from'./character-control';
 import {parseEntities,type EntityFile,type EntityRecord} from './entities';
 import {GamePackage} from './package';import {PropertyCodec,type PropertyValue} from './properties';
@@ -18,10 +19,13 @@ export function duplicateRecords(c:PropertyCodec,f:EntityFile,op:DuplicateOp){
   const snapshots=op.copies.map(p=>{const r=f.records.find(r=>r.id===p.id);if(!r||!c.parse(r).complete||!objectFields(c,r.type).length)throw new Error('复制源不存在或不能编辑');return r;});
   const occupied=new Set(f.records.filter(r=>['Switch','Gate'].includes(r.type)).map(r=>String(c.get(r,'flavor')))),channels=new Map<string,number>();
   if(op.copyPolicy==='independent'||!op.copyPolicy&&op.associations==='independent')for(const r of snapshots.filter(r=>['Switch','Gate'].includes(r.type))){const old=String(c.get(r,'flavor'));if(!channels.has(old)){let n=1;while(occupied.has(String(n)))n++;channels.set(old,n);occupied.add(String(n));}}
-  const controls=copiedControlValues(c,snapshots,ids,op.copyPolicy==='independent'||!op.copyPolicy&&op.associations==='independent',op.copyPolicy==='preserve');
+  const independent=op.copyPolicy==='independent'||!op.copyPolicy&&op.associations==='independent';
+  const controls=copiedControlValues(c,snapshots,ids,independent,op.copyPolicy==='preserve');
   for(const r of snapshots){const refs:Record<string,PropertyValue>={...(op.copyPolicy==='preserve'?{}:{entity_name:''})};for(const p of c.parse(r).fields){if((op.copyPolicy==='independent'||!op.copyPolicy&&op.associations==='independent')&&p.schema.pid&&!['turn_order_id','transmute_stashed_turn_order_id'].includes(p.schema.name)&&Number(p.value)&&!ids.has(Number(p.value)))(f.analysisWarnings??=[]).push({entityId:ids.get(r.id)!,field:p.schema.name,message:'复制时清除了外部关联 '+p.schema.name+'，请重新关联或确认无需使用'});if(p.schema.pid&&(ids.has(Number(p.value))||op.copyPolicy==='independent'||!op.copyPolicy&&op.associations==='independent'))refs[p.schema.name]=ids.get(Number(p.value))??0;if(p.schema.pidArray)refs[p.schema.name]=(p.value as number[]).flatMap(id=>ids.has(id)?[ids.get(id)!]:op.copyPolicy==='independent'||!op.copyPolicy&&op.associations==='independent'?[]:[id]);}
     Object.assign(refs,controls.get(r.id));
     if(channels.has(String(c.get(r,'flavor')))&&['Switch','Gate'].includes(r.type))refs.flavor=channels.get(String(c.get(r,'flavor')))!;
-    const position=['x','y','z'].map((a,i)=>Number(c.get(r,'position.'+a))+op.offset[i])as[number,number,number];f.records.push({...c.patch(transform(c,r,position),refs),id:ids.get(r.id)!});
+    const position=['x','y','z'].map((a,i)=>Number(c.get(r,'position.'+a))+op.offset[i])as[number,number,number];const newId=ids.get(r.id)!;
+    f.records.push({...c.patch(transform(c,r,position),refs),id:newId});
+    if(!independent)copyMissingEntryReferences(f,r.id,newId);
   }
 }

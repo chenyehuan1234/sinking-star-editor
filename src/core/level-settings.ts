@@ -1,15 +1,17 @@
-import {levelSettingsFields,validateLevelSettings,type LevelSetting,type LevelSettings} from '../level-settings';
+import {levelSettingsFields,validateLevelSettings,type LevelSetting,type LevelSettings,type LevelSettingsView} from '../level-settings';
 import type {EntityFile} from './entities';
 import type {PropertyCodec} from './properties';
 
-export function levelSettingsView(codec:PropertyCodec,file:EntityFile):LevelSettings|undefined {
+export function levelSettingsView(codec:PropertyCodec,file:EntityFile):LevelSettingsView|undefined {
   const record=file.records.find(r=>r.type==='Settings');
   if(!record)return undefined;
   const schema=new Set(codec.schema('Settings').map(f=>f.name));
   const values=new Map(codec.parse(record).fields.map(f=>[f.schema.name,f.value]));
-  return Object.fromEntries(Object.entries(levelSettingsFields)
+  const settings:LevelSettingsView=Object.fromEntries(Object.entries(levelSettingsFields)
     .filter(([,field])=>schema.has(field.native))
     .map(([key,field])=>[key,Number(values.get(field.native)??field.defaultValue)]));
+  if(schema.has('do_spotlight'))settings.spotlight=values.get('do_spotlight')===true;
+  return settings;
 }
 
 export function applyLevelSettings(codec:PropertyCodec,file:EntityFile,values:LevelSettings) {

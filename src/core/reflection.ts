@@ -12,7 +12,9 @@ export class ExeReflection {
     this.hash=sha256(b);
     for(const s of this.sections)for(let p=s.raw;p<s.raw+s.size-80;p+=8){
       if(b.readUInt32LE(p)!==7)continue;
-      const t=this.type(this.base+s.rva+p-s.raw);if(!t||!t.name||t.name==='?'||t.size>1000000)continue;
+      const t=this.type(this.base+s.rva+p-s.raw);
+      // The scan also encounters source-location strings in non-type descriptors.
+      if(!t||!/^[$\p{L}_][$\p{L}\p{N}_]*$/u.test(t.name)||t.size>1000000)continue;
       const count=this.u64(p+64),members=this.offset(this.u64(p+72));if(count>1000||members<0||members+count*64>b.length)continue;
       if(this.types.has(t.name))continue;this.types.set(t.name,t);
     }

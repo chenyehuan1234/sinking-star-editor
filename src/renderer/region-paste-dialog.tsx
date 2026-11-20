@@ -2,6 +2,7 @@ import React,{useState} from 'react';
 import type {RegionBundle,RegionPasteOptions,Vec3} from '../shared';
 import {Modal} from './studio-ui';
 import {regionPoint} from '../region-placement';
+import {AssociationPicker} from './association-picker';
 import {cellKey} from '../world-space';
 
 interface PasteDialogProps {
@@ -37,7 +38,11 @@ export function RegionPasteDialog({bundle,initial,yaw,world,expanding,targets,ta
   const entries=world?transfer.entries.filter(e=>!options.skipConflicts||!conflicts.has(e.id)):[];
   const ids=new Set(entries.map(e=>e.id)),enteredLevels=new Set(entries.map(e=>e.levelId));
   const dependencies=transfer.levels.filter(level=>!enteredLevels.has(level.id));
-  const outside=entries.flatMap(e=>e.unlocks.flatMap((id,slot)=>id&&!ids.has(id)?[{id,key:e.id+':'+slot,title:e.title}]:[]));
+  const outside=[
+    ...entries.flatMap(e=>e.unlocks.flatMap((id,slot)=>id&&!ids.has(id)?[{id,key:e.id+':'+slot,title:e.title}]:[])),
+    ...(world?transfer.conditionLinks??[]:[]).filter(link=>!ids.has(link.targetId)).map(link=>({id:link.targetId,key:'freezer:'+link.sourceId+':'+link.field,title:'冰封屏障 #'+link.sourceId+(link.title?' → '+link.title:'')}))
+  ];
+  const candidates=[{key:'action:clear',title:'解除此条件'},...targets.map(t=>({key:t.id,title:t.title,detail:t.position.join(', ')}))];
   const expansion=valid?expanding(at,angle):'';
   const ready=valid&&!busy&&(!expansion||options.expand)&&(!collisions.length||options.skipConflicts)&&outside.every(r=>options.unlocks[r.key]!==undefined);
   return <Modal title="粘贴区域" onClose={onClose}>
@@ -59,13 +64,7 @@ export function RegionPasteDialog({bundle,initial,yaw,world,expanding,targets,ta
         </details>}
         {transfer.links.filter(link=>!link.targetId).map(link=><p key={link.levelId+':'+link.doorId+':'+link.field}>待核对的出口／序列目标 · {link.target}</p>)}
       </div>}
-      {outside.map(r=><label className="s-field" key={r.key}>{r.title} · 框外解锁入口 #{r.id}
-        <select value={options.unlocks[r.key]??'pending'} onChange={e=>{
-          const next={...options.unlocks};
-          if(e.target.value==='pending')delete next[r.key];else next[r.key]=e.target.value;
-          setOptions({...options,unlocks:next});
-        }}><option value="pending">请选择处理方式</option><option value="">解除此条件</option>{targets.map(t=><option key={t.id} value={t.id}>{t.title}</option>)}</select>
-      </label>)}
+      {outside.map(r=><AssociationPicker key={r.key} label={r.title+' · 框外解锁入口 #'+r.id} items={candidates} allowClear={false} disabled={busy} empty="请选择处理方式" value={options.unlocks[r.key]||(options.unlocks[r.key]!==undefined?'action:clear':'')} onChange={key=>setOptions({...options,unlocks:{...options.unlocks,[r.key]:key==='action:clear'?'':key}})}/>)}
       <label><input type="checkbox" checked={options.skipConflicts} onChange={e=>setOptions({...options,skipConflicts:e.target.checked})}/> 跳过重合入口及冲突水格</label>
       {error&&<p role="alert" className="s-error">{error}</p>}
       <div className="s-perf-actions"><button type="button" disabled={!ready} onClick={()=>onPaste(at,angle,options)}>确认粘贴</button><button type="button" onClick={onClose}>返回画布</button></div>

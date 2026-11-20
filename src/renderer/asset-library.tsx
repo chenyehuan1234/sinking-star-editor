@@ -1,5 +1,7 @@
 import {gateForm,gateFormLabel,gatePreferenceKey,gateLibraryGroup,gateLibraryLabel} from '../gate-library';
 import {GatePlacementPopover} from './gate-controls';
+import {TerrainPlacementPopover,terrainPlacementNames,type TerrainCardColors} from './terrain-palette-controls';
+import type {TerrainPlacementKind} from '../terrain-paint';
 import {gateDraft,gateLibraryDraft,gateVisual,configureGate,resolveGate,decodeGateKey,type GateDraft} from '../gate-config';
 import {assetFamilyId} from '../asset-variants';
 import {layoutAssets,rememberAssetScroll,restoreAssetScroll} from '../asset-layout';
@@ -13,9 +15,10 @@ export{readPref,writePref}from'./local-preferences';
 import{useLocalMemory}from'./use-local-memory';
 import{emptyAssetTab,readAssetBrowser,type AssetTab}from'../ui-memory';
 export function recordRecentPlacement(key:string){writePref('recent',recentPlacement(readPref<string[]>('recent',[]),key));window.dispatchEvent(new Event('sstar:recent-assets'));}
-type Props={onTerrain?:(kind:'floor'|'wall')=>void;catalog:ObjectCatalog|null;selected?:string;onChoose:(p:ObjectPreset,drag?:boolean)=>void;onDragEnd?:()=>void;filterType?:string;compact?:boolean;onLibrary?:()=>void};
+type Props={onTerrain?:(kind:TerrainPlacementKind)=>void;terrainColors?:TerrainCardColors;terrainActive?:string;catalog:ObjectCatalog|null;selected?:string;onChoose:(p:ObjectPreset,drag?:boolean)=>void;onDragEnd?:()=>void;filterType?:string;compact?:boolean;onLibrary?:()=>void};
 export function AssetLibrary(props:Props){return <AssetBrowser key={(props.catalog?.sourceHash??'loading')+':'+(props.filterType??'main')+':'+Boolean(props.compact)} {...props}/>;}
-function AssetBrowser({onTerrain,catalog,selected,onChoose,onDragEnd,filterType,compact=false,onLibrary}:Props){
+function AssetBrowser({onTerrain,terrainColors,terrainActive,catalog,selected,onChoose,onDragEnd,filterType,compact=false,onLibrary}:Props){
+ const[terrainPopup,setTerrainPopup]=useState<{kind:TerrainPlacementKind;anchor:HTMLButtonElement}|null>(null);
  const[browse,getBrowse,saveBrowse]=useLocalMemory('assetBrowser:'+(filterType??'main')+':'+compact,v=>readAssetBrowser(v,categories.map(c=>c[0]),Boolean(filterType)));
  const[choices,getChoices,saveChoices]=useLocalMemory('assetVariants0714:'+(catalog?.sourceHash??'loading'),v=>Object.fromEntries(Object.entries(v&&typeof v==='object'?v:{}).filter(([,v])=>typeof v==='string'))as Record<string,string>);
  const[expanded,getExpanded,saveExpanded]=useLocalMemory('assetExpanded0715:'+(catalog?.sourceHash??'loading'),v=>Object.fromEntries(Object.entries(v&&typeof v==='object'?v:{}).filter(([,v])=>v===true))as Record<string,boolean>);
@@ -60,6 +63,29 @@ function AssetBrowser({onTerrain,catalog,selected,onChoose,onDragEnd,filterType,
   </div>;
  }
  return <div className={'s-assets '+(compact?'compact':'')}><header className="s-assets-header"><span className="s-panel-title">素材</span><nav>{!filterType&&<button className={mode==='recent'?'active':''} onClick={()=>changeTab('recent')}>最近使用</button>}{onLibrary&&<button onClick={onLibrary}>我的组合</button>}{!filterType&&categories.map(([key,label])=><button key={key} className={mode==='all'&&category===key?'active':''} onClick={()=>changeTab(key)}>{label}</button>)}</nav><div className="s-search"><Icon name="search"/><input aria-label="搜索素材" placeholder="搜索素材及变体…" value={query} onChange={e=>changeQuery(e.target.value)}/></div><IconButton icon="star" label="收藏素材" active={mode==='favorites'} onClick={()=>changeTab(mode==='favorites'?(filterType?'filtered':category):'favorites')}/><input className="s-thumb-size" aria-label="素材缩略图大小" title="素材缩略图大小" type="range" min="56" max="112" step="8" value={size} onChange={e=>{setSize(Number(e.target.value));writePref('thumbSize',Number(e.target.value));}}/><span className="s-count" title="基础素材数量">{groups.length}</span></header>
- {onTerrain&&!filterType&&((mode==='all'&&category==='terrain')||mode==='recent'||mode==='favorites')&&<div className="s-terrain-cards">{(['floor','wall']as const).filter(kind=>(mode==='all'||mode==='recent'&&recent.includes('terrain:'+kind)||mode==='favorites'&&favorites.includes('terrain:'+kind))&&(!query||(kind==='floor'?'地面水平铺设':'墙体竖直砌墙').includes(query))).sort((a,b)=>mode==='recent'?recent.indexOf('terrain:'+a)-recent.indexOf('terrain:'+b):0).map(kind=><div key={kind}><button onClick={()=>onTerrain?.(kind)} title="左键拖动添加 · 右击删一格／右拖擦除 · 中键取样"><Icon name={kind==='floor'?'floor':'cube'} size={30}/><span>{kind==='floor'?'地面':'墙体'}</span><small>按命中面铺设</small></button><button aria-label={'收藏'+(kind==='floor'?'地面':'墙体')} aria-pressed={favorites.includes('terrain:'+kind)} onClick={()=>{const key='terrain:'+kind,next=favorites.includes(key)?favorites.filter(k=>k!==key):[...favorites,key];setFavorites(next);writePref('favorites',next);}}>☆</button></div>)}</div>}
+ {onTerrain&&!filterType&&((mode==='all'&&category==='terrain')||mode==='recent'||mode==='favorites')&&<div className="s-terrain-cards">
+  {(['floor','wall'] as const).filter(kind=>(mode==='all'||(mode==='recent'?recent:favorites).includes('terrain:'+kind))&&(!query||(kind==='floor'?'地板 地面 水平铺设':'墙体 墙面 竖直砌墙').includes(query))).sort((a,b)=>mode==='recent'?recent.indexOf('terrain:'+a)-recent.indexOf('terrain:'+b):0).map(kind=>{
+    const key='terrain:'+kind,name=terrainPlacementNames[kind],custom=terrainColors?.placement[kind],color=custom??terrainColors?.defaults[kind];
+    return <div className="s-terrain-card" key={kind}>
+      <button className="s-terrain-card-pick" onClick={()=>onTerrain(kind)} aria-pressed={terrainActive===kind} title="左键拖动添加 · 右击删一格／右拖擦除 · 中键取样">
+        <span className="s-terrain-card-icon" style={{color}}><Icon name={kind==='floor'?'floor':'cube'} size={24}/></span>
+        <span>{name}</span><small>{custom?custom.toUpperCase():'关卡默认色'}</small>
+      </button>
+      <div className="s-terrain-card-actions">
+        {terrainColors&&<button type="button" aria-label={name+'放置参数'} aria-haspopup="dialog" aria-expanded={terrainPopup?.kind===kind} title={name+'放置参数'} onClick={e=>{
+          pointer.current=null;
+          window.dispatchEvent(new Event('sstar:cancel-gesture'));
+          setTerrainPopup({kind,anchor:e.currentTarget});
+        }}><Icon name="settings" size={13}/></button>}
+        <button type="button" aria-label={'收藏'+name} aria-pressed={favorites.includes(key)} title={'收藏'+name} onClick={()=>{
+          const next=favorites.includes(key)?favorites.filter(k=>k!==key):[...favorites,key];
+          setFavorites(next);
+          writePref('favorites',next);
+        }}><Icon name="star" size={13}/></button>
+      </div>
+    </div>;
+  })}
+ </div>}
+ {terrainPopup&&terrainColors&&<TerrainPlacementPopover {...terrainPopup} colors={terrainColors} onClose={()=>setTerrainPopup(null)}/>}
  <div className="s-asset-grid" ref={host} onWheelCapture={()=>{rememberAfter.current=0;}} onPointerDownCapture={()=>{rememberAfter.current=0;}} onKeyDownCapture={()=>{rememberAfter.current=0;}} onScroll={e=>{if((e.nativeEvent.isTrusted&&(restoring.current||Date.now()<rememberAfter.current))||width!==e.currentTarget.clientWidth||height!==e.currentTarget.clientHeight||!e.currentTarget.clientWidth||!e.currentTarget.clientHeight||e.currentTarget.closest('[inert]'))return;const scrollTop=e.currentTarget.scrollTop;setTop(scrollTop);editTab(rememberAssetScroll(layout.rows,scrollTop),false);}}><div style={{height:layout.height,position:'relative'}}>{layout.rows.filter(row=>row.top+row.height>=top-rowHeight&&row.top<=top+height+rowHeight).map(row=>row.kind==='heading'?<div key={row.id} className="s-inline-variant-heading" style={{position:'absolute',top:row.top,left:6,right:6,height:row.height}}><strong>{row.family.label}</strong><small>{row.family.variants.length} 种配置</small><button type="button" onClick={()=>toggleFamily(row.family)}>收起</button></div>:row.kind==='families'?row.families.map((family,i)=>renderCard(family,i,row.top,row.height)):row.variants.map((variant,i)=>renderCard(row.family,i,row.top,row.height,variant,row.family.variants.indexOf(variant))))}</div>{!groups.length&&<div className="s-empty">{catalog?mode==='recent'&&!recent.length?'成功放置素材后会出现在这里':'没有匹配的素材或变体':'正在读取原生素材…'}</div>}</div>{gatePopup&&catalog&&<GatePlacementPopover label={gatePopup.family.label} preset={gatePopup.preset} catalog={catalog} value={gateSettings(gatePopup.preset)} anchor={gatePopup.anchor} onChange={gateChanged} onClose={()=>setGatePopup(null)}/>}</div>;
 }

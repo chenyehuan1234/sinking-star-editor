@@ -1,6 +1,8 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import * as T from 'three';
 import {MiddleClick} from '../src/pointer-click';import {cameraFrame,cameraObjectFrame,cameraObjectChange,poseCameraChange} from '../src/camera-math';import {nativePoseRotation,transformPose} from '../src/camera-pose';import {mergeCameraChange} from '../src/camera-changes';
 import {applyCamera,cameraView} from '../src/core/camera';import {GamePackage} from '../src/core/package';import {parseEntities,writeEntities} from '../src/core/entities';import {PropertyCodec} from '../src/core/properties';import {ExeReflection} from '../src/core/reflection';import type {CameraPose,LevelView} from '../src/shared';
+import {selectedScreenCamera} from '../src/screen-camera';
+import {patchPoseParameters} from '../src/camera-math';
 const raw:CameraPose={position:[28,-12,18],target:[28,0,0],up:[0,0,1]};
 function level():LevelView{return{name:'x',entities:[],typeCount:0,manifest:'',camera:{perScreen:true,screenSize:[8,8],origin:[0,8],margins:[0,0],regions:[],controls:[{id:7,name:'raw camera',position:raw.position,rotation:nativePoseRotation(raw),primary:true,overview:false,upDistance:18,southDistance:12,fov:35,panRate:.35}]}};}
 test('相机对象入口读取原生位置朝向，不因场景启用分屏而变为某个房间',()=>{const l=level(),config={mode:'screens' as const},object=cameraObjectFrame(l,config,7)!,screen=cameraFrame(l,config,7,[0,-1])!;assert.deepEqual(object.position,raw.position);assert.ok(new T.Vector3(...object.target).sub(new T.Vector3(...object.position)).normalize().distanceTo(new T.Vector3(...raw.target).sub(new T.Vector3(...raw.position)).normalize())<1e-8);assert.notDeepEqual(object.position,screen.position);l.camera!.controls[0].resolvedTarget=raw.position;const self=cameraObjectFrame(l,config,7)!;assert.ok(new T.Vector3(...self.position).distanceTo(new T.Vector3(...self.target))>0);});
@@ -8,4 +10,45 @@ test('普通相机与分屏取景分别保存，修改普通相机不切运行�
 test('中键快速拖动的松手位移不能取样，即使没有中间 move 事件',()=>{const click=new MiddleClick(10,10,100,{x:100,y:100});click.observe({clientX:10,clientY:10,screenX:100,screenY:100,movementX:0,movementY:18,buttons:0},true);assert.equal(click.finish(10,10,120,true),false);const physical=new MiddleClick(10,10,100,{x:100,y:100});physical.observe({clientX:10,clientY:10,screenX:100,screenY:121,buttons:4});assert.equal(physical.finish(10,10,120,true),false);});
 test('合并事件中的快速往返不可恢复成单击；严格静止单击仍可取样',()=>{const click=new MiddleClick(10,10,100);click.observe({clientX:10,clientY:10,movementX:0,movementY:0,buttons:4,getCoalescedEvents:()=>[{clientX:10,clientY:28,movementY:18,buttons:4},{clientX:10,clientY:10,movementY:-18,buttons:4}]});assert.equal(click.finish(10,10,130,true),false);const stationary=new MiddleClick(10,10,100,{x:100,y:100});stationary.observe({clientX:10,clientY:10,screenX:100,screenY:100,buttons:0},true);assert.equal(stationary.finish(10,10,130,true),true);});
 const game=process.env.SINKING_STAR_GAME??'';
+test('分屏取景、普通镜头视角和卷轴镜头选择相互独立',()=>{
+ const l=level(),main=l.camera!.controls[0];
+ l.camera!.controls.push({...main,id:8,name:'另一台玩法镜头'},{...main,id:9,name:'卷轴镜头',primary:false});
+ const screen=poseCameraChange(l,{mode:'screens'},8,[0,0],{position:[3.5,-2.5,13],target:[3.5,10.5,0],up:[0,0,1]});
+ const framed=patchPoseParameters(l,screen,8,{fov:31},[0,0])!;
+ const changed=patchPoseParameters(l,framed,8,{fov:67},[0,0],true)!;
+ assert.equal(changed.screenCameraId,8);
+ assert.equal(selectedScreenCamera(l.camera,changed,7)?.id,8);
+ assert.equal(selectedScreenCamera(l.camera,changed,9)?.id,8);
+ assert.equal(cameraFrame(l,changed,8)!.fov,31);
+ assert.equal(cameraObjectFrame(l,changed,8)!.fov,67);
+ assert.deepEqual(mergeCameraChange(undefined,changed,{mode:'screens'}).screenCameraId,8);
+});
+test('旧工程中保留另一台主镜头也使用所选分屏参数，辅助镜头和多层数据不受影响',{skip:!fs.existsSync(game+'/sinking_star.exe')},()=>{
+ const codec=new PropertyCodec(new ExeReflection(fs.readFileSync(game+'/sinking_star.exe'))),pkg=new GamePackage(fs.readFileSync(game+'/data/levels.package'));
+ const file=parseEntities(pkg.get('data-common/mirror_1.entities')),source=file.records.find(r=>r.type==='Camera_Control')!;
+ const second=codec.patch({...source,id:943719001},{entity_name:'屏幕构图',fov_vertical:35,'position.z':0});
+ const alternate=codec.patch({...source,id:943719002},{entity_name:'side',minus_one_if_not_primary:-1,fov_vertical:63});
+ const overview=codec.patch({...source,id:943719003},{is_for_map_overview:true});
+ file.records.push(second,alternate,overview);
+ const original=writeEntities(file);
+ const pose:CameraPose={position:[.04,-3.5,8.5],target:[.04,-.2,0],up:[0,0,1]};
+ const config={mode:'screens' as const,controls:[{id:source.id,nativePose:raw,fov:65},{id:second.id,pose,upDistance:18,southDistance:8}]};
+ const runtimeFields=(f:typeof file,id:number)=>['up_distance','south_distance','look_at_south_distance','fov_vertical'].map(key=>Number(codec.get(f.records.find(r=>r.id===id)!,key)));
+ const compiled=parseEntities(original);
+ applyCamera(codec,compiled,JSON.parse(JSON.stringify(config)),pkg);
+ const sourceRemoved=parseEntities(original);
+ sourceRemoved.records=sourceRemoved.records.filter(r=>r.id!==source.id);
+ applyCamera(codec,sourceRemoved,{...config,controls:[config.controls[1]]},pkg);
+ const expected=[8.5,3.5,Math.fround(.2),35];
+ assert.deepEqual(runtimeFields(compiled,source.id),expected);
+ assert.deepEqual(runtimeFields(compiled,second.id),expected);
+ assert.deepEqual(runtimeFields(sourceRemoved,second.id),expected);
+ assert.deepEqual(cameraView(codec,compiled).controls.find(c=>c.id===source.id)!.position,cameraView(codec,file).controls[0].position);
+ for(const record of [alternate,overview])assert.deepEqual(compiled.records.find(r=>r.id===record.id)!.diff,record.diff);
+ const multi=parseEntities(original);
+ multi.records=multi.records.map(r=>r.type==='Settings'?codec.patch(r,{has_upper_layer:true}):r);
+ applyCamera(codec,multi,{...config,screenCameraId:second.id},pkg);
+ assert.deepEqual(multi.records.find(r=>r.id===source.id)!.diff,source.diff);
+ assert.deepEqual(runtimeFields(multi,second.id),expected);
+});
 test('沿用模板时普通相机姿态可写回，原生分屏开关和网格记录保持原样',{skip:!fs.existsSync(game+'/sinking_star.exe')},()=>{const codec=new PropertyCodec(new ExeReflection(fs.readFileSync(game+'/sinking_star.exe'))),pkg=new GamePackage(fs.readFileSync(game+'/data/levels.package')),data=pkg.get('data-common/mirror_1.entities'),file=parseEntities(data),view=cameraView(codec,file),id=view.controls[0].id,settings=file.records.find(e=>e.type==='Settings')!,before=Buffer.from(settings.diff),config=cameraObjectChange({mode:'template'},id,raw);applyCamera(codec,file,config,pkg);const after=parseEntities(writeEntities(file));assert.deepEqual(after.records.find(e=>e.id===settings.id)!.diff,before);assert.deepEqual(cameraView(codec,after).controls.find(e=>e.id===id)!.position,raw.position);});

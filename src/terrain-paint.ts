@@ -5,8 +5,9 @@ export const faceNormals:readonly Vec3[] = [
   [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1],
 ];
 export const floorFace=4;
+export type TerrainPlacementKind = 'floor'|'wall';
 export type TerrainColor = string;
-export type TerrainPalette = Partial<Record<'floor'|'wall',TerrainColor>>;
+export type TerrainPalette = Partial<Record<TerrainPlacementKind,TerrainColor>>;
 export type TerrainFaceColors = Partial<Record<number,TerrainColor>>;
 export interface TerrainFacePaint {cell:Vec3; face:number; color:TerrainColor|null}
 
@@ -14,6 +15,17 @@ export const faceKey=(cell:Vec3,face:number)=>cell.join(',')+':'+face;
 export const faceIndex=(normal:Vec3)=>faceNormals.findIndex(n=>n.every((v,i)=>v===normal[i]));
 export const paletteColor=(palette:TerrainPalette,face:number)=>palette[face===floorFace?'floor':'wall'];
 export const validTerrainColor=(color:unknown):color is TerrainColor=>typeof color==='string'&&/^#[0-9a-f]{6}$/i.test(color);
+
+export function terrainFaceColor(cells:{x:number;y:number;z:number;colors?:TerrainFaceColors}[],cell:Vec3,normal:Vec3,palette:TerrainPalette={}):TerrainColor {
+  const face=faceIndex(normal);
+  const source=cells.find(p=>p.x===cell[0]&&p.y===cell[1]&&p.z===cell[2]+1);
+  return source?.colors?.[face]??paletteColor(palette,face)??'#84978b';
+}
+
+export function terrainPlacementFaces(cells:Vec3[],kind:TerrainPlacementKind,color:TerrainColor):TerrainFacePaint[] {
+  const faces=kind==='floor'?[floorFace]:[0,1,2,3];
+  return cells.flatMap(cell=>faces.map(face=>({cell,face,color})));
+}
 
 export function validateTerrainPalette(palette:TerrainPalette) {
   if(!palette||typeof palette!=='object'||Array.isArray(palette)||

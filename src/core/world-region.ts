@@ -1,3 +1,4 @@
+import {freezerConditions,isFreezerCondition} from '../association';
 import type {EditorProject,RegionBundle,RegionEntrance,RegionLevelLink,RegionPasteRequest,RegionSelection,StampOp,Vec3,WorldEntry,WorldLevel,WorldProject} from '../shared';
 import type {EntityFile} from './entities';
 import type {PropertyCodec} from './properties';
@@ -22,14 +23,14 @@ export function captureWorldRegion(codec:PropertyCodec,file:EntityFile,world:Wor
   for(const l of world.levels)if(!levelsByName.has(l.project.name))levelsByName.set(l.project.name,l);
   const findLevel=(target:string)=>levelsById.get(target)??levelsByName.get(target)??levelsById.get(target.replace('ed_'+world.id+'_',''));
   const entries:RegionEntrance[]=[];
-  const legacyCount=worldScene&&!world.native?world.map.entries.length:0;
+  const managedEntries=new Map(world.map.entries.map(entry=>[file.managedEntryIds?.get(entry.id),entry]));
   const rawEntries=worldScene?file.records.filter(r=>r.type==='Level_Entry'):[];
   for(let i=0;i<rawEntries.length;i++){
     if((i&127)===0)progress();
     const r=rawEntries[i],pos=position(r);
     if(!pos||pos.some((v,a)=>v<box.min[a]||v>box.max[a]))continue;
     if(!codec.parse(r).complete)throw Error('入口 #'+r.id+' 无法读取');
-    const managed=i<legacyCount?world.map.entries[i]:undefined;
+    const managed=managedEntries.get(r.id);
     const target=managed?.levelId??String(codec.get(r,'level_name',''));
     if(!findLevel(target))throw Error('入口 #'+r.id+' 的目标关卡不存在：'+target);
     entries.push({
@@ -63,7 +64,12 @@ export function captureWorldRegion(codec:PropertyCodec,file:EntityFile,world:Wor
   }
   const selectedIds=new Set(bundle.records.map(record=>record.id));
   const channels=[...new Set(file.records.filter(record=>selectedIds.has(record.id)&&['Switch','Gate'].includes(record.type)).map(record=>String(codec.get(record,'flavor',0))))];
-  bundle.transfer={size,entries,levels:[...copied.values()],links,channels};
+  const entriesById=new Map(rawEntries.map(record=>[record.id,managedEntries.get(record.id)?.title??findLevel(String(codec.get(record,'level_name','')))?.title??String(codec.get(record,'level_name',''))]));
+  const conditionLinks=file.records.filter(record=>record.type==='Freezer'&&selectedIds.has(record.id)).flatMap(record=>freezerConditions.flatMap(field=>{
+    const targetId=Number(codec.get(record,field,0));
+    return entriesById.has(targetId)?[{sourceId:record.id,field,targetId,title:entriesById.get(targetId)}]:[];
+  }));
+  bundle.transfer={size,entries,levels:[...copied.values()],links,channels,conditionLinks};
   bundle.name='复制区域 '+size.join(' × ');
   if(!bundle.records.length&&!bundle.terrain.length&&!entries.length)throw Error('复制范围内没有可复用内容');
   validateRegionTransfer(bundle);
@@ -195,6 +201,23 @@ export function pasteWorldRegion(codec:PropertyCodec,file:EntityFile,request:Reg
         tower_flags:0,dropdown:false,currently_broken:false,currently_disfavored:false,can_move:false,riding_on_id:0,enabled_t_target:1
       }).diff.toString('base64')});
     }
+  }
+  for(const link of transfer.conditionLinks??[]){
+    if(!isFreezerCondition(link.field)||!stamp.bundle.records.some(r=>r.id===link.sourceId&&r.type==='Freezer'))throw Error('区域的冰封屏障条件无效');
+    let target:string|number=0;
+    if(worldScene){
+      const copied=copiedEntries.get(link.targetId);
+      if(copied)target=managed?copied:-link.targetId;
+      else{
+        const choice=options.unlocks['freezer:'+link.sourceId+':'+link.field];
+        if(choice===undefined)throw Error('请处理冰封屏障 #'+link.sourceId+' 的框外解冻条件');
+        if(choice){
+          if(managed?!world.map.entries.some(e=>e.id===choice):!existingNative.has(Number(choice)))throw Error('解冻条件入口已不存在');
+          target=managed?choice:Number(choice);
+        }
+      }
+    }
+    ((stamp.conditionTargets??={})[link.sourceId]??={})[link.field]=target;
   }
   world.levels.push(...copied);
   if(stamp.bundle.records.length||stamp.bundle.terrain.length){

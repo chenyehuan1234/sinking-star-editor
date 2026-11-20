@@ -5,13 +5,14 @@ export function presetView(key:string){let p=views.get(key);if(!p){p=window.edit
 const regionViews=new WeakMap<RegionBundle,Promise<LevelView>>(),regionCache=new Map<string,Promise<LevelView>>();
 export function cachedRegionView(bundle:RegionBundle){let view=regionViews.get(bundle);if(!view){const key=JSON.stringify(bundle);view=regionCache.get(key);if(!view){view=window.editor.regionPreview(bundle);regionCache.set(key,view);if(regionCache.size>32)regionCache.delete(regionCache.keys().next().value!);view.catch(()=>regionCache.delete(key));}regionViews.set(bundle,view);view.catch(()=>regionViews.delete(bundle));}return view;}
 let renderer:T.WebGLRenderer|undefined,assets:ViewAssets|undefined,chain=Promise.resolve(),rendered=0;
+import {entryModelSize} from '../association';
 async function renderThumb(p:ObjectPreset){
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode((p.type==='Gate'?'thumbnail-gate-colors-2:':p.type==='View_Giver'?'thumbnail-view-giver-1:':'thumbnail-alpha3-native-4:')+p.key));const key=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode((p.type==='Gate'?'thumbnail-gate-colors-2:':p.type==='View_Giver'?'thumbnail-view-giver-1:':p.type==='Freezer'||p.type==='Level_Entry'?'thumbnail-association-1:':'thumbnail-alpha3-native-4:')+p.key));const key=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
   const cached=await window.editor.thumbnailRead(key);if(cached)return cached;
   renderer??=new T.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true});renderer.setSize(128,128,false);renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.3;
   if(rendered++%32===0&&assets){assets.dispose();assets=undefined;}assets??=new ViewAssets(()=>{},()=>{});const level=await presetView(p.key),scene=new T.Scene(),root=new T.Group();scene.add(root);scene.background=new T.Color('#242a30');
   const light=new T.DirectionalLight(0xfff0db,3);light.position.set(-3,-5,8);scene.add(light,new T.HemisphereLight(0xe4f0ff,0x69736a,2));
-  for(const e of level.entities){if(!e.position)continue;const g=new T.Group();g.position.fromArray(e.position);if(e.rotation)g.quaternion.fromArray(e.rotation);if(e.scale)g.scale.fromArray(e.scale);if(e.mesh)g.add(await assets.entity(e));root.add(g);}
+  for(const e of level.entities){if(!e.position)continue;const g=new T.Group();g.position.fromArray(e.position);if(e.rotation)g.quaternion.fromArray(e.rotation);if(e.scale)g.scale.fromArray(e.scale);if(e.type==='Level_Entry')g.scale.multiplyScalar(entryModelSize(e));if(e.mesh)g.add(await assets.entity(e));root.add(g);}
   const temporary:T.BufferGeometry[]=[];const mats:T.Material[]=[];
   if(!new T.Box3().setFromObject(root).isEmpty()){}else{const geo=new T.BoxGeometry(1,1,1),mat=new T.MeshStandardMaterial({color:p.type==='Ocean_Map'?0x4e96b3:0x9ba9a2});root.add(new T.Mesh(geo,mat));temporary.push(geo);mats.push(mat);}
   const box=new T.Box3().setFromObject(root),center=box.getCenter(new T.Vector3()),size=box.getSize(new T.Vector3()),extent=Math.max(size.x,size.y,size.z,.5);root.position.sub(center);

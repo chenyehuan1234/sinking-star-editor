@@ -9,13 +9,14 @@ import type{EditorProject,Vec3,WorldProject,WorldIssue}from '../shared';
 import{validateReferences}from'./mechanisms';
 import {cellKey,mapOrigin,mapSpawn,spatialEntryId,worldContains,worldVoxels,worldVerticalBounds,worldXYLimit} from '../world-space';
 import {waterLayout} from './water';
-import {paintSurfaceTemplate} from './terrain-paint';
 import {appendVoxelTerrain} from './terrain';
 export type{WorldProject,WorldIssue}from'../shared';
 export interface WorldBuild {changes:Map<string,Buffer>;resources:{source:string;target:string}[];issues:WorldIssue[];levelNames:Record<string,string>;revision:number}
 import {mergeManifests} from './manifests';
 export {mergeManifests} from './manifests';
 const HUB_NAMESPACE=800;
+import {mapProject} from '../scene-project';
+
 export function newWorld(hash:string,build:string):WorldProject {
   const id=globalThis.crypto.randomUUID().replaceAll('-','').slice(0,12),width=32,height=32;
   return{format:'sinking-star-world',version:1,id,name:'我的大地图',sourceHash:hash,sourceBuild:build,map:{width,height,tiles:Array.from({length:width*height},(_,i)=>{const x=i%width,y=Math.floor(i/width);return x>=2&&x<=18&&y>=2&&y<=14?1:0;}),spawn:[6,5],entries:[]},levels:[]};
@@ -32,7 +33,7 @@ export function validateWorld(w:WorldProject){
       !Array.isArray(m.voxels)||m.voxels.length>1_000_000||m.voxels.some(p=>!Array.isArray(p)||p.length!==3||!p.every(coordinate)||!worldContains(m,p[0],p[1]))||
       new Set(m.voxels.map(cellKey)).size!==m.voxels.length)throw Error('大地图体素或坐标无效');
   }else if(m.tiles.length!==m.width*m.height||!m.tiles.every(t=>[0,1,2].includes(t)))throw Error('地图地形无效');
-  if(m.objects)validateProject({format:'sinking-star-project',version:3,sourceHash:w.sourceHash,sourceBuild:w.sourceBuild,template:'mirror_1',name:'overworld',operations:m.objects});
+  if(m.objects||m.camera)validateProject(mapProject(w));
   const point=(p:unknown)=>Array.isArray(p)&&p.length===2&&p.every(coordinate)&&worldContains(m,p[0],p[1]);
   if(!point(m.spawn)||!coordinate(m.spawnZ??0)||!Array.isArray(m.entries)||m.entries.length>5000||!Array.isArray(w.levels)||w.levels.length>5000)throw new Error('地图出生点或关卡数量无效');
   const ids=new Set<string>(),names=new Set<string>();for(const l of w.levels){if(!validName(l.id)||ids.has(l.id)||typeof l.title!=='string')throw new Error('小关卡标识无效或重复');ids.add(l.id);validateProject(l.project);if(l.project.sourceHash!==w.sourceHash||l.project.sourceBuild!==w.sourceBuild)throw new Error('合集内关卡的源版本不一致');}
@@ -41,6 +42,10 @@ export function validateWorld(w:WorldProject){
     if(e.prototype&&(!validName(e.prototype.template)||!Number.isInteger(e.prototype.sourceId)||e.prototype.sourceId<1||e.prototype.sourceId>0xffffffff))throw Error('入口样式无效');
     if(e.appearance!==undefined&&(typeof e.appearance!=='string'||e.appearance.length>100000||!/^[A-Za-z0-9+/]*={0,2}$/.test(e.appearance)))throw Error('入口样式快照无效');
     if(e.unlocks&&(!Array.isArray(e.unlocks)||e.unlocks.length>3||e.unlocks.some(id=>id!=null&&!validName(id))||e.unlocks.includes(e.id)))throw Error('入口解锁关联无效');
+    if(e.rotation&&(!Array.isArray(e.rotation)||e.rotation.length!==4||!e.rotation.every(Number.isFinite)||Math.abs(Math.hypot(...e.rotation)-1)>.01))throw Error('入口旋转无效');
+    if(e.scale&&(!Array.isArray(e.scale)||e.scale.length!==3||!e.scale.every(v=>Number.isFinite(v)&&Math.abs(v)>=.0001&&Math.abs(v)<=10000)))throw Error('入口缩放无效');
+    if(e.size!==undefined&&(!Number.isFinite(e.size)||e.size<0||e.size>10000))throw Error('入口大小无效');
+    if(e.nativeGroupId!==undefined&&(!Number.isInteger(e.nativeGroupId)||e.nativeGroupId<0||e.nativeGroupId>0xffffffff))throw Error('入口原生分组无效');
     names.add(e.id);
   }
   if(spatial)worldVerticalBounds(m);
@@ -127,20 +132,27 @@ export class WorldCompiler {
         }
       }
     }
-    const entryProto=this.find('overworld','Level_Entry',r=>c.parse(r).complete);
+    const baseEntries=this.file('overworld').records.filter(r=>r.type==='Level_Entry');
+    const entryProto=baseEntries.find(r=>c.parse(r).complete&&Number(c.get(r,'style',0))===0&&Number(c.get(r,'size',0))===0&&c.get(r,'mesh')==='GAME_OVER_Entry_Locked_A')??this.find('overworld','Level_Entry',r=>c.parse(r).complete);
     const entryIds=new Map(m.entries.map((e,i)=>[e.id,spatial?spatialEntryId(i):id()]));
     for(const e of m.entries){
       const proto=e.appearance?{...entryProto,diff:Buffer.from(e.appearance,'base64')}:e.prototype?this.file(e.prototype.template).records.find(r=>r.id===e.prototype!.sourceId&&r.type==='Level_Entry'):entryProto;
       if(!proto||!c.parse(proto).complete)throw Error('入口样式不存在');
       const [first,second,third]=(e.unlocks??[]).map(key=>key?entryIds.get(key)??0:0);
       let r=this.move(this.stripGroup(proto),[e.x,e.y,e.z??0]);
-      r=c.patch(r,{level_name:e.levelId?`ed_${w.id}_${e.levelId}`:'',unlocked_by_id:first??0,unlocked_by_id2:second??0,unlocked_by_id3:third??0,unlock_is_or_gate:e.unlockAny??false,tower_flags:0,dropdown:false,currently_broken:false,currently_disfavored:false,can_move:false,riding_on_id:0,enabled_t_target:1,...(!e.prototype&&!e.appearance?{mesh:'GAME_OVER_Entry_Locked_A'}:{})});
+      r=c.patch(r,{level_name:e.levelId?`ed_${w.id}_${e.levelId}`:'',unlocked_by_id:first??0,unlocked_by_id2:second??0,unlocked_by_id3:third??0,unlock_is_or_gate:e.unlockAny??false,tower_flags:0,dropdown:false,currently_broken:false,currently_disfavored:false,can_move:false,riding_on_id:0,enabled_t_target:1});
+      const fields:Record<string,number>={};
+      e.rotation?.forEach((value,i)=>fields['orientation.'+'xyzw'[i]]=value);
+      e.scale?.forEach((value,i)=>fields['scale.'+'xyz'[i]]=value);
+      if(e.size!==undefined)fields.size=e.size;
+      if(e.nativeGroupId!==undefined)fields.group_id=e.nativeGroupId;
+      if(Object.keys(fields).length)r=c.patch(r,fields);
       records.push({...r,id:entryIds.get(e.id)!});
     }
-    const result={prefix:Buffer.from(original.prefix),types:[...original.types],records};
+    const result={prefix:Buffer.from(original.prefix),types:[...original.types],records,managedEntryIds:entryIds};
     // Source environment IDs remain stable, while fresh terrain and entrances use a disjoint namespace.
     if(new Set(records.map(r=>r.id)).size!==records.length)throw new Error('地图实体 ID 冲突');
-    const built=applyProject(this.pkg,{format:'sinking-star-project',version:3,sourceHash:w.sourceHash,sourceBuild:w.sourceBuild,template:'mirror_1',name:'overworld',operations:m.objects??[]},c,result);
+    const built=applyProject(this.pkg,mapProject(w),c,result);
     if(spatial&&m.objects?.length){
       const positions:Vec3[]=[];
       for(const r of built.records){
@@ -176,7 +188,7 @@ export class WorldCompiler {
     for(const name of['overworld','intro']){
       const hub=this.mapFile(w,name,revision,spawn),refs=validateReferences(this.codec,hub);if(refs.length)throw new Error('大地图：'+refs.join('；'));
       changes.set(`data-common/${name}.entities`,writeEntities(hub));
-      changes.set(`data-common/${name}.level_manifest`,mergeManifests(['mirror_1','3d_intro_heroes',...(w.map.entries.some(e=>e.appearance)?['overworld']:[]),...w.map.entries.flatMap(e=>e.prototype?[e.prototype.template]:[]),...(w.map.objects??[]).flatMap(o=>o.kind==='terrainPaint'?[paintSurfaceTemplate]:o.kind==='stamp'?[...o.bundle.sources,...(o.bundle.terrainPaint?.length?[paintSurfaceTemplate]:[])]:o.kind==='prefab'||o.kind==='profile'?[o.template]:o.kind==='properties'&&o.sourceTemplate?[o.sourceTemplate]:[])].map(t=>this.pkg.get(`data-common/${t}.level_manifest`).toString()),['Shape_Plane_Square_1','GAME_OVER_Entry_Locked_A','queen']));
+      changes.set(`data-common/${name}.level_manifest`,mergeManifests(['mirror_1','3d_intro_heroes',...(w.map.entries.some(e=>e.appearance)?['overworld']:[]),...w.map.entries.flatMap(e=>e.prototype?[e.prototype.template]:[]),...projectSources(mapProject(w))].map(t=>this.pkg.get(`data-common/${t}.level_manifest`).toString()),['Shape_Plane_Square_1','GAME_OVER_Entry_Locked_A','queen']));
     }
     return{changes,resources,issues,levelNames,revision};
   }

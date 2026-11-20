@@ -51,6 +51,10 @@ v0.2 静态解析 exe 中 Jai 类型反射，按 Undoable_Entity_Data 与各实�
 
 PID 在关卡内作用域有效，同一模板的多个独立关卡保留各自原 PID，以兼容原始绘色、光照和反射探针。只给新物件使用独立命名空间。跨模板预设清空原有 PID 关联，合并资源清单；部署时按新关卡名前缀别名辅助资源。Switch/Gate 使用 flavor 频道，Teleporter 使用 target_id；Gem/Gem_Slot 使用引擎原生房间规则。
 
+自制大地图的冰封屏障通过 `properties.entryTargets` 记录条件字段与工程入口标识。预览和构建均按当次入口的原生 PID 解析；缺失标识保留在草稿预览中并阻止构建。区域快照的 `conditionLinks` 将复制范围内的解冻条件重新绑定到副本入口。新放的冰封屏障使用 `prefab.standaloneFreezer` 初始化通关条件，已有预设操作维持原语义。
+
+自制大地图可选的 `map.camera` 采用和小关相同的配置。生成底图后，预览及 `overworld`／`intro` 构建都会应用这些镜头修改。入口使用样式来源或原生快照，并可独立覆盖旋转、缩放、大小和原生分组标识。关卡目录分组及编辑分组属于工作台元数据。
+
 ## 专用战役
 
 仅管理带 _editor-owner.json 的 Editor_<worldid> 目录。v33 Status.sokoban_status 保留固定前缀、进度与未知尾部，仅改当前关卡与时间；新战役直接进入 overworld。游戏按最近战役选择，启动前先持久化恢复意图，再提升专用战役时间。退出后降低专用战役时间和 mtime，保留正常战役逐字节不变。连接时恢复中断的会话。每轮归档本工程 intro/overworld.history，使快速选关出生点生效；保留未修改小关卡的历史。

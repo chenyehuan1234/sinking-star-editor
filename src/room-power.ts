@@ -1,14 +1,23 @@
 import {screenAt} from './camera-layout';
 import type {LevelView} from './shared';
+import type {LevelSettingsView} from './level-settings';
+import {wrapScreenPoint} from './screen-wrapping';
 
 type Screen=[number,number];
 type Layout={origin:Screen;size:Screen};
 
+export function roomBoundaryOpacity(settings?:LevelSettingsView) {
+  if(!settings?.spotlight||settings.roomGlow===0)return 0;
+  return settings.roomGlow!==undefined&&settings.roomGlow>0?settings.roomGlow:.7;
+}
+
 /** This overlay counts only actors available on the displayed height and in the loaded scene. */
 export function roomPowerObjects(level:LevelView,layout:Layout,z:number) {
+  const topology=level.topology;
   return level.entities.flatMap(entity=>{
     if(!entity.position||!['Gem_Slot','Promesst_Light'].includes(entity.type)||Math.abs(entity.position[2]-z)>.5)return [];
-    return [{id:entity.id,type:entity.type,room:screenAt(entity.position,layout.origin,layout.size),at:entity.position}];
+    const at=wrapScreenPoint(entity.position,topology);
+    return [{id:entity.id,type:entity.type,room:screenAt(at,layout.origin,layout.size),at}];
   });
 }
 

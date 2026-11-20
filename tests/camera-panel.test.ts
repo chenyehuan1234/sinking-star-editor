@@ -25,11 +25,11 @@ test('三位小数仅格式化展示，不改写六轴原始精度',()=>{
 const game=process.env.SINKING_STAR_GAME??'',available=fs.existsSync(game+'/sinking_star.exe');
 test('新增额外视角原子写入辅助用途，复制依赖与原相机保持独立，一次恢复可撤销',{skip:!available},async()=>{
  const pkg=new GamePackage(fs.readFileSync(game+'/data/levels.package')),codec=new PropertyCodec(new ExeReflection(fs.readFileSync(game+'/sinking_star.exe'))),p=createBlank(sha256(pkg.buffer),'native-test'),before=JSON.stringify(p),bytes=writeEntities(applyProject(pkg,p,codec));
- const service={pkg,codec,checkProject:async()=>{}}as unknown as EditorService,request:CameraObjectRequest={action:'create',kind:'play',role:'aux',position:[0,0,0]};
- const config=await EditorService.prototype.cameraObject.call(service,p,request),out=applyProject(pkg,{...p,camera:config},codec),view=levelView(pkg,p.template,out,codec),extra=view.camera!.controls.find(c=>!c.primary&&!c.overview)!;
+ const service=Object.assign(new EditorService('workspace'),{pkg,codec,checkProject:async()=>{}}),request:CameraObjectRequest={action:'create',kind:'play',role:'aux',position:[0,0,0]};
+ const config=await service.cameraObject(p,request),out=applyProject(pkg,{...p,camera:config},codec),view=levelView(pkg,p.template,out,codec),extra=view.camera!.controls.find(c=>!c.primary&&!c.overview)!;
  assert.ok(extra);assert.deepEqual(extra.position,view.camera!.controls.find(c=>c.primary&&!c.overview)!.position);assert.equal(view.camera!.controls.filter(c=>c.primary&&!c.overview).length,1);assert.equal(JSON.stringify(p),before);assert.deepEqual(writeEntities(applyProject(pkg,p,codec)),bytes);
- const next=await EditorService.prototype.cameraObject.call(service,{...p,camera:config},request),again=levelView(pkg,p.template,applyProject(pkg,{...p,camera:next},codec),codec);assert.equal(new Set(again.camera!.controls.map(c=>c.name)).size,again.camera!.controls.length);
- await assert.rejects(()=>EditorService.prototype.cameraObject.call(service,p,{action:'create',kind:'overview',role:'aux',position:[0,0,0]}),/用途无效/);
+ const next=await service.cameraObject({...p,camera:config},request),again=levelView(pkg,p.template,applyProject(pkg,{...p,camera:next},codec),codec);assert.equal(new Set(again.camera!.controls.map(c=>c.name)).size,again.camera!.controls.length);
+ await assert.rejects(()=>service.cameraObject(p,{action:'create',kind:'overview',role:'aux',position:[0,0,0]}),/用途无效/);
 });
 
 test('只读导航与镜头编辑共用取景，普通、辅助、总览均保留原始世界姿态',()=>{

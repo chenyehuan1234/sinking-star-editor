@@ -1,3 +1,4 @@
+import {missingEntryMessages} from './entry-references';
 import{objectFields}from'./object-catalog';
 import type{EditableProperty,PrefabView}from'../shared';import type{EntityRecord,EntityFile}from'./entities';import{PropertyCodec}from'./properties';import{GamePackage}from'./package';import{parseEntities}from'./entities';
 export const MECHANISM_TYPES=new Set(['Mirror','Rock','Guy','Door','Switch','Gate','Teleporter','Gem','Gem_Slot']);
@@ -29,7 +30,7 @@ export function rotationValues(type:string,q:number[]):Record<string,number>{
  return values;
 }
 export function validateReferences(c:PropertyCodec,f:EntityFile,options:{transient?:boolean;nativeWorld?:boolean}={}):string[]{
- const ids=new Map(f.records.map(r=>[r.id,r])),groups=new Map(f.records.filter(r=>r.type==='Group').map(r=>[r.id,r])),parents=new Map<number,number>(),fields=new Map<string,ReturnType<typeof objectFields>>(),errors:string[]=[],groupErrors:string[]=[];
+ const ids=new Map(f.records.map(r=>[r.id,r])),groups=new Map(f.records.filter(r=>r.type==='Group').map(r=>[r.id,r])),parents=new Map<number,number>(),fields=new Map<string,ReturnType<typeof objectFields>>(),errors:string[]=missingEntryMessages(f),groupErrors:string[]=[];
  for(const r of f.records){let values:Map<string,unknown>|undefined;const get=(name:string)=>{if(!options.transient)return c.get(r,name);values??=new Map(c.parseTransient(r).fields.map(f=>[f.schema.name,f.value]));return values.get(name)??0;};const group=Number(get('group_id'));if(r.type==='Group')parents.set(r.id,group);if(group&&!groups.has(group))groupErrors.push(r.type+' #'+r.id+' 的组合 #'+group+' 不存在');
   if(options.nativeWorld){const names:Record<string,string[]>={Level_Entry:['unlocked_by_id','unlocked_by_id2','unlocked_by_id3'],Area_Pin:['map_label_marker_id'],Marker:['script_target_entity_id'],Camera_Control:['position_id','look_at_id'],Group:['unexist_this_id','unexist_this_id2','unexist_this_id3']};for(const name of names[r.type]??[]){const id=Number(get(name));if(id&&!ids.has(id))errors.push(r.type+' #'+r.id+' 的 '+name+' 引用 #'+id+' 不存在');}}
   if(r.type==='Teleporter'){const target=ids.get(Number(get('target_id')));if(!target||!['Teleporter','Marker'].includes(target.type))errors.push('传送器 #'+r.id+' 缺少有效目标');}
