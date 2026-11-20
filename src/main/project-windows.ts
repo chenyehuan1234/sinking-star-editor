@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {ProjectStart,ProjectTabAction,ProjectTabLabel,ProjectTabState} from '../project-tabs';
+import type {EditorProject} from '../shared';
 
 const stripHeight=36;
 const defaultTitle='沉星之序 · 关卡工作台';
@@ -24,6 +25,9 @@ export interface ProjectTab extends ProjectTabLabel {
   owner:ProjectWindow;
   start:ProjectStart;
   file?:string;
+  startScene?:string;
+  singleLevel?:boolean;
+  levelDraft?:EditorProject;
 }
 
 export class ProjectWindows {
@@ -53,6 +57,9 @@ export class ProjectWindows {
   get size(){return this.editors.size;}
   get hasDirtyProjects(){return [...this.editors.values()].some(tab=>tab.dirty);}
   editor(contents:WebContents){return this.editors.get(contents.id);}
+  isOpen(file:string){
+    return [...this.editors.values()].some(tab=>tab.file&&this.pathKey(tab.file)===this.pathKey(file));
+  }
 
   focusRecent(){
     const host=this.recent??this.windows.values().next().value;
@@ -79,9 +86,15 @@ export class ProjectWindows {
 
   recordFile(tab:ProjectTab,file?:string){tab.file=file;}
 
-  start(width:number,height:number){
+  start(width:number,height:number,resume=false){
     const host=this.createWindow({width,height});
-    this.createTab(host,'resume');
+    if(resume)this.createTab(host,'resume');
+  }
+
+  homeOwner(event:IpcMainInvokeEvent){
+    const host=this.sender(event);
+    if(event.sender!==host.window.webContents)throw Error('请从首页执行此操作');
+    return host;
   }
 
   private pathKey(file:string){const resolved=path.resolve(file);return process.platform==='win32'?resolved.toLowerCase():resolved;}
@@ -152,20 +165,20 @@ export class ProjectWindows {
     return host;
   }
 
-  private createTab(host:ProjectWindow,start:ProjectStart,file?:string){
-    const view=new WebContentsView({webPreferences:webPreferences(this.preload)});
+  private createTab(host:ProjectWindow,start:ProjectStart,file?:string,startScene?:string,levelDraft?:EditorProject){
+    const view=new WebContentsView({webPreferences:webPreferences(this.preload)}),contents=view.webContents;
     const tab:ProjectTab={
-      id:randomUUID(),title:file?path.basename(file).replace(/(?:\.sstar(?:-native)?-world)?\.json$/i,''):
-        start==='native'?'原版三层世界':start==='blank'?'新建工程':'正在打开工程',
-      dirty:false,busy:true,view,owner:host,start,file
+      id:randomUUID(),title:file?path.basename(file).replace(/(?:\.sstar(?:(?:-native)?-world)?)?\.json$/i,''):
+        levelDraft?.title??(start==='blank-level'?'新建单关':start==='native'?'原版三层世界':start==='blank'?'新建工程':'正在打开工程'),
+      dirty:false,busy:false,view,owner:host,start,file,startScene,levelDraft
     };
-    this.secure(view.webContents);
-    this.editors.set(view.webContents.id,tab);
+    this.secure(contents);
+    this.editors.set(contents.id,tab);
     host.tabs.push(tab);
     host.window.contentView.addChildView(view);
     this.activate(tab);
-    void view.webContents.loadFile(this.html).catch(error=>{
-      if(view.webContents.isDestroyed())return;
+    void contents.loadFile(this.html).catch(error=>{
+      if(contents.isDestroyed()||host.window.isDestroyed())return;
       tab.title='工程加载失败';
       tab.busy=false;
       this.publish(tab.owner);
@@ -237,14 +250,31 @@ export class ProjectWindows {
 
   private async openFile(host:ProjectWindow){
     const result=await dialog.showOpenDialog(host.window,{
-      defaultPath:this.directory(),filters:[{name:'世界工程',extensions:['json']}],properties:['openFile']
+      defaultPath:this.directory(),filters:[{name:'工程或单关',extensions:['json']}],properties:['openFile']
     });
     if(result.canceled||host.window.isDestroyed())return;
-    const file=await fs.realpath(result.filePaths[0]);
-    if(host.window.isDestroyed())return;
+    await this.openPath(host,result.filePaths[0]);
+  }
+
+  async openPath(host:ProjectWindow,file:string,scene?:string){
+    file=await fs.realpath(file);
+    if(host.window.isDestroyed()||host.closing)return;
     const existing=[...this.editors.values()].find(tab=>tab.file&&this.pathKey(tab.file)===this.pathKey(file));
-    if(existing){this.activate(existing);return;}
-    this.createTab(host,'file',file);
+    if(existing){this.activate(existing);if(scene){existing.startScene=scene;existing.view.webContents.send('home:openScene',scene);}return;}
+    this.createTab(host,'file',file,scene);
+  }
+
+  openLevelDraft(host:ProjectWindow,level:EditorProject){
+    if(host.window.isDestroyed()||host.closing)return;
+    this.createTab(host,'level-draft',undefined,undefined,level);
+  }
+
+  showHome(host:ProjectWindow){
+    host.active=undefined;
+    this.layout(host);
+    this.publish(host);
+    host.window.focus();
+    host.window.webContents.focus();
   }
 
   private move(tab:ProjectTab,destination:ProjectWindow,before?:string){
@@ -279,7 +309,16 @@ export class ProjectWindows {
 
   private async action(host:ProjectWindow,sender:WebContents,action:ProjectTabAction,id?:string,before?:string,point?:Electron.Point){
     if(host.closing)return;
+    if(action==='home'){this.showHome(host);return;}
     if(action==='new'){this.createTab(host,'blank');return;}
+    if(action==='new-level'){this.createTab(host,'blank-level');return;}
+    if(action==='new-menu'){
+      Menu.buildFromTemplate([
+        {label:'新建工程',click:()=>this.createTab(host,'blank')},
+        {label:'新建单关',click:()=>this.createTab(host,'blank-level')}
+      ]).popup({window:host.window});
+      return;
+    }
     if(action==='open'){await this.openFile(host);return;}
     if(action==='native'||action==='studio'||action==='showcase'||action==='recreations'){this.createTab(host,action);return;}
     if(sender!==host.window.webContents)throw Error('请在工程标签栏操作');

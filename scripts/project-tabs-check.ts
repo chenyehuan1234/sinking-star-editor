@@ -56,11 +56,18 @@ async function name(contents:WebContents,value:string){
 
 async function run(){
   const first=await until(()=>BrowserWindow.getAllWindows()[0],'主窗口');
+  await until(()=>evaluate(first.webContents,'Boolean(document.querySelector("#my-projects-title"))'),'工程首页');
+  assert.equal((await info(first)).tabs.length,0);
+  await action(first,'new');
   const initial=await until(async()=>(await info(first)).tabs[0],'初始标签');
   const editor=await until(()=>editors(first)[0],'初始编辑器');
   await until(()=>ready(editor),'连接 Steam 游戏');
   await name(editor,'甲工程');
   await until(async()=>(await info(first)).tabs.some(tab=>tab.title==='甲工程'&&tab.dirty),'甲工程未保存');
+  await action(first,'home');
+  assert.equal((await info(first)).tabs[0].dirty,true);
+  assert.equal((await info(first)).active,undefined);
+  await action(first,'activate',initial.id);
 
   await action(first,'new');
   const second=await until(async()=>{const state=await info(first);return state.tabs.find(t=>t.id!==initial.id&&!t.busy);},'第二个工程');
@@ -102,6 +109,8 @@ async function run(){
   await copy(region);
   await paste();
   await until(()=>status('放置区域'),'跨窗口粘贴进入预览');
+  await evaluate(other,"window.dispatchEvent(new Event('sstar:cancel-gesture'));");
+  await evaluate(other,"window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',cancelable:true}));");
   await copy({...region,sourceHash:'f'.repeat(64)});
   await paste();
   await until(()=>status('区域与目标工程的游戏来源不一致'),'目标标签读取更新后的剪贴板');

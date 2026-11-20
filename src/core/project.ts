@@ -26,6 +26,7 @@ import {applyCamera,cameraView,validateCamera} from './camera';
 export function validateProject(value: unknown): asserts value is EditorProject {
   const p=value as EditorProject;
   if(!p||p.format!=='sinking-star-project'||![1,2,3].includes(p.version)||!/^[a-f0-9]{64}$/.test(p.sourceHash)||typeof p.sourceBuild!=='string'||!validName(p.template)||!validName(p.name)||!Array.isArray(p.operations)||p.operations.length>10000)throw new Error('无效的编辑工程');
+  if(p.title!==undefined&&(typeof p.title!=='string'||!p.title.trim()||p.title.length>100))throw Error('关卡标题须为 1–100 字');
   if(p.base){if(![2,3].includes(p.version)||!['blank','template'].includes(p.base.kind))throw new Error('无效的场景基础');if(p.base.kind==='blank'&&![p.base.width,p.base.height].every(n=>Number.isInteger(n)&&n>=4&&n<=128))throw new Error('空白场景尺寸无效');if(p.base.kind==='template'&&p.base.template!==p.template)throw new Error('模板基础与资源模板不一致');}
   validateEditor(p.editor);validateCamera(p.camera);validateTopology(p.topology);
   for(const o of p.operations){

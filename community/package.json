@@ -1,0 +1,14 @@
+{
+  "name": "sinking-star-community",
+  "version": "0.11.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@edgeone/pages-blob": "0.0.19",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0",
+    "@types/pg": "^8.15.0"
+  }
+}

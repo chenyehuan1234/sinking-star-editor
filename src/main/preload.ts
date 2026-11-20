@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { EditorApi } from '../shared';
 import type {ProjectTabsApi,ProjectTabState} from '../project-tabs';
+import type {HomeApi} from '../home-types';
 const invoke=(method:string,...args:unknown[])=>ipcRenderer.invoke(`editor:${method}`,...args);
 const api:EditorApi={
 profileAsset:request=>invoke('profileAsset',request),savePerformanceReport:json=>invoke('savePerformanceReport',json),
@@ -37,6 +38,25 @@ nativeLoad:(...args:any[])=>invoke('nativeLoad',...args),inspectCompatibility:()
   save:p=>invoke('save',p),load:()=>invoke('load'),build:p=>invoke('build',p),prepare:()=>invoke('prepare'),deploy:p=>invoke('deploy',p),launch:()=>invoke('launch'),restore:()=>invoke('restore'),reveal:()=>invoke('reveal')
 };contextBridge.exposeInMainWorld('editor',api);
 if(process.argv.includes('--sstar-project-tabs')){
+  const homeInvoke=(name:string,...args:unknown[])=>ipcRenderer.invoke('home:'+name,...args);
+  const listen=(name:string,callback:(...args:any[])=>void)=>{const listener=(_event:unknown,...args:unknown[])=>callback(...args);ipcRenderer.on('home:'+name,listener);return()=>ipcRenderer.removeListener('home:'+name,listener);};
+  const home:HomeApi={
+    list:()=>homeInvoke('list'),levels:k=>homeInvoke('levels',k),catalog:()=>homeInvoke('catalog'),addDirectory:()=>homeInvoke('addDirectory'),open:(k,l)=>homeInvoke('open',k,l),
+    importFile:()=>homeInvoke('importFile'),openImported:k=>homeInvoke('openImported',k),thumbnail:(k,l,o)=>homeInvoke('thumbnail',k,l,o),
+    renameProject:(k,t)=>homeInvoke('renameProject',k,t),removeProject:k=>homeInvoke('removeProject',k),feedback:k=>homeInvoke('feedback',k),
+    preview:(k,l,o)=>homeInvoke('preview',k,l,o),thumbnailSave:(k,l,i,s,o)=>homeInvoke('thumbnailSave',k,l,i,s,o),useCover:i=>homeInvoke('useCover',i),
+    prepare:(p,l,c)=>homeInvoke('prepare',p,l,c),shareSave:()=>homeInvoke('shareSave'),shareDraft:()=>homeInvoke('shareDraft'),shareClear:()=>homeInvoke('shareClear'),
+    onShareDraft:f=>listen('shareDraft',f),communityUrl:v=>homeInvoke('communityUrl',v),request:(r,m,j)=>homeInvoke('request',r,m,j),
+    image:r=>homeInvoke('image',r),download:(id,l)=>homeInvoke('download',id,l),downloads:()=>homeInvoke('downloads'),downloadSave:k=>homeInvoke('downloadSave',k),
+    renameLibraryItem:(k,t)=>homeInvoke('renameLibraryItem',k,t),removeLibraryItem:k=>homeInvoke('removeLibraryItem',k),
+    libraryAddFile:()=>homeInvoke('libraryAddFile'),libraryAddLevels:(k,ids)=>homeInvoke('libraryAddLevels',k,ids),
+    libraryAddScene:(p,l)=>homeInvoke('libraryAddScene',p,l),openLibraryItem:k=>homeInvoke('openLibraryItem',k),
+    libraryPlay:k=>homeInvoke('libraryPlay',k),onLibraryPlayProgress:f=>listen('libraryPlayProgress',f),
+    importPick:()=>homeInvoke('importPick'),importInto:(p,c,f)=>homeInvoke('importInto',p,c,f),publish:o=>homeInvoke('publish',o),
+    sharePreview:l=>homeInvoke('sharePreview',l),shareImage:(l,i)=>homeInvoke('shareImage',l,i),replaceImage:(w,l,i)=>homeInvoke('replaceImage',w,l,i),
+    onOpenScene:f=>listen('openScene',f),startScene:()=>homeInvoke('startScene')
+  };
+  contextBridge.exposeInMainWorld('workbenchHome',home);
   const tabs:ProjectTabsApi={
     state:()=>ipcRenderer.invoke('project-tabs:state'),
     action:(action,id,before,point)=>ipcRenderer.invoke('project-tabs:action',action,id,before,point),

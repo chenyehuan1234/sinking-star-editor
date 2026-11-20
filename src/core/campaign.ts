@@ -2,12 +2,16 @@
 const APOLLO_EPOCH=(-630480n<<64n)+0xae1758526cfc8000n;
 export function apolloNow(){const filetime=(BigInt(Date.now())+11644473600000n)*10000n;return APOLLO_EPOCH+filetime*100000000n;}
 function str16(s:string){const b=Buffer.from(s,'utf8');if(b.length>65535)throw new Error('存档字符串过长');const h=Buffer.alloc(2);h.writeUInt16LE(b.length);return Buffer.concat([h,b]);}
+export function campaignTimestamp(header:Buffer){
+  if(header.length<24||header.readUInt32LE()!==33||header.readUInt32LE(4)!==0)throw Error('仅支持正式版 v33 战役状态');
+  return header.readBigUInt64LE(8)+(header.readBigInt64LE(16)<<64n);
+}
 export function readCampaign(b:Buffer){
   if(b.length<123||b.readUInt32LE()!==33||b.readUInt32LE(4)!==0)throw new Error('仅支持正式版 v33 战役状态');
   let p=119;const read=()=>{const n=b.readUInt16LE(p);p+=2;if(p+n>b.length)throw new Error('战役状态越界');const s=b.toString('utf8',p,p+n);p+=n;return s;};
   const current=read(),menu=read();const count=b.readUInt32LE(p);p+=4;if(count>100000)throw new Error('战役条目过多');const levels:{name:string;flags:number}[]=[];
   for(let i=0;i<count;i++){const name=read();levels.push({name,flags:b[p++]});}
-  const time=b.readBigUInt64LE(8)+(b.readBigInt64LE(16)<<64n);
+  const time=campaignTimestamp(b);
   return{current,menu,levels,time,prefix:Buffer.from(b.subarray(0,119)),tail:Buffer.from(b.subarray(p))};
 }
 export function writeCampaign(b:Buffer,update:{current?:string;menu?:string;time?:bigint}):Buffer{

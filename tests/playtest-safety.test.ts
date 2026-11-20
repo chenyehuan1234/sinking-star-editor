@@ -70,13 +70,14 @@ test('真实主进程的启动、部署与旧进度重置 IPC 均被拦截，未
   try {
     const handlers=new Map<string,(event:unknown,...args:unknown[])=>Promise<unknown>>();
     let shown!:()=>void;const ready=new Promise<void>(resolve=>{shown=resolve;});
-    let view:FakeView;
+    let view:FakeView,window:FakeWindow;
     class FakeWindow {
       webContents={mainFrame:{},on(){},send(){},setWindowOpenHandler(){},session:{setPermissionRequestHandler(){}}};
       contentView={addChildView(){}};
       removeMenu(){} async loadFile(){} show(){shown();} focus(){} on(){} setTitle(){}
       isDestroyed(){return false;}
       getContentBounds(){return {width:1200,height:800};}
+      constructor(){window=this;}
     }
     class FakeView {
       webContents={id:1,mainFrame:{},on(){},focus(){},setWindowOpenHandler(){},isDestroyed:()=>false,async loadFile(){}};
@@ -94,7 +95,12 @@ test('真实主进程的启动、部署与旧进度重置 IPC 均被拦截，未
     const context=vm.createContext({__electron:electron,require:createRequire(import.meta.url),module:{exports:{}},exports:{},
       __dirname:root,__filename:path.join(root,'main.cjs'),process:{...process,env:{}},Buffer,console,setTimeout,clearTimeout,URL});
     vm.runInContext(output.outputFiles[0].text,context);await ready;
-    const event={sender:view!.webContents,senderFrame:view!.webContents.mainFrame};
+    assert.equal(handlers.has('home:list'),true);
+    const editorView=()=>view;
+    assert.equal(editorView(),undefined,'预设从首页启动，不自动进入工程');
+    const home={sender:window!.webContents,senderFrame:window!.webContents.mainFrame};
+    await handlers.get('project-tabs:action')!(home,'new');
+    const event={sender:editorView().webContents,senderFrame:editorView().webContents.mainFrame};
     for(const method of ['launch','worldLaunch','worldReset']) {
       const handler=handlers.get('editor:'+method);assert.ok(handler,method);
       await assert.rejects(()=>handler(event,undefined,undefined),(e:any)=>e.code==='PLAYTEST_SUSPENDED'&&e.message===PLAYTEST_SUSPENSION);

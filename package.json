@@ -1,6 +1,6 @@
 {
   "name": "sinking-star-editor",
-  "version": "0.10.3",
+  "version": "0.11.0",
   "private": true,
   "description": "沉星之序 · 本地关卡工作台",
   "type": "module",
@@ -15,7 +15,10 @@
     "package": "npm run build && electron-builder --win nsis zip --x64",
     "test:native": "node scripts/native-test.mjs",
     "package:dir": "npm run build && electron-builder --win dir --x64",
-    "verify:release": "node scripts/audit-release.mjs"
+    "verify:release": "node scripts/audit-release.mjs",
+    "community:build": "node scripts/build-community.mjs",
+    "community:start": "npm run community:build && tsx community/local.ts",
+    "community:check": "tsc --project community/tsconfig.json && tsx --test community/community.test.ts"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -43,6 +46,7 @@
     },
     "files": [
       "dist/**/*",
+      "!dist/community/**/*",
       "!dist/**/*.map",
       "package.json"
     ],

@@ -6,6 +6,8 @@ workspace/
 .env
 .env.*
 !.env.example
+.edgeone/
+.community-local/
 *.pem
 *.pfx
 *.key
@@ -23,6 +25,7 @@ docs/screenshots/*
 !docs/screenshots/native-camera-regions.png
 scripts/*
 !scripts/build.mjs
+!scripts/build-community.mjs
 !scripts/install-runtime.mjs
 !scripts/native-test.mjs
 !scripts/inspect.ts

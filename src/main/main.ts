@@ -23,6 +23,9 @@ import { EditorService, atomicWrite } from './service';
 import { validateProject } from '../core/project';
 import type { Catalog,EditorProject,WorldProject } from '../shared';
 import {upgradeProject,upgradeWorld} from '../core/migrate';
+import {HomeLibrary} from './home-library';
+import {registerHome} from './home-bridge';
+import {digest,singleWorld} from '../core/share';
 
 app.setName('沉星之序关卡编辑器');
 // Separate local QA profile keeps running user sessions and preferences untouched.
@@ -40,6 +43,7 @@ if(lock)app.whenReady().then(async()=>{
   const migratedWorldPaths=new Map<string,string>();
   const adaptedPaths=new Map<string,string>();const projectPaths=new Map<string,string>(),lastProject=path.join(app.getPath('userData'),'last-project.json');
   const nativePaths=new Map<string,string>();
+  const library=new HomeLibrary(path.join(app.getPath('userData'),'home'),()=>service.workspace);
   const caller=new AsyncLocalStorage<ProjectTab>();
   const tab=()=>caller.getStore()!;
   const parent=()=>tab().owner.window;
@@ -53,10 +57,78 @@ if(lock)app.whenReady().then(async()=>{
     projectPaths.set(pathKey(w.id),file);
     projectWindows.recordFile(tab(),file);
     await atomicWrite(lastProject,JSON.stringify({file}));
+    await library.remember(file);
   };
-  const readWorldFile=async(file:string)=>{file=await projectWindows.fileAvailable(tab(),file);projectWindows.recordFile(tab(),file);const stat=await fs.stat(file);if(stat.size>64_000_000)throw new Error('工程文件超过 64 MB');const original=JSON.parse(await fs.readFile(file,'utf8'));if(original.format==='sinking-star-native-world'){const project=await service.adaptNativeWorld(original),index=await service.nativeIndex(project),w=nativeWorkbench(project,index,nativeRegions(service.pkg,service.codec!,await fs.readFile(path.join(service.gamePath,'data/strings/s-cn.localization'),'utf8')));if(project!==original){nativePaths.delete(pathKey(w.id));projectPaths.delete(pathKey(w.id));adaptedPaths.set(pathKey(w.id),path.resolve(file));}else if(project.version===5){nativePaths.set(pathKey(w.id),file);await rememberProject(w,file);}return w;}const w=await service.adaptWorld(original);await service.checkWorld(w);if(w===original){await rememberProject(w,file);if(w.version<4)migratedWorldPaths.set(pathKey(w.id),path.resolve(file));else migratedWorldPaths.delete(pathKey(w.id));}else{projectPaths.delete(pathKey(w.id));adaptedPaths.set(pathKey(w.id),path.resolve(file));}return service.upgradeWorldEntries(upgradeWorld(w));};
+  const standaloneWorld=(p:EditorProject,id:string)=>{
+    const w=singleWorld(upgradeProject(p),p.title??p.name,p.name==='world'?'current_level':p.name);
+    w.id=id;
+    tab().singleLevel=true;
+    tab().startScene=w.levels[0].id;
+    return w;
+  };
+  const readWorldFile=async(file:string)=>{
+    file=await projectWindows.fileAvailable(tab(),file);
+    const original=await library.readFile(file);
+    if(original.format==='sinking-star-project'){
+      const p=await service.adaptProject(original);
+      const id=/^level_([a-f0-9]{12})$/.exec(p.name)?.[1]??digest(file).slice(0,12);
+      const w=standaloneWorld(p,id);
+      await rememberProject(w,file);
+      if(p!==original)adaptedPaths.set(pathKey(w.id),file);
+      else adaptedPaths.delete(pathKey(w.id));
+      return w;
+    }
+    projectWindows.recordFile(tab(),file);
+    tab().singleLevel=false;
+    if(original.format==='sinking-star-native-world'){
+      const project=await service.adaptNativeWorld(original),index=await service.nativeIndex(project);
+      const w=nativeWorkbench(project,index,nativeRegions(service.pkg,service.codec!,await fs.readFile(path.join(service.gamePath,'data/strings/s-cn.localization'),'utf8')));
+      if(project!==original){nativePaths.delete(pathKey(w.id));projectPaths.delete(pathKey(w.id));adaptedPaths.set(pathKey(w.id),file);}
+      else if(project.version===5){nativePaths.set(pathKey(w.id),file);await rememberProject(w,file);}
+      return w;
+    }
+    const w=await service.adaptWorld(original);
+    await service.checkWorld(w);
+    if(w===original){
+      await rememberProject(w,file);
+      if(w.version<4)migratedWorldPaths.set(pathKey(w.id),file);else migratedWorldPaths.delete(pathKey(w.id));
+    }else{projectPaths.delete(pathKey(w.id));adaptedPaths.set(pathKey(w.id),file);}
+    return service.upgradeWorldEntries(upgradeWorld(w));
+  };
+  const saveStandalone=async(w:WorldProject,saveAs:boolean)=>{
+    if(w.native||w.levels.length!==1)throw Error('单关编辑只保存当前关卡');
+    const {project,title}=w.levels[0],saved={...upgradeProject(project),title};
+    await service.checkProject(saved);
+    const adapted=adaptedPaths.get(pathKey(w.id));
+    let file=saveAs||adapted?undefined:projectPaths.get(pathKey(w.id));
+    if(!file){
+      const folder=path.join(service.workspace,'projects');
+      await fs.mkdir(folder,{recursive:true});
+      const filename=title.replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').replace(/[ .]+$/,'')||project.name;
+      const r=await dialog.showSaveDialog(parent(),{title:'保存单关',defaultPath:path.join(folder,filename+'.sstar.json'),filters:[{name:'沉星之序单关',extensions:['sstar.json']}]});
+      if(r.canceled||!r.filePath)return null;
+      file=r.filePath;
+    }
+    file=await projectWindows.fileAvailable(tab(),file);
+    if(adapted&&directoriesOverlap(file,adapted))throw Error('请为适配关卡选择新文件，保留来源关卡');
+    try{
+      const previous=await library.readFile(file);
+      if(previous.format!=='sinking-star-project')throw Error('请选择新的单关文件名，保留现有工程');
+      const backup=singleWorld(upgradeProject(previous));backup.id=w.id;
+      await store.saveRecovery(backup,file,'manual');
+    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+    saved.sourceEvidence={...service.evidence(saved),history:project.sourceEvidence?.history};
+    const text=JSON.stringify(saved,null,2);
+    if(Buffer.byteLength(text)>64_000_000)throw Error('单关文件超过可保存的 64 MB');
+    await atomicWrite(file,text);
+    await rememberProject(w,file);
+    adaptedPaths.delete(pathKey(w.id));
+    tab().start='file';tab().levelDraft=undefined;
+    return file;
+  };
   const handle=(method:string,fn:(...args:any[])=>Promise<unknown>,exclusive=false)=>ipcMain.handle(`editor:${method}`,async(event,...args)=>{
     const source=projectWindows.editor(event.sender);
+    if(!source&&['meshAsset','textureAsset','materialAsset','previewMesh'].includes(method)){projectWindows.homeOwner(event);return fn(...args);}
     if(!source||event.senderFrame!==event.sender.mainFrame)throw new Error('无效的编辑器来源');
     assertPlaytestCommand(method);
     return caller.run(source,()=>exclusive?service.exclusive(()=>fn(...args)):fn(...args));
@@ -86,6 +158,16 @@ if(lock)app.whenReady().then(async()=>{
   };
   handle('discoverGames',()=>discoverInstallations(preferences.gamePath,service.workspace,Boolean(process.env.SINKING_STAR_WORKSPACE)).then(v=>({...v,pendingWorkspace:preferences.workspace&&preferences.workspace!==service.workspace?preferences.workspace:undefined})));
   handle('connect',connectGame);
+  let backgroundConnection:Promise<boolean>|undefined;
+  const backgroundGame=()=>{
+    if(service.codec)return Promise.resolve(true);
+    if(connection)return connection.then(()=>true,()=>false);
+    return backgroundConnection??=discoverInstallations(preferences.gamePath,service.workspace,Boolean(process.env.SINKING_STAR_WORKSPACE)).then(discovery=>{
+      const usable=discovery.installations.filter(i=>i.directoryValid),choice=usable.find(i=>i.saved)??(usable.length===1?usable[0]:undefined);
+      return choice?connectGame(choice.path).then(()=>true,()=>false):false;
+    }).catch(()=>false).finally(()=>{backgroundConnection=undefined;});
+  };
+  registerHome(projectWindows,library,()=>service,backgroundGame,lastProject);
   handle('chooseGame',async()=>{if(projectWindows.size>1)throw Error('请先关闭其他工程标签，再切换游戏目录');const r=await dialog.showOpenDialog(parent(),{title:'选择包含 sinking_star.exe 的原游戏文件夹',properties:['openDirectory']});if(r.canceled)return null;const catalog=await connectGame(r.filePaths[0]);projectWindows.recordFile(tab());return catalog;});
   handle('chooseWorkspace',async()=>{if(process.env.SINKING_STAR_WORKSPACE)throw Error('启动参数已指定工作区，请修改启动参数后重启');const r=await dialog.showOpenDialog(parent(),{title:'选择编辑器工作区（不会搬迁原有工程）',defaultPath:service.workspace,properties:['openDirectory','createDirectory']});if(r.canceled)return null;const chosen=await fs.realpath(r.filePaths[0]);if(directoriesOverlap(chosen,await fs.realpath(service.campaigns.saves).catch(()=>service.campaigns.saves)))throw Error('工作区不能包含正式存档目录，也不能位于正式存档目录内');if(service.gamePath){if(directoriesOverlap(service.gamePath,chosen))throw Error('工作区不能放在游戏目录内，也不能包含游戏目录');}await fs.access(chosen,fs.constants.W_OK);preferences.workspace=chosen;await persistPreferences();const pendingRestart=Boolean(service.gamePath);if(!pendingRestart){service=new EditorService(chosen,path.join(__dirname,'asset-worker.cjs'));store=new DesignStore(chosen);}return{path:chosen,pendingRestart};},true);
   handle('quickSlotsRead',async()=>{if(!service.codec)throw Error('请先连接原游戏');return quickSlots.read(service.sourceHash,service.build,service.codec);});
@@ -124,11 +206,20 @@ if(lock)app.whenReady().then(async()=>{
   handle('runValidate',(w,r)=>service.runValidate(w,r));handle('runPlan',(w,r)=>service.runPlan(w,r));handle('runLaunch',(w,r,c)=>service.runLaunch(w,r,c),true);handle('nativeRunPlan',(p,r)=>service.nativeRunPlan(p,r));handle('nativeRunLaunch',(p,r,c)=>service.nativeRunLaunch(p,r,c),true);
   handle('previewMesh',r=>service.assets!.preview(r));
   handle('worldCreate',()=>service.worldCreate());handle('worldValidate',w=>service.worldValidate(w));handle('worldPrefabs',()=>service.worldPrefabs());
-  handle('worldSave',async(w:WorldProject,saveAs=false)=>{await service.checkWorld(w);const legacy=w.version===4?migratedWorldPaths.get(pathKey(w.id)):undefined;let file=saveAs||legacy?undefined:projectPaths.get(pathKey(w.id));if(!file){await fs.mkdir(path.join(service.workspace,'projects'),{recursive:true});const r=await dialog.showSaveDialog(parent(),{defaultPath:path.join(service.workspace,'projects',w.id+(adaptedPaths.has(pathKey(w.id))?'.build-'+service.build:'')+'.sstar-world.json'),filters:[{name:'大地图工程',extensions:['sstar-world.json']}]});if(r.canceled||!r.filePath)return null;file=r.filePath;}file=await projectWindows.fileAvailable(tab(),file);if(legacy?.toLowerCase()===path.resolve(file).toLowerCase())throw Error('请另存三维大地图，保留旧工程');if(adaptedPaths.get(pathKey(w.id))?.toLowerCase()===path.resolve(file).toLowerCase())throw Error('请为适配工程选择新文件，保留来源工程');try{const old=JSON.parse(await fs.readFile(file,'utf8'));if(old.version<3)await fs.copyFile(file,file+'.pre-v06.bak',fs.constants.COPYFILE_EXCL);}catch(e){if(!['ENOENT','EEXIST'].includes((e as NodeJS.ErrnoException).code??''))throw e;}try{const previous=JSON.parse(await fs.readFile(file,'utf8'));await store.saveRecovery(upgradeWorld(previous),file,'manual');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}const saved=upgradeWorld(w);if(!saved.native)saved.sourceEvidence={...service.evidence(saved),history:w.sourceEvidence?.history};const text=JSON.stringify(saved,null,saved.version===4?undefined:2);if(Buffer.byteLength(text)>64_000_000)throw Error('工程超过可保存的 64 MB，请缩小范围');await atomicWrite(file,text);await rememberProject(w,file);migratedWorldPaths.delete(pathKey(w.id));return file;},true);
+  handle('worldSave',async(w:WorldProject,saveAs=false)=>{if(tab().singleLevel)return saveStandalone(w,saveAs);await service.checkWorld(w);const legacy=w.version===4?migratedWorldPaths.get(pathKey(w.id)):undefined;let file=saveAs||legacy?undefined:projectPaths.get(pathKey(w.id));if(!file){await fs.mkdir(path.join(service.workspace,'projects'),{recursive:true});const r=await dialog.showSaveDialog(parent(),{defaultPath:path.join(service.workspace,'projects',w.id+(adaptedPaths.has(pathKey(w.id))?'.build-'+service.build:'')+'.sstar-world.json'),filters:[{name:'大地图工程',extensions:['sstar-world.json']}]});if(r.canceled||!r.filePath)return null;file=r.filePath;}file=await projectWindows.fileAvailable(tab(),file);if(legacy?.toLowerCase()===path.resolve(file).toLowerCase())throw Error('请另存三维大地图，保留旧工程');if(adaptedPaths.get(pathKey(w.id))?.toLowerCase()===path.resolve(file).toLowerCase())throw Error('请为适配工程选择新文件，保留来源工程');try{const old=JSON.parse(await fs.readFile(file,'utf8'));if(old.version<3)await fs.copyFile(file,file+'.pre-v06.bak',fs.constants.COPYFILE_EXCL);}catch(e){if(!['ENOENT','EEXIST'].includes((e as NodeJS.ErrnoException).code??''))throw e;}try{const previous=JSON.parse(await fs.readFile(file,'utf8'));await store.saveRecovery(upgradeWorld(previous),file,'manual');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}const saved=upgradeWorld(w);if(!saved.native)saved.sourceEvidence={...service.evidence(saved),history:w.sourceEvidence?.history};const text=JSON.stringify(saved,null,saved.version===4?undefined:2);if(Buffer.byteLength(text)>64_000_000)throw Error('工程超过可保存的 64 MB，请缩小范围');await atomicWrite(file,text);await rememberProject(w,file);migratedWorldPaths.delete(pathKey(w.id));return file;},true);
   handle('worldStartup',async()=>{
     const current=tab();
     if(current.start==='blank')return null;
-    if(current.start==='file'){try{return await readWorldFile(current.file!);}catch(e){current.file=undefined;throw e;}}
+    if(current.start==='blank-level'){
+      const id=randomUUID().replaceAll('-','').slice(0,12);
+      return standaloneWorld({...await service.levelCreateBlank(),name:'level_'+id,title:'新建单关'},id);
+    }
+    if(current.start==='level-draft')return standaloneWorld(await service.adaptProject(current.levelDraft!),randomUUID().replaceAll('-','').slice(0,12));
+    if(current.start==='file'){
+      try{
+        return await readWorldFile(current.file!);
+      }catch(e){current.file=undefined;throw e;}
+    }
     if(current.start==='native'){const p=await nativeProject(),index=await service.nativeIndex(p);return nativeWorkbench(p,index,nativeRegions(service.pkg,service.codec!,await fs.readFile(path.join(service.gamePath,'data/strings/s-cn.localization'),'utf8')));}
     if(current.start==='studio')return service.worldStudioExample();
     if(current.start==='showcase')return service.worldExample();
@@ -146,7 +237,8 @@ if(lock)app.whenReady().then(async()=>{
   const requestedSize=process.env.SINKING_STAR_WINDOW_SIZE?.match(/^(\d+)x(\d+)$/);
   projectWindows.start(
     requestedSize?Math.max(1050,Math.min(2560,Number(requestedSize[1]))):1480,
-    requestedSize?Math.max(720,Math.min(1600,Number(requestedSize[2]))):960
+    requestedSize?Math.max(720,Math.min(1600,Number(requestedSize[2]))):960,
+    Boolean(process.env.SINKING_STAR_OPEN_PROJECT)
   );
 });
 app.on('second-instance',()=>projectWindows?.focusRecent());

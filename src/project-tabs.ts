@@ -1,5 +1,5 @@
-export type ProjectStart='resume'|'blank'|'file'|'native'|'studio'|'showcase'|'recreations';
-export type ProjectTabAction='new'|'open'|'native'|'studio'|'showcase'|'recreations'|'activate'|'close'|'detach'|'menu'|'begin-drag'|'drop'|'end-drag'|'cancel-drag';
+export type ProjectStart='resume'|'blank'|'blank-level'|'level-draft'|'file'|'native'|'studio'|'showcase'|'recreations';
+export type ProjectTabAction='home'|'new'|'new-level'|'new-menu'|'open'|'native'|'studio'|'showcase'|'recreations'|'activate'|'close'|'detach'|'menu'|'begin-drag'|'drop'|'end-drag'|'cancel-drag';
 
 export interface ProjectTabLabel {
   id:string;

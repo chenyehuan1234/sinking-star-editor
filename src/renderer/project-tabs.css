@@ -16,6 +16,7 @@
 .project-tab .project-close,.project-tab-actions button{display:grid;place-items:center;width:25px;height:25px;padding:0;border-radius:4px}
 .project-tab .project-close{margin-right:3px}
 .project-tab-actions{display:flex;gap:3px;flex:none}
+.project-strip .project-home-button{display:grid;place-items:center;flex:none;width:28px;height:27px;padding:0;border-radius:5px;color:#b8e0c8}.project-strip .project-home-button[aria-pressed=true]{background:#243933}
 .project-tab-error{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#efa389}
 .project-window-empty{position:absolute;inset:36px 0 0;display:grid;justify-items:center;align-content:center;gap:10px;color:#e2bf7b}
 .project-window-empty h1{margin:0;color:#dce3e7;font-size:20px}

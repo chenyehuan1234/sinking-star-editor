@@ -123,6 +123,16 @@ export function StudioViewport(props:Props){
     if(drag?.kind==='rect'||drag?.kind==='paint'||drag?.kind==='extrude'||waterGesture)return 'terrain';
     return drag||gizmoStart?'object':'camera';
   }
+  let coverRequested:((image:string)=>void)|undefined;
+  function captureCover(){
+    if(!alive)return Promise.resolve('');
+    return new Promise<string>(resolve=>{
+      coverRequested?.('');
+      coverRequested=resolve;
+      setTimeout(()=>{if(coverRequested===resolve){coverRequested=undefined;resolve('');}},5000);
+      draw();
+    });
+  }
   function draw(){
     if(!alive)return;
     if(queued){
@@ -131,6 +141,13 @@ export function StudioViewport(props:Props){
     }
     queued=true;requestAnimationFrame(()=>{queued=false;if(alive){for(const box of boxes)box.update();const hidden:T.Object3D[]=[],view=lensView??(nativePreview&&previewTarget&&latest.current.level?cameraViewFrame(latest.current.level,latest.current.cameraConfig,previewTarget,framingRect(element.clientWidth,element.clientHeight,ratioRef.current).aspect):null);if(view){if(lensView)controls.enabled=false;camera.position.fromArray(view.position);camera.up.fromArray(view.up);controls.target.fromArray(view.target);camera.fov=view.fov;camera.near=.05;camera.far=20000;camera.lookAt(controls.target);camera.updateProjectionMatrix();camera.updateMatrixWorld();const helpers:T.Object3D[]=[waterOverlay.root,waterPreview,waterFlowPreview,rectangleRoot,grid,transform.getHelper(),links,regions,topologyBounds,ghost,footprint,copyRoot,...boxes];for(const e of latest.current.level?.entities??[])if(!gameplayObject(e)&&!['Inanimate','Decal','Animating','Procedurally_Animating','Wall_Set','Ocean_Map','Tree','Sky','Sun','Fog','Light_Probe','Point_Light'].includes(e.type)){const g=groups.get(e.id);if(g)helpers.push(g);}for(const o of helpers)if(o.visible){hidden.push(o);o.visible=false;}}(scene.background as T.Color).set(document.documentElement.dataset.theme==='light'?'#ffffff':'#20262c');gridMaterial.opacity=document.documentElement.dataset.theme==='light'?.25:.65;const w=element.clientWidth,h=element.clientHeight;renderer.setScissorTest(false);renderer.setViewport(0,0,w,h);renderer.setClearColor(document.documentElement.dataset.theme==='light'?'#d9dfe3':'#10161b');renderer.clear();const frame=view?framingRect(w,h,ratioRef.current):{x:0,y:0,width:w,height:h,aspect:w/Math.max(1,h)};camera.aspect=frame.aspect;camera.updateProjectionMatrix();if(view){renderer.setViewport(frame.x,h-frame.y-frame.height,frame.width,frame.height);renderer.setScissor(frame.x,h-frame.y-frame.height,frame.width,frame.height);renderer.setScissorTest(true);}setTerrainGrid(terrainRoot,terrainLinesRef.current);directionControl.current?.sync(camera.quaternion);const renderSample=perf.begin(),onFrame=latest.current.onFrame,renderStart=onFrame?performance.now():0;
  renderer.render(scene,camera);
+ if(coverRequested&&latest.current.level){
+   const done=coverRequested;coverRequested=undefined;
+   const origin=renderer.domElement,output=document.createElement('canvas');output.width=640;output.height=360;
+   const context=output.getContext('2d'),scale=Math.min(output.width/origin.width,output.height/origin.height),width=origin.width*scale,height=origin.height*scale;
+   context?.fillRect(0,0,output.width,output.height);context?.drawImage(origin,(output.width-width)*.5,(output.height-height)*.5,width,height);
+   done(output.toDataURL('image/webp',.76));
+ }
  perf.end(renderSample,'frame.render');
  if(onFrame)onFrame(performance.now()-renderStart);
  perf.selectionDrawn(latest.current.selection);
@@ -440,7 +457,7 @@ export function StudioViewport(props:Props){
     // Only dispose owned ghost resources; native geometry is shared with the scene.
     for(const o of [...ghostModel.children]){if(o.userData.ownedGeometry)(o as T.Mesh).geometry?.dispose();if(o.userData.ownedMaterial)((o as T.Mesh).material as T.Material)?.dispose();}ghostModel.clear();ghostModel.add(...result.children);ghostReady=true;clearRectangle();if(drag?.kind==='rect'&&drag.end){drag.last='';rectanglePreview(drag.end.clone());}const size=new T.Box3().setFromObject(ghostModel).getSize(new T.Vector3());setSpacing(preference('spacing:'+key,[Math.max(1,Math.ceil(size.x-.001)),Math.max(1,Math.ceil(size.y-.001))]));if(lastPointer&&drag?.kind!=='rect')updateGhost(lastPointer);draw();}catch(error){if(alive)setWarning('原生预览失败：'+String(error));}finally{if(request===ghostRequest&&alive)perf.end(resourceSample,'place.resources',{category:'object'});}
    }
-  };latest.current.onProbe?.(state.current);fit(false);
+  };state.current.captureCover=captureCover;latest.current.onProbe?.(state.current);fit(false);
   return()=>{window.removeEventListener('sstar:theme',draw);clearTimeout(rememberTimer);alive=false;clearTimeout(rangeTimer);waterOverlay.dispose();waterFlowPreview.dispose();waterFlowPreview.geometry.dispose();(waterFlowPreview.material as T.Material).dispose();waterPreview.dispose();waterPreview.geometry.dispose();(waterPreview.material as T.Material).dispose();ghostRequest++;resize.disconnect();window.removeEventListener('keyup',keyUp);window.removeEventListener('sstar:cancel-gesture',cancel);clearTimeout(nudgeTimer);terrainChunks.dispose();window.removeEventListener('blur',blur);window.removeEventListener('wheel',cancelMiddleWheel,true);window.removeEventListener('pointerrawupdate',middleMotion,true);window.removeEventListener('mousemove',middleMotion,true);window.removeEventListener('pointermove',middleMotion,true);window.removeEventListener('pointermove',globalMove);window.removeEventListener('pointerup',globalUp);clearCopies();controls.dispose();transform.dispose();disposeGhostResources(ghostModel);for(const group of groups.values())if(!group.userData.entry)releaseGroup(group);assets.dispose();clearRectangle();regionFrame.geometry.dispose();regionFrame.material.dispose();disposeHelper(terrainRoot);for(const entry of entryRoot.children){disposeHelper(entry.getObjectByName('entry-label-and-marker')!);releaseGroup(entry.getObjectByName('entry-native') as T.Group);}entryRoot.clear();disposeHelper(links);disposeHelper(regions);disposeHelper(topologyBounds);disposeHelper(footprint);disposeHelper(pickPreview);extrudeArrow.dispose();for(const o of arrayRoot.children){const m=o as T.InstancedMesh;m.dispose();for(const mat of Array.isArray(m.material)?m.material:[m.material])mat.dispose();}boxes.forEach(b=>{b.geometry.dispose();(b.material as T.Material).dispose();});grid.geometry.dispose();(grid.material as T.Material).dispose();renderer.dispose();renderer.domElement.remove();state.current=null;};
  },[]);
  const topologyKey=JSON.stringify(props.level?.topology);

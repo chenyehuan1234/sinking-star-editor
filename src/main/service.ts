@@ -30,6 +30,7 @@ import{freshWorldRun,scopedWorld}from'../core/runs';import{captureRegion,validat
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile,spawn } from 'node:child_process';
+import {randomUUID} from 'node:crypto';
 import {blockPlaytest} from '../playtest-policy';
 import { promisify } from 'node:util';
 import { GamePackage, sha256 } from '../core/package';
@@ -51,16 +52,55 @@ import {migrateEntrances} from '../core/entries';
 import {nativeRegions} from '../core/native-regions';
 import {exportDocument,exportWorld} from '../core/export-scope';
 import type {ExportRequest,ExportResult} from '../export-types';
+import {designLevels, encodeShare, shareLevel, type ShareDesign} from '../core/share';
 
 const exec=promisify(execFile);
 export async function atomicWrite(file:string,data:Buffer|string):Promise<void>{
   await fs.mkdir(path.dirname(file),{recursive:true});
-  const temp=file+`.${process.pid}.${Date.now()}.tmp`;
+  const temp=file+'.'+randomUUID()+'.tmp';
   try{await fs.writeFile(temp,data,{flag:'wx'});await fs.rename(temp,file);}catch(e){await fs.rm(temp,{force:true});throw e;}
 }
 
 export class EditorService {
   onPlaytestProgress?:(text:string,progress?:import('../shared').PreparationProgress)=>void;
+  async prepareShare(world:WorldProject, levelId:string|undefined, editorVersion:string){
+    await this.unchanged();
+    const design:ShareDesign=world.native?nativeDocument(world):world;
+    if(world.native)validateNativeWorld(design);else validateWorld(world);
+    const byName=new Map<string,string>();
+    for(const level of world.levels)for(const key of [level.id,level.project.name,`ed_${world.id}_${level.id}`])byName.set(key,level.id);
+    const levels=designLevels(design);
+    const wanted=levelId?new Set([levelId]):undefined;
+    const byId=new Map(world.levels.map(level=>[level.id,level]));
+    const manifestById=new Map(levels.map(level=>[level.id,level]));
+    function add(id:string, result:Set<string>){if(id&&byId.has(id))result.add(id);}
+    const inspected=new Set<string>();
+    const inspect=(id:string)=>{
+      if(inspected.has(id))return;
+      inspected.add(id);
+      const level=byId.get(id);
+      if(!level)throw Error('所选关卡不存在');
+      if(world.native&&!level.project.operations.length&&!level.project.base&&level.project.template===level.id)return;
+      const dependencies=new Set<string>();
+      const file=applyProject(this.pkg,level.project,this.codec);
+      for(const object of file.records){
+        const fields=object.type==='Door'?['target_level','switch_to_level_set']:object.type==='Level_Entry'?['level_name']:[];
+        for(const field of fields){
+          const name=String(this.codec!.get(object,field,''));
+          add(byName.get(name)??'',dependencies);
+          if(name.startsWith('ed_')&&!byName.has(name))throw Error(`「${level.title}」的 ${field} 引用了未找到的关卡 ${name}`);
+        }
+      }
+      dependencies.delete(id);
+      if(dependencies.size)manifestById.get(id)!.requires=[...dependencies];
+      if(wanted)for(const target of dependencies)wanted.add(target);
+    };
+    for(const id of wanted??byId.keys())inspect(id);
+    if(levelId){
+      return shareLevel(design,{format:'sstar-share',version:1,title:design.name,scope:'project',sourceHash:design.sourceHash,sourceBuild:design.sourceBuild,editorVersion,sha256:'',levels},levelId);
+    }
+    return encodeShare(design,'project',editorVersion,levels);
+  }
   async exportDesign(request:ExportRequest,target:string):Promise<ExportResult>{
     if(!request||!['project','runtime'].includes(request.format))throw Error('导出类型无效');
     const source=request.project;if(source.format==='sinking-star-world')await this.checkWorld(source);else await this.nativeIndex(source);
@@ -392,7 +432,7 @@ export class EditorService {
     const context:TestContext={projectId:p.id,sourceHash:p.sourceHash,scope:{mode:r.mode,levelIds:r.mode==='world'?[]:[...r.levelIds]},revision:testRevision(p.version===5?{sourceHash:p.sourceHash,operations:p.operations,scenes:p.scenes?.map(l=>({id:l.id,project:gameplayProject(l.project)})).sort((a,b)=>a.id.localeCompare(b.id)),camera:p.camera,topology:p.topology}:{sourceHash:p.sourceHash,edits:p.edits,levelEdits:p.levelEdits})};
     return{context,compatible:[],incompatible:[],supported:true,preparation:await this.preparationEstimate(),reason:'试玩使用原游戏存档目录'};
   }
-  private async startPlaytest(initialLevel:string,fresh=false){
+  private async startPlaytest(initialLevel:string,fresh=false,fromLibrary=false){
     this.onPlaytestProgress?.('启动试玩程序…');
     await this.assertStopped();
     const source=await fs.readFile(path.join(this.testRoot,SOURCE_EXE));
@@ -403,30 +443,32 @@ export class EditorService {
     if(sha256(await fs.readFile(file))!==this.exeHash)throw Error('试玩程序校验失败');
     const campaigns=new CampaignManager(this.workspace,path.join(await savedGamesDirectory(),'Order of the Sinking Star'));
     await this.assertStopped();
-    await campaigns.startSharedPlaytest(initialLevel,fresh);
+    await campaigns.startSharedPlaytest(initialLevel,fresh,fromLibrary);
     const child=spawn(file,[],{cwd:this.testRoot,stdio:'ignore',detached:true,windowsHide:false});
     try{
       await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
     }catch(error){
-      await campaigns.finishSharedPlaytest(fresh).catch(()=>{});
+      await campaigns.finishSharedPlaytest(fresh,fromLibrary).catch(()=>{});
       throw error;
     }
     child.once('exit',()=>{void this.exclusive(async()=>{
       await this.assertStopped();
-      await campaigns.finishSharedPlaytest(fresh);
+      await campaigns.finishSharedPlaytest(fresh,fromLibrary);
     }).catch(()=>{});});
     child.unref();
-    return fresh?'已从头试玩整个工程，使用 Editor_Playtest_Fresh。':'已启动试玩。游戏载入菜单会显示原有战役，试玩请留在 Editor_Playtest。';
+    return fromLibrary?'已启动关卡库试玩，从该关的初始状态开始。':fresh?'已从头试玩整个工程，使用 Editor_Playtest_Fresh。':'已启动 Editor_Playtest 试玩战役。';
   }
-  async runLaunch(w:WorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice){
+  async runLaunch(w:WorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice,entryLevel?:string){
     const fresh=freshWorldRun(r);
     this.onPlaytestProgress?.('检查试玩范围与原生依赖…');
     await this.assertStopped();
     const issues=await this.runValidate(w,r),errors=issues.filter(i=>i.severity==='error');
     if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
     const scoped=scopedWorld(w,r);
+    if(entryLevel&&!scoped.levels.some(level=>level.id===entryLevel))throw Error('试玩关卡不在所选范围内');
     await this.worldDeploy(scoped);
-    return this.startPlaytest(r.mode==='single'?['ed',scoped.id,scoped.levels[0].id].join('_'):'overworld',fresh);
+    const initial=entryLevel??(r.mode==='single'?scoped.levels[0].id:undefined);
+    return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',fresh,Boolean(entryLevel));
   }
   async nativeRunLaunch(p:NativeWorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice){
     await this.assertStopped();

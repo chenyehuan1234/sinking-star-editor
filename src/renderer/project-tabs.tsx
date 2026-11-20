@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import type {ProjectTabAction,ProjectTabState} from '../project-tabs';
 import {Icon} from './studio-ui';
+import {ProjectHome} from './project-home';
 import './project-tabs.css';
 
 const mime='application/x-sstar-project-tab';
@@ -47,6 +48,7 @@ export function ProjectTabs(){
 
   return <main className="project-window">
     <header className="project-strip" aria-label="工程标签栏" onKeyDown={e=>{if(e.key==='Escape')action('cancel-drag');}}>
+      <button type="button" className="project-home-button" aria-label="我的工程首页" title="工作台首页" aria-pressed={!state.active} onClick={()=>action('home')}><Icon name="grid" size={16}/></button>
       <div className="project-tabs" role="tablist" aria-label="已打开的工程" ref={list}
         onDragOver={e=>target(e)} onDrop={e=>drop(e)}
         onDragLeave={e=>{if(!(e.relatedTarget instanceof Node)||!e.currentTarget.contains(e.relatedTarget))setOver(undefined);}}>
@@ -77,14 +79,11 @@ export function ProjectTabs(){
         {over==='end'&&<span className="project-tab-end" aria-hidden/>}
       </div>
       <div className="project-tab-actions">
-        <button type="button" title="新建工程标签" aria-label="新建工程标签" onClick={()=>action('new')}><Icon name="plus" size={16}/></button>
-        <button type="button" title="打开工程标签" aria-label="打开工程标签" onClick={()=>action('open')}><Icon name="folder" size={16}/></button>
+        <button type="button" title="新建工程或单关" aria-label="新建工程或单关" aria-haspopup="menu" onClick={()=>action('new-menu')}><Icon name="plus" size={16}/></button>
+        {state.active&&<button type="button" title="打开工程标签" aria-label="打开工程标签" onClick={()=>action('open')}><Icon name="folder" size={16}/></button>}
       </div>
       {error&&<span className="project-tab-error" role="alert" title={error}>{error}</span>}
     </header>
-    {!state.tabs.length&&<section className="project-window-empty"><Icon name="cube" size={32}/>
-      <h1>工程工作台</h1>
-      <div><button onClick={()=>action('new')}>新建工程</button><button onClick={()=>action('open')}>打开工程</button></div>
-    </section>}
+    {window.workbenchHome?<ProjectHome active={!state.active} onAction={action}/>:!state.tabs.length&&<section className="project-window-empty"><h1>工程工作台</h1><button onClick={()=>action('new')}>新建工程</button></section>}
   </main>;
 }

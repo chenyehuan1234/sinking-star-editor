@@ -75,3 +75,30 @@ test('从头试玩清空自己的关卡历史并保留继续试玩和正式战�
     assert.equal(await fs.readFile(path.join(normal,status),'utf8'),'official');
   }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+test('关卡库从测试初始状态启动，并优先于时间在未来的正式档',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'sstar-library-run-'));
+  try{
+    const manager=new CampaignManager(root,root);
+    const official=path.join(root,'default'),slot=path.join(root,'Editor_Playtest_Library');
+    await fs.mkdir(official);
+    const file=path.join(official,'Status.sokoban_status'),future=readCampaign(newCampaign()).time+60_000_000_000_000_000n;
+    const original=writeCampaign(newCampaign('original'),{time:future}),mtime=new Date(Date.now()+60_000);
+    await fs.writeFile(file,original);await fs.utimes(file,mtime,mtime);
+    const originalMtime=(await fs.stat(file)).mtimeMs;
+    await fs.writeFile(path.join(official,'overworld.history'),'original history');
+    await manager.startSharedPlaytest('ed_first',false,true);
+    const status=path.join(slot,'Status.sokoban_status');
+    assert.ok(readCampaign(await fs.readFile(status)).time>future);
+    assert.ok((await fs.stat(status)).mtimeMs>originalMtime);
+    await fs.writeFile(path.join(slot,'ed_first.history'),'previous world data');
+    await fs.writeFile(path.join(slot,'Status.sokoban_status.backup'),'previous library backup');
+    await manager.startSharedPlaytest('ed_second',false,true);
+    assert.equal(readCampaign(await fs.readFile(status)).current,'ed_second');
+    assert.deepEqual((await fs.readdir(slot)).sort(),['Status.sokoban_status','_editor-shared-playtest.json']);
+    await manager.finishSharedPlaytest(false,true);
+    assert.equal(readCampaign(await fs.readFile(status)).time,0n);
+    assert.deepEqual(await fs.readFile(file),original);
+    assert.equal((await fs.stat(file)).mtimeMs,originalMtime);
+    assert.equal(await fs.readFile(path.join(official,'overworld.history'),'utf8'),'original history');
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});

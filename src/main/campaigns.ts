@@ -1,12 +1,12 @@
 import fs from'node:fs/promises';import path from'node:path';import os from'node:os';
-import{newCampaign,readCampaign,writeCampaign,apolloNow}from'../core/campaign';
+import{newCampaign,readCampaign,writeCampaign,apolloNow,campaignTimestamp}from'../core/campaign';
 interface Owner {format:'sinking-star-test-campaign';worldId:string;sourceHash:string}
 interface Session {worldId:string;sourceHash:string;active:boolean}
 export class CampaignManager {
   constructor(readonly workspace:string,readonly saves=path.join(os.homedir(),'Saved Games','Order of the Sinking Star')){}
-  private async sharedPlaytestDirectory(create=false,fresh=false){
+  private async sharedPlaytestDirectory(create=false,fresh=false,library=false){
     if(create)await fs.mkdir(this.saves,{recursive:true});
-    const name=fresh?'Editor_Playtest_Fresh':'Editor_Playtest';
+    const name=library?'Editor_Playtest_Library':fresh?'Editor_Playtest_Fresh':'Editor_Playtest';
     const root=await fs.realpath(this.saves),dir=path.join(root,name);
     const owner=path.join(dir,'_editor-shared-playtest.json');
     if(create){
@@ -23,21 +23,41 @@ export class CampaignManager {
     if(metadata.format!=='sstar-shared-playtest'||metadata.version!==1)throw Error('目录 '+name+' 已被其他存档占用');
     return dir;
   }
-  async startSharedPlaytest(current:string,fresh=false){
+  private async startupPriority(directory:string){
+    const root=path.dirname(directory);
+    let time=apolloNow(),modified=Date.now();
+    for(const entry of await fs.readdir(root,{withFileTypes:true})){
+      if(!entry.isDirectory()||entry.isSymbolicLink()||path.join(root,entry.name)===directory)continue;
+      const file=path.join(root,entry.name,'Status.sokoban_status'),stat=await fs.lstat(file).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+      if(!stat?.isFile()||stat.isSymbolicLink())continue;
+      const status=await fs.open(file,'r');
+      try{
+        const header=Buffer.alloc(24),{bytesRead}=await status.read(header,0,header.length,0);
+        if(bytesRead!==24||header.readUInt32LE()!==33||header.readUInt32LE(4)!==0)continue;
+        const candidate=campaignTimestamp(header);
+        if(candidate>time)time=candidate;
+        modified=Math.max(modified,stat.mtimeMs);
+      }finally{await status.close();}
+    }
+    if(time>=(1n<<127n)-1n)throw Error('无法为试玩设置启动顺序，正式战役保持原样');
+    return {time:time+1n,mtime:new Date(modified+2000)};
+  }
+  async startSharedPlaytest(current:string,fresh=false,library=false){
     if(!/^[a-zA-Z0-9_.-]{1,116}$/.test(current)||current==='.'||current.includes('..'))throw Error('试玩起始关卡无效');
-    const directory=await this.sharedPlaytestDirectory(true,fresh);
+    const directory=await this.sharedPlaytestDirectory(true,fresh,library);
     const file=path.join(directory,'Status.sokoban_status');
-    const data=await this.readSharedStatus(file);
-    if(fresh){
+    const data=await this.readSharedStatus(file),priority=await this.startupPriority(directory);
+    if(fresh||library){
       const histories=(await fs.readdir(directory,{withFileTypes:true})).filter(entry=>/\.history(?:\.[\w.-]+)?$|^Status\.sokoban_status\.[\w.-]+$/i.test(entry.name));
       if(histories.some(entry=>!entry.isFile()||entry.isSymbolicLink()))throw Error('从头试玩的旧进度包含异常文件');
       for(const entry of histories)await fs.unlink(path.join(directory,entry.name));
     }
     // The rivers backdrop crashes when it is first drawn on the affected build.
-    await this.write(file,writeCampaign(!fresh&&data?data:newCampaign(),{current,menu:'menu_heroes_a',time:apolloNow()}));
+    await this.write(file,writeCampaign(!fresh&&!library&&data?data:newCampaign(),{current,menu:'menu_heroes_a',time:priority.time}));
+    await fs.utimes(file,priority.mtime,priority.mtime);
   }
-  async finishSharedPlaytest(fresh=false){
-    const directory=await this.sharedPlaytestDirectory(false,fresh);
+  async finishSharedPlaytest(fresh=false,library=false){
+    const directory=await this.sharedPlaytestDirectory(false,fresh,library);
     const file=path.join(directory,'Status.sokoban_status'),data=await this.readSharedStatus(file);
     if(!data)return;
     // Let Steam resume its most recently played regular campaign on next launch.
