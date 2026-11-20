@@ -28,7 +28,16 @@ export class TestProfiles {
  async resetForContext(id:string,context:TestContext){this.validate(context);const{p}=await this.owned(id);if(p.projectId!==context.projectId)throw Error('不能重置其他工程的测试档');await this.change(id,'reset');const{dir}=await this.owned(id);p.sourceHash=context.sourceHash;p.revision=context.revision;p.scope=key(context);delete p.legacy;delete p.legacySource;await this.write(path.join(dir,'profile.json'),{format:'sstar-isolated-test-profile',profile:p});return p;}
  async used(id:string){const{dir,p}=await this.owned(id);p.lastUsed=new Date().toISOString();await this.write(path.join(dir,'profile.json'),{format:'sstar-isolated-test-profile',profile:p});}
  private readonly settingsNames=['settings.menu_state','Unsynced_Settings.menu_state'];
- private async copySetting(source:string,target:string){try{if((await fs.lstat(source)).isSymbolicLink())throw Error('设置文件不能是链接');const data=await fs.readFile(source),temp=target+'.tmp';await fs.writeFile(temp,data);await fs.rename(temp,target);return true;}catch(e){if(!missing(e))throw e;return false;}}
+ private async copySetting(source:string,target:string){
+  try{
+   const stat=await fs.lstat(source);
+   if(!stat.isFile()||stat.isSymbolicLink())throw Error('设置文件必须是普通文件');
+   const data=await fs.readFile(source),temp=target+'.'+randomUUID()+'.tmp';
+   await fs.writeFile(temp,data,{flag:'wx'});
+   try{await fs.rename(temp,target);}finally{await fs.rm(temp,{force:true});}
+   return true;
+  }catch(e){if(!missing(e))throw e;return false;}
+ }
  private async settingsCache(){const dir=path.join(this.settingsRoot,'independent-settings');await fs.mkdir(dir,{recursive:true});if((await fs.lstat(dir)).isSymbolicLink())throw Error('独立设置目录不能是链接');return dir;}
  async captureIndependentSettings(){let session:{id:string;mode:string;temporary?:boolean};try{session=JSON.parse(await fs.readFile(path.join(this.settingsRoot,'settings-session.json'),'utf8'));}catch(e){if(!missing(e))throw e;return;}if(session.mode!=='independent')return;let owned;try{owned=await new TestProfiles(this.workspace,session.temporary).owned(session.id);}catch(e){if(!missing(e))throw e;return;}await treeInfo(owned.dir);const cache=await this.settingsCache();for(const name of this.settingsNames)await this.copySetting(path.join(owned.dir,'saves',name),path.join(cache,name));}
  /** Only known display/audio files enter the independent settings store. */

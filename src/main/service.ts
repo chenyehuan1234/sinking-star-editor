@@ -6,7 +6,7 @@ import {decodeGateKey,gateValues} from '../gate-config';
 import {nativeQuaternion} from '../editor-math';
 import {rotationValues} from '../core/mechanisms';
 import {testRevision} from './test-profiles';
-import {SOURCE_EXE,RUNTIME_EXE,savedGamesDirectory} from './save-isolation';
+import {SOURCE_EXE,RUNTIME_EXE,assertIsolationSupported,isolationSupported,isolationUnavailable,patchSaveDirectory,preparePlaytestSaves} from './save-isolation';
 import {gameplayWorld} from '../editor-organization';
 import type {PlaytestChoice,PlaytestPlan,TestContext} from '../v08-types';
 import {queueCacheTrim} from './storage';
@@ -420,7 +420,7 @@ export class EditorService {
   async runPlan(w:WorldProject,r:RunRequest):Promise<PlaytestPlan>{
     await this.checkWorld(w);scopedWorld(w,r);
     const context:TestContext={projectId:w.id,sourceHash:w.sourceHash,scope:{mode:r.mode,levelIds:r.mode==='world'?[]:[...r.levelIds]},revision:testRevision(gameplayWorld(w))};
-    return{context,compatible:[],incompatible:[],supported:true,preparation:await this.preparationEstimate(),reason:'试玩使用原游戏存档目录'};
+    return this.isolatedRunPlan(context);
   }
   private async checkNativeRun(p:NativeWorldProject,r:RunRequest){
     freshWorldRun(r);
@@ -430,36 +430,38 @@ export class EditorService {
   async nativeRunPlan(p:NativeWorldProject,r:RunRequest):Promise<PlaytestPlan>{
     await this.checkNativeRun(p,r);
     const context:TestContext={projectId:p.id,sourceHash:p.sourceHash,scope:{mode:r.mode,levelIds:r.mode==='world'?[]:[...r.levelIds]},revision:testRevision(p.version===5?{sourceHash:p.sourceHash,operations:p.operations,scenes:p.scenes?.map(l=>({id:l.id,project:gameplayProject(l.project)})).sort((a,b)=>a.id.localeCompare(b.id)),camera:p.camera,topology:p.topology}:{sourceHash:p.sourceHash,edits:p.edits,levelEdits:p.levelEdits})};
-    return{context,compatible:[],incompatible:[],supported:true,preparation:await this.preparationEstimate(),reason:'试玩使用原游戏存档目录'};
+    return this.isolatedRunPlan(context);
+  }
+  private async isolatedRunPlan(context:TestContext):Promise<PlaytestPlan>{
+    const supported=isolationSupported(this.exeHash);
+    return {context,compatible:[],incompatible:[],supported,preparation:await this.preparationEstimate(),reason:supported?'试玩使用独立存档目录':isolationUnavailable};
   }
   private async startPlaytest(initialLevel:string,fresh=false,fromLibrary=false){
-    this.onPlaytestProgress?.('启动试玩程序…');
+    this.onPlaytestProgress?.('准备独立试玩存档…');
     await this.assertStopped();
     const source=await fs.readFile(path.join(this.testRoot,SOURCE_EXE));
     if(sha256(source)!==this.exeHash)throw Error('试玩程序已变化，请重新准备试玩副本');
+    assertIsolationSupported(this.exeHash);
     const file=path.join(this.testRoot,RUNTIME_EXE);
     await managedPath(this.workspace,file);
-    await atomicWrite(file,source);
-    if(sha256(await fs.readFile(file))!==this.exeHash)throw Error('试玩程序校验失败');
-    const campaigns=new CampaignManager(this.workspace,path.join(await savedGamesDirectory(),'Order of the Sinking Star'));
+    const save=await preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{fresh,library:fromLibrary});
+    const program=patchSaveDirectory(source,save.id);
+    await atomicWrite(file,program.buffer);
+    if(sha256(await fs.readFile(file))!==program.hash)throw Error('独立试玩程序校验失败');
     await this.assertStopped();
-    await campaigns.startSharedPlaytest(initialLevel,fresh,fromLibrary);
+    this.onPlaytestProgress?.('启动独立试玩…');
     const child=spawn(file,[],{cwd:this.testRoot,stdio:'ignore',detached:true,windowsHide:false});
-    try{
-      await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
-    }catch(error){
-      await campaigns.finishSharedPlaytest(fresh,fromLibrary).catch(()=>{});
-      throw error;
-    }
+    await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
     child.once('exit',()=>{void this.exclusive(async()=>{
       await this.assertStopped();
-      await campaigns.finishSharedPlaytest(fresh,fromLibrary);
+      await save.profiles.captureIndependentSettings();
     }).catch(()=>{});});
     child.unref();
-    return fromLibrary?'已启动关卡库试玩，从该关的初始状态开始。':fresh?'已从头试玩整个工程，使用 Editor_Playtest_Fresh。':'已启动 Editor_Playtest 试玩战役。';
+    return fromLibrary?'已启动独立试玩，从关卡初始状态开始。':fresh?'已在独立存档中从头试玩整个工程。':'已启动独立试玩。';
   }
   async runLaunch(w:WorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice,entryLevel?:string){
     const fresh=freshWorldRun(r);
+    assertIsolationSupported(this.exeHash);
     this.onPlaytestProgress?.('检查试玩范围与原生依赖…');
     await this.assertStopped();
     const issues=await this.runValidate(w,r),errors=issues.filter(i=>i.severity==='error');
@@ -471,6 +473,7 @@ export class EditorService {
     return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',fresh,Boolean(entryLevel));
   }
   async nativeRunLaunch(p:NativeWorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice){
+    assertIsolationSupported(this.exeHash);
     await this.assertStopped();
     await this.checkNativeRun(p,r);
     if(p.version===5){
