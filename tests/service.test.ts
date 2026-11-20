@@ -78,12 +78,13 @@ test('中断发生在包替换后仍可按持久化意图恢复',async()=>{
     await s.restore();assert.equal(sha256(await fs.readFile(path.join(s.testRoot,'data/levels.package'))),s.sourceHash);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
-test('游戏运行状态拦截部署；错误工程哈希停止构建',async()=>{
+test('游戏正在运行时拦截部署，旧工程仍可使用当前安装构建',async()=>{
   const {dir,s,p}=await setup();try{
     await s.prepare();const before=await fs.readFile(path.join(s.testRoot,'data/levels.package'));
     s.assertStopped=async()=>{throw new Error('请先退出沉星之序');};
     await assert.rejects(()=>s.deploy(p),/请先退出/);assert.deepEqual(await fs.readFile(path.join(s.testRoot,'data/levels.package')),before);
-    await assert.rejects(()=>s.buildProject({...p,sourceHash:'a'.repeat(64)}),/版本不匹配/);
+    const built=await s.buildProject({...p,sourceHash:'a'.repeat(64),sourceBuild:'unknown'});
+    assert.equal(sha256(await fs.readFile(built.path)),built.hash);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 

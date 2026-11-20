@@ -13,8 +13,9 @@ import {queueCacheTrim} from './storage';
 import {nativeDocument,nativeWorkbench,nativeScene} from '../native-project';
 import {validateNativeWorld} from '../core/native-world';
 import type {NativeWorldProject,NativeWorldIndex,NativeRegionRequest,NativeRegionResult} from '../v08-types';
-import{dependencyEvidence,schemaFingerprint,forwardBuild,verifyEvidence,rebindSource}from'../core/compatibility';
+import{dependencyEvidence,schemaFingerprint,rebindSource}from'../core/compatibility';
 import {mapProject} from '../scene-project';
+import {compatiblePreview} from '../core/compatible-preview';
 import{inspectTestCopy,freshTestState,writeCopyMarker,promoteTestCopy,recoverCopyReplacement,discardPreparingCopy,markPreparingCopy,cleanupAbandonedPreparingCopies,managedPath,type CopySource,type TestState}from'./playtest-copy';
 export type{TestState}from'./playtest-copy';
 import {PreviewWorker} from './preview-client';
@@ -123,14 +124,37 @@ export class EditorService {
     if(`${st.size}:${st.mtimeMs}`!==this.stamp)throw new Error('游戏源包发生变化，请重新连接并核对兼容性');
   }
   private schemaCache='';
-  evidence(p:EditorProject|WorldProject){if(!this.codec)throw Error('当前安装缺少原生类型信息');this.schemaCache ||= schemaFingerprint(this.codec);return dependencyEvidence(this.pkg,p,this.schemaCache);}
-  async adaptProject(p:EditorProject){validateProject(p);await this.unchanged();if(p.sourceHash===this.sourceHash&&p.sourceBuild===this.build)return p;forwardBuild(p.sourceBuild,this.build);const evidence=this.evidence(p);verifyEvidence(p.sourceEvidence,evidence);const adapted=rebindSource(p,this.sourceHash,this.build,evidence);await this.checkProject(adapted);applyProject(this.pkg,adapted,this.codec);return adapted;}
-  async adaptWorld(w:WorldProject){if(w.native){await this.checkWorld(w);return w;}validateWorld(w);await this.unchanged();if(w.sourceHash===this.sourceHash&&w.sourceBuild===this.build)return w;forwardBuild(w.sourceBuild,this.build);const evidence=this.evidence(w);verifyEvidence(w.sourceEvidence,evidence);const adapted=rebindSource(w,this.sourceHash,this.build,evidence);await this.checkWorld(adapted);this.compiler!.build(adapted);return adapted;}
+  evidence(p:EditorProject|WorldProject){if(!this.codec)throw Error('当前安装缺少原生类型信息');if(!this.schemaCache)try{this.schemaCache=schemaFingerprint(this.codec);}catch{this.schemaCache=this.codec.reflection.hash;}return dependencyEvidence(this.pkg,p,this.schemaCache);}
+  async adaptProject(p:EditorProject){
+    await this.checkProject(p);
+    return p.sourceHash===this.sourceHash&&p.sourceBuild===this.build?p:rebindSource(p,this.sourceHash,this.build);
+  }
+  async adaptWorld(w:WorldProject){
+    validateWorld(w);await this.unchanged();
+    if(w.sourceHash===this.sourceHash&&w.sourceBuild===this.build)return w;
+    if(w.native){const p=await this.adaptNativeWorld(nativeDocument(w));return nativeWorkbench(p,await this.nativeIndex(p));}
+    return rebindSource(w,this.sourceHash,this.build);
+  }
+  async adaptNativeWorld(p:NativeWorldProject){
+    validateNativeWorld(p);await this.unchanged();
+    if(p.sourceHash===this.sourceHash&&p.sourceBuild===this.build)return p;
+    const next=rebindSource(p,this.sourceHash,this.build),index=await this.nativeIndex();
+    if(next.version===4)next.scenes=nativeWorkbench(next,{...index,levels:[...new Set([...index.levels,...Object.keys(next.levelEdits)])]}).levels;
+    else {
+      const imported=new Set([...next.scenes!.map(level=>level.id),...next.deletedScenes??[]]);
+      const linked=new Set((await this.nativeIndex(next)).entryLinks?.map(entry=>entry.target));
+      const additions=nativeWorkbench({...next,scenes:undefined,levelEdits:{}},{...index,levels:index.levels.filter(name=>linked.has(name)&&!imported.has(name))}).levels;
+      next.scenes!.push(...additions);
+      // Older worlds may omit native scenes that were added by a game update.
+      // Keep unlisted original data on build unless the editor explicitly deleted a scene.
+    }
+    return next;
+  }
 
-  async checkProject(p:EditorProject){validateProject(p);await this.unchanged();if(p.sourceHash!==this.sourceHash||p.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${p.sourceBuild} / ${p.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请通过打开工程执行兼容检查；原生结构或依赖变化时需使用来源版本。`);}
+  async checkProject(p:EditorProject){validateProject(p);await this.unchanged();}
   async verifySourceHash(){await this.unchanged();if(sha256(await fs.readFile(path.join(this.gamePath,'data/levels.package')))!==this.sourceHash)throw new Error('游戏源包哈希发生变化，操作已停止');}
   async openLevel(name:string){await this.unchanged();return levelView(this.pkg,name,undefined,this.codec);}
-  async preview(p:EditorProject){await this.checkProject(p);const worker=await this.previewWorker();return worker?worker.request<import('../shared').LevelView>('preview',p):levelView(this.pkg,p.template,applyProject(this.pkg,p,this.codec),this.codec);}
+  async preview(input:EditorProject){const p=await this.adaptProject(input),worker=await this.previewWorker();return worker?worker.request<import('../shared').LevelView>('preview',p):levelView(this.pkg,p.template,compatiblePreview(p,candidate=>applyProject(this.pkg,candidate,this.codec)),this.codec);}
   async previewUpdate(r:PreviewRequest,previewOwner?:string):Promise<PreviewDelta>{if(typeof r.scene!=='string'||r.scene.length>200||!Number.isSafeInteger(r.revision)||r.revision<0||Boolean(r.project)===Boolean(r.world))throw Error('预览请求无效');if(r.project)await this.checkProject(r.project);else await this.checkWorld(r.world!);const worker=await this.previewWorker();if(worker)return worker.request('update',{...r,previewOwner});return diffPreview(null,r.project?await this.preview(r.project):await this.worldPreview(r.world!),r);}
   private async cameraScene(input:EditorProject|WorldProject){
     if(input.format==='sinking-star-world'){
@@ -253,12 +277,12 @@ export class EditorService {
     return '测试副本的关卡包和辅助资源已恢复；Steam 安装目录未改动。';
   }
   async launch():Promise<string>{return blockPlaytest();}
-  async checkWorld(w:WorldProject){if(w.native){await this.nativeIndex(nativeDocument(w));return;}validateWorld(w);await this.unchanged();if(w.sourceHash!==this.sourceHash||w.sourceBuild!==this.build)throw new Error(`工程版本不匹配：来源 ${w.sourceBuild} / ${w.sourceHash.slice(0,8)}，当前 ${this.build} / ${this.sourceHash.slice(0,8)}。原工程保持不变，请通过打开工程执行兼容检查；原生结构或依赖变化时需使用来源版本。`);if(!this.compiler||!this.codec)throw new Error('当前游戏缺少已验证的类型信息');}
+  async checkWorld(w:WorldProject){if(w.native){await this.nativeIndex(nativeDocument(w));return;}validateWorld(w);await this.unchanged();if(!this.compiler||!this.codec)throw new Error('当前游戏缺少已验证的类型信息');}
   private async nativeAliases(p:NativeWorldProject,initial:{source:string;target:string}[]=[]){const resources=[...initial],pc=await fs.readdir(path.join(this.gamePath,'data-pc'));for(const scene of p.scenes??[]){if(this.pkg.entries.some(e=>e.name==='data-common/'+scene.id+'.entities'))continue;for(const name of pc)if(name.startsWith(scene.project.template+'_')&&name.endsWith('.texture'))resources.push({source:'data-pc/'+name,target:'data-pc/'+scene.id+name.slice(scene.project.template.length)});}return resources;}
   async nativeImpact(project:NativeWorldProject,name:string):Promise<{entries:number[];references:string[]}>{await this.nativeIndex(project);return (await this.previewWorker())!.request('native-impact',{project,name,build:this.build});}
   async nativeValidate(project:NativeWorldProject):Promise<WorldIssue[]>{await this.nativeIndex(project);const worker=await this.previewWorker();return worker!.request('native-validate',{project,build:this.build});}
   async nativeSearch(project:NativeWorldProject,query:string):Promise<{id:number;type:string;name:string;position:Vec3;cellId:string}[]>{await this.unchanged();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-search',{project,query,build:this.build});}
-  async nativeIndex(project?:NativeWorldProject):Promise<NativeWorldIndex>{await this.unchanged();if(project){validateNativeWorld(project);if(project.sourceHash!==this.sourceHash||project.sourceBuild!==this.build)throw Error('原版世界来源不匹配');}const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-index',{project,build:this.build});}
+  async nativeIndex(project?:NativeWorldProject):Promise<NativeWorldIndex>{await this.unchanged();if(project)validateNativeWorld(project);const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-index',{project,build:this.build});}
   async nativePreviewUpdate(r:import('../v08-types').NativeViewportPreviewRequest,previewOwner?:string):Promise<PreviewDelta>{
     await this.unchanged();
     if(typeof r.scene!=='string'||r.scene.length>200||r.scene!==r.project.id+':world'||r.cellId!=='world'||r.baseRevision!==undefined&&(!Number.isSafeInteger(r.baseRevision)||r.baseRevision<0||r.baseRevision>=r.revision))throw Error('大地图预览修订无效');
@@ -282,9 +306,9 @@ export class EditorService {
     await atomicWrite(path.join(this.testRoot,'data/levels.package'),output);state.deployedHash=state.pendingHash;delete state.pendingHash;delete state.world;await atomicWrite(this.statePath(),JSON.stringify(state,null,2));
     return '已部署完整世界到独立测试副本';
   }
-  async nativeBuild(project:NativeWorldProject){await this.unchanged();await this.verifySourceHash();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');validateNativeWorld(project);if(project.sourceHash!==this.sourceHash||project.sourceBuild!==this.build)throw Error('世界来源不匹配');const result=project.version===5||Object.values(project.edits).some(ops=>ops.length)||Object.values(project.levelEdits).some(ops=>ops.length)?await worker.request<{buffer:Uint8Array;changed:string[]}>('native-build',{project,build:this.build}):{buffer:this.pkg.buffer,changed:[]},file=path.join(this.workspace,'exports','native-world-'+project.id+'-'+Date.now()+'.package');const buffer=Buffer.from(result.buffer.buffer,result.buffer.byteOffset,result.buffer.byteLength);await atomicWrite(file,buffer);await atomicWrite(path.join(path.dirname(file),path.basename(file,'.package')+'.sstar-native-world.json'),JSON.stringify(project,null,2));return{path:file,hash:sha256(buffer),changed:result.changed};}
+  async nativeBuild(project:NativeWorldProject){await this.unchanged();await this.verifySourceHash();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');validateNativeWorld(project);const result=project.version===5||Object.values(project.edits).some(ops=>ops.length)||Object.values(project.levelEdits).some(ops=>ops.length)?await worker.request<{buffer:Uint8Array;changed:string[]}>('native-build',{project,build:this.build}):{buffer:this.pkg.buffer,changed:[]},file=path.join(this.workspace,'exports','native-world-'+project.id+'-'+Date.now()+'.package');const buffer=Buffer.from(result.buffer.buffer,result.buffer.byteOffset,result.buffer.byteLength);await atomicWrite(file,buffer);await atomicWrite(path.join(path.dirname(file),path.basename(file,'.package')+'.sstar-native-world.json'),JSON.stringify(project,null,2));return{path:file,hash:sha256(buffer),changed:result.changed};}
   async worldCreate(){await this.unchanged();return newWorld(this.sourceHash,this.build);}
-  async upgradeWorldEntries(w:WorldProject){if(w.native)return w;await this.checkWorld(w);return w.map.objects?.length?migrateEntrances(w,this.compiler!.previewMap(w),this.codec!):w;}
+  async upgradeWorldEntries(w:WorldProject){if(w.native)return w;await this.checkWorld(w);if(!w.map.objects?.length||w.sourceEvidence?.history?.length)return w;return migrateEntrances(w,this.compiler!.previewMap(w),this.codec!);}
   private async exampleFile(name:string){await this.unchanged();if(!this.codec)throw Error('示例需要可解析的原游戏');const recipe=JSON.parse(await fs.readFile(path.join(path.dirname(this.workerFile),'../examples',name+'.recipe.json'),'utf8'));const w=materializeExample(recipe,this.pkg,this.codec,this.sourceHash,this.build);this.compiler!.build(w);return w;}
   async worldExample(){return this.exampleFile('3d-showcase');}
   async worldStudioExample(){return this.exampleFile('studio-v07');}
@@ -292,8 +316,8 @@ export class EditorService {
   async worldPrefabs(){await this.unchanged();if(!this.codec)throw new Error('机关库需要反射信息');return prefabs(this.pkg,this.codec);}
   async worldValidate(w:WorldProject):Promise<WorldIssue[]>{if(w.native)return this.nativeValidate(nativeDocument(w));
     await this.checkWorld(w);const worker=await this.previewWorker();if(worker)return worker.request<WorldIssue[]>('validate',w);const issues=worldIssues(w);
-    if(w.map.objects?.length)try{const f=this.compiler!.previewMap(w);for(const message of validateReferences(this.codec!,f))issues.push({severity:'error',entityId:Number(message.match(/#(\d+)/)?.[1])||undefined,message:'大地图：'+message});}catch(e){issues.push({severity:'error',message:'大地图：'+String(e)});}
-    for(const l of w.levels){try{const f=applyProject(this.pkg,l.project,this.codec);issues.push(...mechanismIssues(this.codec!,f).map(i=>({...i,levelId:l.id,message:l.title+'：'+i.message})));if(!f.records.some(r=>r.type==='Guy'))issues.push({severity:'error',levelId:l.id,message:`${l.title}：缺少主角`});if(l.project.base?.kind==='blank'&&!f.records.some(r=>r.type==='Door'))issues.push({severity:'error',levelId:l.id,message:`${l.title}：缺少出口`});for(const error of validateReferences(this.codec!,f))issues.push({severity:'error',levelId:l.id,entityId:Number(error.match(/#(\d+)/)?.[1])||undefined,message:`${l.title}：${error}`});}catch(e){issues.push({severity:'error',levelId:l.id,message:`${l.title}：${String(e)}`});}}
+    if(w.map.objects?.length||w.map.entries.length||w.map.camera)try{const f=this.compiler!.previewMap(w);for(const message of [...f.replayIssues??[],...validateReferences(this.codec!,f)])issues.push({severity:'error',entityId:Number(message.match(/#(\d+)/)?.[1])||undefined,message:'大地图：'+message});}catch(e){issues.push({severity:'error',message:'大地图：'+String(e)});}
+    for(const l of w.levels){try{const f=compatiblePreview(l.project,p=>applyProject(this.pkg,p,this.codec));for(const message of f.replayIssues??[])issues.push({severity:'error',levelId:l.id,message:l.title+'：'+message});issues.push(...mechanismIssues(this.codec!,f).map(i=>({...i,levelId:l.id,message:l.title+'：'+i.message})));if(!f.records.some(r=>r.type==='Guy'))issues.push({severity:'error',levelId:l.id,message:`${l.title}：缺少主角`});if(l.project.base?.kind==='blank'&&!f.records.some(r=>r.type==='Door'))issues.push({severity:'error',levelId:l.id,message:`${l.title}：缺少出口`});for(const error of validateReferences(this.codec!,f))issues.push({severity:'error',levelId:l.id,entityId:Number(error.match(/#(\d+)/)?.[1])||undefined,message:`${l.title}：${error}`});}catch(e){issues.push({severity:'error',levelId:l.id,message:`${l.title}：${String(e)}`});}}
     return issues;
   }
   async worldBuild(w:WorldProject){await this.checkWorld(w);await this.verifySourceHash();const b=this.compiler!.build(w),output=this.pkg.rebuild(b.changes),name=`world-${w.id}-${Date.now()}`,out=path.join(this.workspace,'exports',name+'.package');await atomicWrite(out,output);await atomicWrite(path.join(this.workspace,'exports',name+'.sstar-world.json'),JSON.stringify(w,null,2));return{path:out,hash:sha256(output)};}

@@ -16,6 +16,7 @@ import {mergeManifests} from './manifests';
 export {mergeManifests} from './manifests';
 const HUB_NAMESPACE=800;
 import {mapProject} from '../scene-project';
+import {compatiblePreview,copyReplayBase} from './compatible-preview';
 
 export function newWorld(hash:string,build:string):WorldProject {
   const id=globalThis.crypto.randomUUID().replaceAll('-','').slice(0,12),width=32,height=32;
@@ -85,8 +86,8 @@ export class WorldCompiler {
   move(r:EntityRecord,p:Vec3){return this.codec.patch(r,{'position.x':p[0],'position.y':p[1],'position.z':p[2],'visual_position.x':p[0],'visual_position.y':p[1],'visual_position.z':p[2]});}
   bare(type:string,id:number):EntityRecord{const f=this.file('mirror_1');const typeIndex=f.types.indexOf(type);if(typeIndex<0)throw new Error(`未知类型 ${type}`);return{id,typeIndex,type,diff:Buffer.from([0xfd])};}
   private stripGroup(r:EntityRecord){return this.codec.patch(r,{group_id:0,entity_name:''});}
-  previewMap(w:WorldProject){return this.mapFile(w,'overworld',1000,mapSpawn(w.map));}
-  private mapFile(w:WorldProject,name:string,revision:number,spawn:Vec3):EntityFile{
+  previewMap(w:WorldProject){return this.mapFile(w,'overworld',1000,mapSpawn(w.map),true);}
+  private mapFile(w:WorldProject,name:string,revision:number,spawn:Vec3,preview=false):EntityFile{
     const c=this.codec,m=w.map,original=this.file('mirror_1'),spatial=w.version===4,[ox,oy]=mapOrigin(m);
     const vertical=spatial?worldVerticalBounds(m):{corner:-2,size:8};
     let serial=1;const id=()=>{if(serial>=0x100000)throw Error('地形外观超过大地图的原生实体编号容量');return HUB_NAMESPACE*0x100000+serial++;};
@@ -135,9 +136,17 @@ export class WorldCompiler {
     const baseEntries=this.file('overworld').records.filter(r=>r.type==='Level_Entry');
     const entryProto=baseEntries.find(r=>c.parse(r).complete&&Number(c.get(r,'style',0))===0&&Number(c.get(r,'size',0))===0&&c.get(r,'mesh')==='GAME_OVER_Entry_Locked_A')??this.find('overworld','Level_Entry',r=>c.parse(r).complete);
     const entryIds=new Map(m.entries.map((e,i)=>[e.id,spatial?spatialEntryId(i):id()]));
+    const entryIssues:string[]=[];
     for(const e of m.entries){
-      const proto=e.appearance?{...entryProto,diff:Buffer.from(e.appearance,'base64')}:e.prototype?this.file(e.prototype.template).records.find(r=>r.id===e.prototype!.sourceId&&r.type==='Level_Entry'):entryProto;
-      if(!proto||!c.parse(proto).complete)throw Error('入口样式不存在');
+      let proto:EntityRecord|undefined;
+      try{
+        proto=e.appearance?{...entryProto,diff:Buffer.from(e.appearance,'base64')}:e.prototype?this.file(e.prototype.template).records.find(r=>r.id===e.prototype!.sourceId&&r.type==='Level_Entry'):entryProto;
+        if(!proto||!c.parse(proto).complete)throw Error('原生样式不存在或无法解析');
+      }catch(error){
+        const message='入口「'+e.title+'」的原生样式无法读取：'+(error instanceof Error?error.message:String(error));
+        if(!preview||!w.sourceEvidence?.history?.length)throw Error(message);
+        entryIssues.push(message+'，预览使用默认样式');proto=entryProto;
+      }
       const [first,second,third]=(e.unlocks??[]).map(key=>key?entryIds.get(key)??0:0);
       let r=this.move(this.stripGroup(proto),[e.x,e.y,e.z??0]);
       r=c.patch(r,{level_name:e.levelId?`ed_${w.id}_${e.levelId}`:'',unlocked_by_id:first??0,unlocked_by_id2:second??0,unlocked_by_id3:third??0,unlock_is_or_gate:e.unlockAny??false,tower_flags:0,dropdown:false,currently_broken:false,currently_disfavored:false,can_move:false,riding_on_id:0,enabled_t_target:1});
@@ -149,10 +158,11 @@ export class WorldCompiler {
       if(Object.keys(fields).length)r=c.patch(r,fields);
       records.push({...r,id:entryIds.get(e.id)!});
     }
-    const result={prefix:Buffer.from(original.prefix),types:[...original.types],records,managedEntryIds:entryIds};
+    const result={prefix:Buffer.from(original.prefix),types:[...original.types],records,managedEntryIds:entryIds,replayIssues:entryIssues.length?entryIssues:undefined};
     // Source environment IDs remain stable, while fresh terrain and entrances use a disjoint namespace.
     if(new Set(records.map(r=>r.id)).size!==records.length)throw new Error('地图实体 ID 冲突');
-    const built=applyProject(this.pkg,mapProject(w),c,result);
+    const project=mapProject(w);
+    const built=preview?compatiblePreview(project,candidate=>applyProject(this.pkg,candidate,c,copyReplayBase(result))):applyProject(this.pkg,project,c,result);
     if(spatial&&m.objects?.length){
       const positions:Vec3[]=[];
       for(const r of built.records){

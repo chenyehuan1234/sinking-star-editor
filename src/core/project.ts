@@ -54,6 +54,8 @@ export function validateProject(value: unknown): asserts value is EditorProject 
     if(o.kind==='properties'&&o.viewCameraId!==undefined&&(!Number.isInteger(o.viewCameraId)||o.viewCameraId<0||o.viewCameraId>0xffffffff||typeof o.values.viewpoint_name!=='string'))throw Error('卷轴镜头标识无效');
   }
 }
+import {ReplayError} from './compatible-preview';
+
 export function validName(s: unknown): s is string {return typeof s==='string'&&/^[a-zA-Z0-9_.-]{1,100}$/.test(s)&&s!=='.'&&!s.includes('..');}
 export function applyProject(pkg:GamePackage,project:EditorProject,codec?:PropertyCodec,base?:EntityFile):EntityFile {
   validateProject(project);
@@ -62,7 +64,7 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
   let palette:TerrainPalette={};
   const paint=new Map<string,TerrainFacePaint>();
   const applyPaint=(rows:TerrainFacePaint[])=>{for(const row of rows){const key=faceKey(row.cell,row.face);if(row.color===null)paint.delete(key);else paint.set(key,row);}};
-  for(const o of project.operations){
+  for(const [operationIndex,o] of project.operations.entries())try{
     if(o.kind==='terrainPaint'){if(o.defaults!==undefined)palette=o.defaults;if(o.faces)applyPaint(o.faces);continue;}
     if(o.kind==='levelSettings'){if(!codec)throw Error('关卡设置需要原生类型信息');Object.assign(settings,o.values);continue;}
     if(o.kind==='water'||o.kind==='waterCreate'||o.kind==='waterResize'){if(!codec)throw Error('水流编辑需要原生类型信息');applyWater(pkg,codec,f,o);continue;}
@@ -106,16 +108,20 @@ export function applyProject(pkg:GamePackage,project:EditorProject,codec?:Proper
       f.records.splice(index,1);
       for(const key of f.missingEntryTargets?.keys()??[])if(key.startsWith(r.id+':'))f.missingEntryTargets?.delete(key);
     }
-  }
+  }catch(error){throw new ReplayError('operation',error,operationIndex);}
   if(project.base?.kind==='blank'&&codec&&!project.topology)updateBlankBounds(codec,f);
   if(!codec&&(paint.size||Object.keys(palette).length))throw Error('地形配色需要原生类型信息');
-  if(codec){applyLevelSettings(codec,f,settings);applyTopology(codec,f,project.topology);applyCamera(codec,f,project.camera,pkg);applyTerrainPaint(codec,f,palette,paint);
+  if(codec){
+    try{applyLevelSettings(codec,f,settings);}catch(error){throw new ReplayError('levelSettings',error);}
+    try{applyTopology(codec,f,project.topology);}catch(error){throw new ReplayError('topology',error);}
+    try{applyCamera(codec,f,project.camera,pkg);}catch(error){throw new ReplayError('camera',error);}
+    try{applyTerrainPaint(codec,f,palette,paint);}catch(error){throw new ReplayError('terrainPaint',error);}
     // Resolve authoring IDs after camera edits. Native named links then follow a
     // rename without an old rename in history redirecting a newer association.
-    const links=new Map<number,number>();
-    for(const op of project.operations){if(op.kind==='properties'&&Object.hasOwn(op.values,'viewpoint_name')){if(op.viewCameraId===undefined)links.delete(op.id);else links.set(op.id,op.viewCameraId);}else if(op.kind==='delete'||op.kind==='profile')links.delete(op.id);}
+    const links=new Map<number,{target:number;operationIndex:number}>();
+    for(const [operationIndex,op] of project.operations.entries()){if(op.kind==='properties'&&Object.hasOwn(op.values,'viewpoint_name')){if(op.viewCameraId===undefined)links.delete(op.id);else links.set(op.id,{target:op.viewCameraId,operationIndex});}else if(op.kind==='delete'||op.kind==='profile')links.delete(op.id);}
     const recordIndices=links.size?new Map(f.records.map((r,i)=>[r.id,i])):new Map<number,number>();
-    for(const [id,target]of links){const index=recordIndices.get(id);if(index===undefined)continue;const giver=f.records[index];if(giver.type!=='View_Giver')throw Error('视角关联对象不是卷轴');const cameraIndex=recordIndices.get(target),camera=cameraIndex===undefined?undefined:f.records[cameraIndex];if(target&&(!camera||camera.type!=='Camera_Control'||codec.get(camera,'is_for_map_overview',false)||Number(codec.get(camera,'minus_one_if_not_primary',0))!==-1))throw Error('卷轴关联的辅助镜头不可用 #'+target);const name=camera?String(codec.get(camera,'entity_name','')):'';if(camera&&!name)throw Error('卷轴关联的辅助镜头尚未命名');f.records[index]=codec.patch(giver,{viewpoint_name:name});}
+    for(const [id,{target,operationIndex}]of links)try{const index=recordIndices.get(id);if(index===undefined)continue;const giver=f.records[index];if(giver.type!=='View_Giver')throw Error('视角关联对象不是卷轴');const cameraIndex=recordIndices.get(target),camera=cameraIndex===undefined?undefined:f.records[cameraIndex];if(target&&(!camera||camera.type!=='Camera_Control'||codec.get(camera,'is_for_map_overview',false)||Number(codec.get(camera,'minus_one_if_not_primary',0))!==-1))throw Error('卷轴关联的辅助镜头不可用 #'+target);const name=camera?String(codec.get(camera,'entity_name','')):'';if(camera&&!name)throw Error('卷轴关联的辅助镜头尚未命名');f.records[index]=codec.patch(giver,{viewpoint_name:name});}catch(error){throw new ReplayError('cameraLink',error,operationIndex);}
   }
   return f;
 }
@@ -136,7 +142,7 @@ export function levelView(pkg:GamePackage,name:string,file?:EntityFile,codec?:Pr
     }}
   }
   const waters=codec?f.records.filter(r=>r.type==='Ocean_Map'&&codec.parse(r).complete).map(r=>waterView(codec,f,r)):[];
-  return {name,typeCount:f.types.length,terrain,waters,managedEntryIds:f.managedEntryIds?Object.fromEntries(f.managedEntryIds):undefined,missingEntryTargets:f.missingEntryTargets?Object.fromEntries(f.missingEntryTargets):undefined,levelSettings:codec?levelSettingsView(codec,f):undefined,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
+  return {name,typeCount:f.types.length,terrain,waters,replayIssues:f.replayIssues,managedEntryIds:f.managedEntryIds?Object.fromEntries(f.managedEntryIds):undefined,missingEntryTargets:f.missingEntryTargets?Object.fromEntries(f.missingEntryTargets):undefined,levelSettings:codec?levelSettingsView(codec,f):undefined,topology:codec?topologyView(codec,f):undefined,camera:codec?cameraView(codec,f):undefined,manifest:f.replayIssues?.length&&!pkg.entries.some(e=>e.name===`data-common/${name}.level_manifest`)?'':pkg.get(`data-common/${name}.level_manifest`).toString('utf8'),entities:f.records.map(r=>{
     const field=baseFields(r.diff).fields.find(f=>f.id===0x1f);
     const editable=codec?editableType(r.type)&&codec.parse(r).complete:canEdit(r);
     const raw=codec?Object.fromEntries(codec.parse(r).fields.map(f=>[f.schema.name,f.value])):{};

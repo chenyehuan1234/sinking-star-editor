@@ -1,7 +1,7 @@
 import { checkedU64 } from './package';
 
 export interface EntityRecord { id: number; typeIndex: number; type: string; diff: Buffer }
-export interface EntityFile { prefix: Buffer; types: string[]; records: EntityRecord[];managedEntryIds?:Map<string,number>;missingEntryTargets?:Map<string,string>;terrainColors?:Map<string,import('../terrain-paint').TerrainFaceColors>;terrainPaint?:import('../terrain-paint').TerrainFacePaint[];prismPresets?:Map<number,number>;analysisWarnings?:{entityId:number;field:string;message:string}[] }
+export interface EntityFile { prefix: Buffer; types: string[]; records: EntityRecord[];replayIssues?:string[];managedEntryIds?:Map<string,number>;missingEntryTargets?:Map<string,string>;terrainColors?:Map<string,import('../terrain-paint').TerrainFaceColors>;terrainPaint?:import('../terrain-paint').TerrainFacePaint[];prismPresets?:Map<number,number>;analysisWarnings?:{entityId:number;field:string;message:string}[] }
 export interface Field { id: number; start: number; value: number; end: number; kind: 'float'|'string'|'opaque' }
 export const EDITABLE = new Set(['Mirror','Rock','Guy','Door']);
 

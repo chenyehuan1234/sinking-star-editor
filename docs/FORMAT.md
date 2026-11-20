@@ -34,7 +34,7 @@ v0.2 静态解析 exe 中 Jai 类型反射，按 Undoable_Entity_Data 与各实�
 }
 ```
 
-操作按顺序应用，引用当时存在的实体；复制 ID 必须唯一且留在原实体命名空间内。位置要求有限数值、绝对值不大于 100000。名称只允许 ASCII 字母、数字、下划线与短横线，不能覆盖其他官方关卡名。工程版本、Build 或哈希不匹配拒绝执行。
+操作按顺序应用，引用当时存在的实体；复制 ID 必须唯一且留在原实体命名空间内。位置要求有限数值、绝对值不大于 100000。名称只允许 ASCII 字母、数字、下划线与短横线，不能覆盖其他官方关卡名。支持的工程格式版本见下文。游戏 Build 和数据指纹用于记录工程来源。
 
 ## 桌面边界
 
@@ -126,7 +126,7 @@ LevelView.waters 增加可选 gridZ/kind/detectHoles/name/error；编辑绘制�
 
 `nativeRegion` 携带项目会话、修订和分区；界面用请求票据拒绝旧结果。后台缓存索引和已应用修改，每次仅返回当前及相邻分区的视图，地形先按范围裁剪再展开。后台构建结果以可转移缓冲区返回，未修改导出复用原包缓冲区。
 
-v4 文件独立保存，覆盖前保留 `.previous.bak`。导出 `.package` 与同名 `.sstar-native-world.json` 两个文件。来源不匹配时停止相关操作，原文件保留。区域归属、工程名不会改变原生构建内容。编辑视角按工程和场景保存在本机。
+v4 文件独立保存，覆盖前保留 `.previous.bak`。导出 `.package` 与同名 `.sstar-native-world.json` 两个文件。跨版本打开后首次保存使用新文件。区域归属、工程名不会改变原生构建内容。编辑视角按工程和场景保存在本机。
 
 存储扫描使用短期令牌与目录快照，清理前重新核对依赖、运行状态、真实路径和内容变化，不跟随链接。隔离档位于 `test-profiles/<stable-id>`，只有归属元数据通过验证的档案才能管理。`prepareSettings` 只复制两个已知 menu_state 设置文件；运行时存档隔离尚未验证，所有启动、准备、部署与旧共享进度重置 IPC 继续封锁。
 
@@ -151,6 +151,8 @@ alpha.5 门闸本机放置草稿增加可选 `appearance`（up／down），只�
 alpha.6 本机 `GateDraft.colors` 为可选的8个数值，依次对应原生 tint_color_a 与 tint_color_b 的RGBA。新素材库配置从同色组原生短款参考复制染色，并写入 `PrefabOp.values`；缩略图和虚像读取同一个配置键。缺省该字段的历史配置保留来源染色，已有工程不自动改写。显式恢复颜色仅生成染色 properties 操作，不改变来源、频道或机关字段。
 
 ## v0.9 统一完整世界（v5）
+
+跨游戏版本打开时，`sourceBuild`、`sourceHash` 和 `sourceEvidence` 用于追踪来源。编辑器对已支持的工程格式使用当前安装重放关卡修改；预览可跳过冲突项并显示问题，工程与原生构建仍保留完整编辑记录。跨版本打开后的首次保存使用新文件。原版世界的 `deletedScenes` 用于记录明确删除的场景，以避免游戏更新新增的场景被当成删除项。
 
 `format: sinking-star-native-world, version: 5`。保留 `id/name/sourceHash/sourceBuild/base:overworld/assignments`。`operations` 是世界根场景按提交顺序应用的 EditOp 数组；`scenes` 是完整小关目录，每项 `{id,title,folderId?,project}`，project 使用现有 EditorProject。场景 ID 是原生输出名称，原版场景保持原名，新增与复制场景分配独立名称。目录 `directory:[{id,title}]` 为无嵌套关卡分组，场景最多属于一组；`editor` 为根场景编辑分组。可选 `camera/topology` 覆盖世界原生参数。v5 的旧 `edits/levelEdits` 为空映射，只供兼容结构。
 

@@ -2,7 +2,7 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，在同一个工作台编辑完整原版世界及小关。原安装只读，试玩使用隔离测试档。
 
-**v0.10.1** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.10.1) · [更新记录](docs/RELEASE-NOTES.md#v0101--大地图镜头与机关关联) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues)
+**v0.10.2** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.10.2) · [更新记录](docs/RELEASE-NOTES.md#v0102--跨版本打开旧工程) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues)
 
 - 顶部工程标签可切换、重排和拖出独立窗口。区域复制支持跨工程，保留地形、水域、玩法物件、入口与关联小关。
 - 小关和自制大地图支持地板、墙面默认色与局部刷色。新增下落、荷叶、飞石和小车时序，以及西 1 式分屏通电高亮和三棱镜色卡。
@@ -71,6 +71,8 @@
 存档试玩明确选档；临时试玩直接启动，首次准备与空间检查进度显示在状态栏。校验后部署受管副本。存档方式默认复用兼容档，明确输入名称新建才增加目录；不会切换或重置旧共享战役，也不会替你关闭正在运行的游戏。
 
 当前安装程序与可执行文件未做代码签名。请从本仓库 Releases 下载，并核对同页的 `SHA256SUMS.txt`；Windows 可能显示未知发布者提示。
+
+游戏更新后，旧工程仍可用当前安装打开。来源 Build 和数据指纹用于记录来源。旧模板或修改目标缺失时，属性栏与工程检查会列出具体问题，原始操作仍在工程中。跨版本打开后首次保存使用新文件名；试玩和原生运行包需要实际引用有效。
 
 ## 可以做什么
 
