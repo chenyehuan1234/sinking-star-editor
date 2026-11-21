@@ -13,7 +13,7 @@ export interface SharedWork {
   localSample?:boolean;
 }
 export interface ShareDraft {
-  manifest: ShareManifest; size: number; cover?: string; previews: Record<string, string>;
+  id: string; manifest: ShareManifest; size: number; cover?: string; previews: Record<string, string>;
 }
 export const shareExtension = '.sstar-share.gz';
 export const shareLimit = 5 * 1024 * 1024;

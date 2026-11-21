@@ -26,12 +26,15 @@ test('community browse merges requests, persists public entries and keeps author
   const [first,second]=await Promise.all([cache.get('list',fetchPage,options),cache.get('list',fetchPage,options)]);
   assert.equal(requests,1);
   assert.deepEqual(first,second);
+  assert.equal(first.checked,true);
   await cache.get('author',async()=>bytes('author catalog'),{...options,persist:false});
   assert.equal((await cache.peek('author',false))?.toString(),'author catalog');
 
   const reopened=new CommunityCache(folder,policy);
   assert.equal((await reopened.peek('list'))?.toString(),'public catalog');
-  assert.equal((await reopened.get('list',fetchPage,options)).bytes?.toString(),'public catalog');
+  const cached=await reopened.get('list',fetchPage,options);
+  assert.equal(cached.bytes?.toString(),'public catalog');
+  assert.equal(cached.checked,undefined);
   assert.equal(await reopened.peek('author',false),null);
   assert.equal(requests,1);
   await reopened.get('list',fetchPage,{...options,refresh:true});

@@ -20,7 +20,8 @@ const pages=[['local','folder','我的工程'],['library','cube','关卡库'],['
 
 export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:'new'|'new-level'|'open'|'native')=>void}){
   const api=window.workbenchHome!;
-  const [page,setPage]=useState<Page>('local'),[entries,setEntries]=useState<HomeProject[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
+  const [{page,communityPage},navigate]=useState<{page:Page;communityPage:'community'|'published'|null}>({page:'local',communityPage:null});
+  const [entries,setEntries]=useState<HomeProject[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const [directories,setDirectories]=useState<Record<string,HomeDirectory>>({}),[downloads,setDownloads]=useState<DownloadedLevel[]>([]);
   const [opened,setOpened]=useState<string[]>([]),[searchOpened,setSearchOpened]=useState<Record<string,boolean>>({});
   const [groups,setGroups]=useState<Record<string,string[]>>({}),[query,setQuery]=useState(''),[downloadQuery,setDownloadQuery]=useState('');
@@ -31,9 +32,12 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
   const [menu,setMenu]=useState(false),[draft,setDraft]=useState<ShareDraft|null>(null);
   const [choosingShare,setChoosingShare]=useState(false);
   const [submittingShare,setSubmittingShare]=useState(false);
+  const [communityOnline,setCommunityOnline]=useState<boolean|null>(null);
   const [selected,setSelected]=useState<HomeProject|null>(null),[revision,setRevision]=useState(0),[busy,setBusy]=useState(false);
   const [manage,setManage]=useState<ManageItem|null>(null),[newName,setNewName]=useState(''),[manageError,setManageError]=useState('');
   const scroller=useRef<HTMLDivElement>(null),previousScroll=useRef<number|null>(null),generation=useRef(0);
+  const communityPageOpen=page==='community'||page==='published';
+  function setPage(next:Page){navigate(old=>({page:next,communityPage:next==='community'||next==='published'?next:old.communityPage}));}
   async function load(){
     const ticket=++generation.current;
     setLoading(true);
@@ -85,17 +89,18 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
       finally{setPlayProgress(null);}
     });
   }
-  async function generateSharePreview(id:string,compact=false){
-    const data=await withDeadline(api.sharePreview(id),22000,'读取场景超时');
+  async function generateSharePreview(id:string,compact:boolean,draftId:string){
+    const data=await withDeadline(api.sharePreview(id,draftId),22000,'读取场景超时');
     return compact?renderCompactThumbnail(data):(await renderScenePreview(data)).image;
   }
   async function prepareShare(source:HomeShareSource){
+    if(submittingShare)throw Error('已有作品正在提交，请稍后再发另一件作品。');
     const value=await api.prepareShareFrom(source);
     setDraft(value);setChoosingShare(false);
     if(page!=='published')setPage('community');
   }
   function publishButton(source:HomeShareSource,name:string){
-    return <button type="button" className="hub-icon hub-publish" title="发布" aria-label={'发布 '+name} disabled={busy} onClick={()=>void action(()=>prepareShare(source))}><Icon name="export"/></button>;
+    return <button type="button" className="hub-icon hub-publish" title="发布" aria-label={'发布 '+name} disabled={busy||submittingShare} onClick={()=>void action(()=>prepareShare(source))}><Icon name="export"/></button>;
   }
   function manageItem(scope:ManageItem['scope'],item:HomeProject|DownloadedLevel,operation:ManageItem['operation']){
     setManage({scope,key:item.key,name:item.name,operation,missing:'missing' in item&&item.missing});
@@ -129,10 +134,15 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
   const matches=downloads.filter(item=>(item.origin??'community')===libraryFilter&&searchKey([item.name,item.author,item.version,...item.manifest.levels.map(level=>level.title)].join(' ')).includes(searchKey(downloadQuery)));
   return <div className="hub-shell hub-desktop" hidden={!active} ref={scroller}>
     <HubSidebar label="工作台导航" feedback={kind=>void action(()=>api.feedback(kind))}>
-      {pages.map(([id,icon,label])=><button key={id} aria-current={page===id?'page':undefined} disabled={submittingShare} onClick={()=>{setError('');setPage(id);}}><Icon name={icon}/>{label}</button>)}
+      {pages.map(([id,icon,label])=><button key={id} aria-current={page===id?'page':undefined} onClick={()=>{setError('');setPage(id);}}><Icon name={icon}/>{label}</button>)}
+      {submittingShare&&!communityPageOpen&&<small className="hub-nav-note" role="status">社区正在处理发布草稿…</small>}
+      {communityOnline===false&&!communityPageOpen&&<small className="hub-community-offline" role="status">社区连接失败，可以连接 VPN 后刷新。</small>}
     </HubSidebar>
-    {page==='community'||page==='published'?<CommunityPanel bridge={api} mine={page==='published'} draft={draft} generatePreview={generateSharePreview} onChooseSource={()=>setChoosingShare(true)} onPublishBusy={setSubmittingShare} onDraftClear={()=>{setDraft(null);void api.shareClear();}} onImported={item=>{setSelected(item);setPage('local');}} onDownloads={()=>{setLibraryFilter('community');setPage('library');}}/>
-    :page==='library'?<section className="hub-main" aria-labelledby="level-library-title">
+    {communityPage&&<CommunityPanel bridge={api} visible={active&&communityPageOpen} mine={communityPage==='published'} draft={draft} generatePreview={generateSharePreview}
+      onChooseSource={()=>setChoosingShare(true)} onPublishBusy={setSubmittingShare} connectionOffline={communityOnline===false} onConnectionChange={setCommunityOnline}
+      onDraftClear={id=>{setDraft(old=>old?.id===id?null:old);void api.shareClear(id);}} onImported={item=>{setSelected(item);if(page==='local')void load();}}
+      onDownloaded={()=>void api.downloads().then(setDownloads).catch(e=>setError(String(e)))} onProjects={()=>setPage('local')} onDownloads={()=>{setLibraryFilter('community');setPage('library');}}/>}
+    {communityPageOpen?null:page==='library'?<section className="hub-main" aria-labelledby="level-library-title">
       <header className="hub-header"><div><h1 id="level-library-title">关卡库</h1><p>这里保存可反复导入工程的单关和关卡组。</p></div><div className="hub-actions">
         <button className="hub-button" onClick={()=>setPage('community')}><Icon name="world"/>浏览社区</button>
         <button className="hub-primary" disabled={busy} onClick={()=>void action(async()=>{if(await api.libraryAddFile()){setDownloads(await api.downloads());setLibraryFilter('local');}})}><Icon name="plus"/>从文件添加</button>

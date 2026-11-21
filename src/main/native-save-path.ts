@@ -1,18 +1,22 @@
 // Recognize the game's Windows Saved Games initializer across releases.
-// The fixed instructions identify the folder name, the known-folder call,
-// and the concatenation of the returned directory with that name.
+// Match the initializer's operations and verify its stack slots by their
+// relationships. The compiler can relocate those slots without changing how
+// the Saved Games path is read and joined with the game folder name.
 const instructions = [
-  [0x00, '48c784240001000019000000488d05'],
-  [0x13, '48898424080100004c8d05'],
-  [0x22, '488dbc24d0080000ba240000004889f14989f9e8'],
-  [0x3a, '48c784243019000000000000488db424301900004889f9ba008000004531c04989f1e8'],
-  [0x61, '85c07823488b942430190000488d0d'],
-  [0x74, '4c8d8424900000004c8d4c2440e8'],
-  [0x86, 'eb0b0f57c00f29842490000000488b8c2430190000e8'],
-  [0xa0, '48c744244003000000488d05'],
-  [0xb0, '488944244848c7842440010000020000004889b424480100004889ac2430190000488d84249000000048898424381900004889ac2440190000488d8424000100004889842448190000'],
+  [0x00, '48c78424????????19000000488d05'],
+  [0x13, '48898424????????4c8d05'],
+  [0x22, '488dbc24????????ba240000004889f14989f9e8'],
+  [0x3a, '48c78424????????00000000488db424????????4889f9ba008000004531c04989f1e8'],
+  [0x61, '85c07823488b9424????????488d0d'],
+  [0x74, '4c8d8424????????4c8d4c24??e8'],
+  [0x86, 'eb0b0f57c00f298424????????488b8c24????????e8'],
+  [0xa0, '48c74424??03000000488d05'],
+  [0xb0, '48894424??48c78424????????020000004889b424????????4889ac24????????488d8424????????48898424????????4889ac24????????488d8424????????48898424????????'],
 ] as const;
-const signature = instructions.map(([offset, hex]) => ({offset, bytes:Buffer.from(hex,'hex')}));
+const signature = instructions.map(([offset, hex]) => ({
+  offset, bytes:hex.match(/../g)!.map(byte=>byte==='??'?-1:parseInt(byte,16)),
+}));
+const anchorOffset=0x2a,anchor=Buffer.from('ba240000004889f14989f9e8','hex');
 const originalDirectory = Buffer.from('Order of the Sinking Star\0');
 const savedGamesGuid = Buffer.from('4C5C32FF-BB9D-43b0-B5B4-2D72E54EAAA4\0');
 const shell32 = Buffer.from('SHELL32.dll\0');
@@ -81,6 +85,19 @@ function importedKnownFolder(exe:Buffer,image:NonNullable<ReturnType<typeof read
   return false;
 }
 
+function matchesInitializer(code:Buffer,start:number){
+  if(start<0||signature.some(({offset,bytes})=>start+offset+bytes.length>code.length||
+    bytes.some((byte,index)=>byte>=0&&code[start+offset+index]!==byte)))return false;
+  const slot=(offset:number)=>code.readUInt32LE(start+offset);
+  const folder=slot(0x04),knownFolderOut=slot(0x3e),pathString=slot(0x78);
+  const separator=code[start+0x80],parts=slot(0xb9);
+  return slot(0x17)===folder+8&&slot(0xed)===folder&&
+    slot(0x4a)===knownFolderOut&&slot(0x69)===knownFolderOut&&slot(0x97)===knownFolderOut&&
+    slot(0xcd)===knownFolderOut&&slot(0xdd)===knownFolderOut+8&&slot(0xe5)===knownFolderOut+16&&slot(0xf5)===knownFolderOut+24&&
+    slot(0x8f)===pathString&&slot(0xd5)===pathString&&
+    code[start+0xa4]===separator&&code[start+0xb4]===separator+8&&slot(0xc5)===parts+8;
+}
+
 export function locateNativeSavePath(exe:Buffer){
   const image=readSections(exe);
   if(!image)return;
@@ -92,10 +109,10 @@ export function locateNativeSavePath(exe:Buffer){
   const directory=rdataBytes.indexOf(originalDirectory),guid=rdataBytes.indexOf(savedGamesGuid);
   if(directory<0||guid<0)return;
   const relativeTarget=(displacement:number)=>text.rva+displacement+4+textBytes.readInt32LE(displacement);
-  const first=signature[0].bytes;
   let match:number|undefined;
-  for(let start=textBytes.indexOf(first);start>=0;start=textBytes.indexOf(first,start+1)){
-    if(!signature.every(({offset,bytes})=>textBytes.subarray(start+offset,start+offset+bytes.length).equals(bytes)))continue;
+  for(let hit=textBytes.indexOf(anchor);hit>=0;hit=textBytes.indexOf(anchor,hit+1)){
+    const start=hit-anchorOffset;
+    if(!matchesInitializer(textBytes,start))continue;
     if(relativeTarget(start+0x0f)!==rdata.rva+directory||relativeTarget(start+0x1e)!==rdata.rva+guid)continue;
     const thunkRva=relativeTarget(start+0x5d),thunk=thunkRva-text.rva;
     if(thunk<0||thunk+6>textBytes.length||textBytes.readUInt16LE(thunk)!==0x25ff||

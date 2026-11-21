@@ -47,6 +47,18 @@ app.whenReady().then(async()=>{
     await until(()=>home(`Boolean(${button})`),label);
     await home(`${button}.click()`);
   };
+  const network=session.defaultSession.webRequest;
+  const communityButtons='.hub-main:not([hidden]) button';
+  function stall(method:string,matches:(pathname:string)=>boolean){
+    let start=0;
+    let cancelled:(()=>void)|undefined;
+    network.onBeforeRequest({urls:[address+'/api/*']},(request,done)=>{
+      if(request.method!==method||!matches(new URL(request.url).pathname)){done({});return;}
+      start=Date.now();
+      cancelled=()=>done({cancel:true});
+    });
+    return {started:()=>start,stop:()=>{cancelled?.();network.onBeforeRequest(null);}};
+  }
   await home(`Array.from(document.querySelectorAll('.hub-level-item .hub-publish')).find(button=>button.getAttribute('aria-label')===${JSON.stringify('发布 '+levels[0].title)}).click()`);
   await until(()=>home('Boolean(document.querySelector("#community-title"))'),'从工程逐关发布');
   assert.equal((await home('window.workbenchHome.shareDraft()')).manifest.scope,'level');
@@ -63,18 +75,30 @@ app.whenReady().then(async()=>{
   assert.ok(await home(`Array.from(document.querySelectorAll('.hub-image-choice input[type="checkbox"]')).every(input=>input.getBoundingClientRect().width<=18&&input.getBoundingClientRect().height<=18)`));
   assert.ok(await home(`(() => { const tray=document.querySelector('.hub-image-tray');return !tray||tray.scrollWidth<=tray.clientWidth; })()`));
   await capture(window,'desktop-publish-preview');
+  const pendingPublish=stall('POST',pathname=>pathname==='/api/works');
+  await clickHome('确认发布');
+  const publishStarted=await until(pendingPublish.started,'发布请求开始传输');
+  await clickHome('我的工程','.hub-nav button');
+  assert.ok(await home('Boolean(document.querySelector("#my-projects-title"))'));
+  await clickHome('关卡库','.hub-nav button');
+  await clickHome('关卡社区','.hub-nav button');
+  assert.equal(await home('document.querySelector("[aria-label=刷新社区]").disabled'),false);
+  await until(()=>home('document.querySelector("[aria-label=发布作品] [role=alert]")?.textContent.includes("超时")'),'发布超时后保留草稿');
+  assert.ok(Date.now()-publishStarted<12_500,'发布应在约 10 秒超时');
+  assert.ok(await home('window.workbenchHome.shareDraft()'));
+  pendingPublish.stop();
+  console.log('发布卡住时可切换工程、关卡库和社区，约十秒超时并保留草稿');
   await clickHome('确认发布');
   await until(()=>home('Boolean(document.querySelector(".hub-work h2"))'),'在桌面端发布并进入作品详情');
   assert.equal(await home('document.querySelector(".hub-work h2").textContent'),levels[0].title);
   await until(()=>home('Boolean(document.querySelector(".hub-detail-cover img")?.naturalWidth)'),'无自定义封面时使用场景缩略图');
   let reads=0;
-  const network=session.defaultSession.webRequest;
   const directoryButtons='[aria-label="社区浏览类型"] button';
   network.onBeforeRequest({urls:[address+'/api/*']},(request,done)=>{
     if(request.method==='GET'&&new URL(request.url).pathname.startsWith('/api/works'))reads++;
     done({});
   });
-  const catalogReady=()=>home('Boolean(document.querySelector(".hub-projects"))&&!document.body.textContent.includes("正在读取作品…")');
+  const catalogReady=()=>home('Boolean(document.querySelector(".hub-main:not([hidden]) .hub-projects"))&&!document.querySelector(".hub-main:not([hidden])")?.textContent.includes("正在读取作品…")');
   await clickHome('‹ 返回作品列表');
   await until(catalogReady,'单关目录首次加载');
   await until(()=>home('Boolean(document.querySelector(".hub-projects .hub-remote-preview img")?.naturalWidth)'),'单关目录封面首次加载');
@@ -118,6 +142,17 @@ app.whenReady().then(async()=>{
   await until(()=>home('Boolean(document.querySelector(".hub-work .hub-tags")?.textContent.includes("光学"))'),'作品标签更新');
   await capture(window,'desktop-published-work');
   await home('window.workbenchHome.request("/api/account/logout","POST")');
+  const pendingDownload=stall('GET',pathname=>pathname.endsWith('/download'));
+  await clickHome('下载关卡',communityButtons);
+  const downloadStarted=await until(pendingDownload.started,'下载开始传输');
+  await clickHome('我的工程','.hub-nav button');
+  assert.ok(await home('Boolean(document.querySelector("#my-projects-title"))'));
+  await until(()=>home('Boolean(document.querySelector(".hub-community-offline"))'),'下载超时后回传首页状态');
+  assert.ok(Date.now()-downloadStarted<12_500,'下载应在约 10 秒超时');
+  await clickHome('我的发布','.hub-nav button');
+  await until(()=>home('document.querySelector(".hub-main:not([hidden]) [role=alert]")?.textContent.includes("超时")'),'返回社区后可见下载超时');
+  pendingDownload.stop();
+  console.log('下载卡住时仍可使用主页，约十秒超时且回到社区可重试');
   await clickHome('下载关卡');
   await clickHome('查看本机关卡库');
   await until(()=>home('Boolean(document.querySelector(".hub-download-row .hub-publish"))'),'游客下载到本机关卡库');
@@ -257,11 +292,24 @@ app.whenReady().then(async()=>{
   await home('window.projectTabs.action("home")');
   await clickHome('关卡库','.hub-nav button');
   await clickHome('关卡社区','.hub-nav button');
+  await home(`(() => {
+    const back=[...document.querySelectorAll('.hub-main:not([hidden]) button')].find(button=>button.textContent.trim()==='‹ 返回作品列表');
+    back?.click();
+  })()`);
   await until(catalogReady,'断网前缓存目录');
   session.defaultSession.webRequest.onBeforeRequest({urls:[address+'/api/*']},(_details,callback)=>callback({cancel:true}));
   await clickHome('刷新社区');
   await until(()=>home('Array.from(document.querySelectorAll("[role=status]")).some(node=>node.textContent.includes("本地缓存")&&node.textContent.includes("VPN"))'),'联网失败时保留目录和 VPN 提示');
   assert.ok(await catalogReady());
+  await clickHome('我的工程','.hub-nav button');
+  await until(()=>home('document.querySelector(".hub-community-offline")?.textContent.includes("VPN")'),'返回首页时保留社区连接提示');
+  session.defaultSession.webRequest.onBeforeRequest(null);
+  await clickHome('关卡社区','.hub-nav button');
+  await until(catalogReady,'恢复网络后可浏览社区');
+  await clickHome('刷新社区');
+  await until(()=>home('!Array.from(document.querySelectorAll("[role=status]")).some(node=>node.textContent.includes("VPN"))'),'刷新成功后清除离线状态');
+  await clickHome('我的工程','.hub-nav button');
+  assert.equal(await home('document.querySelector(".hub-community-offline")===null'),true);
   await delay(100);
   app.exit(0);
 }).catch(error=>{console.error(error);app.exit(1);});

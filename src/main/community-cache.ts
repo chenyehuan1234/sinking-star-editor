@@ -4,7 +4,7 @@ import path from 'node:path';
 
 type Entry={bytes:Buffer;at:number};
 type FileEntry={size:number;at:number};
-export type CommunityCacheResult={bytes:Buffer|null;stale:boolean};
+export type CommunityCacheResult={bytes:Buffer|null;stale:boolean;checked?:true};
 type Policy={freshMs:number;keepMs:number;diskBytes:number;entries:number};
 
 export class CommunityCache {
@@ -121,7 +121,7 @@ export class CommunityCache {
         this.remember(key,entry);
         if(persist)await this.save(key,entry,revision);
       }
-      return {bytes,stale:false};
+      return {bytes,stale:false,checked:true};
     };
     const pending=fetch().finally(()=>{if(this.pending.get(key)===pending)this.pending.delete(key);});
     this.pending.set(key,pending);

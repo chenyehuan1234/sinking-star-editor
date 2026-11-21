@@ -17,7 +17,7 @@ export class CommunityAuthor {
   private session?:{username:string;token:string;refreshAt:number};
   private queue=Promise.resolve<unknown>(undefined);
 
-  constructor(private file:string,private call:(action:string,fields?:unknown,token?:string)=>Promise<Reply>){}
+  constructor(private file:string,private call:(action:string,fields?:unknown,token?:string,signal?:AbortSignal)=>Promise<Reply>){}
 
   private async read():Promise<Authors>{
     const data=await fs.readFile(this.file).catch((error:NodeJS.ErrnoException)=>{
@@ -49,13 +49,15 @@ export class CommunityAuthor {
 
   forget(token?:string){if(this.session?.token===token)this.session=undefined;}
 
-  restore(){
+  restore(signal?:AbortSignal){
     return this.serialize(async()=>{
+      signal?.throwIfAborted();
       if(this.session&&this.session.refreshAt>Date.now())return this.session;
       const data=await this.read();
       const author=data.records.find(record=>key(record.username)===data.active);
       if(!author)return undefined;
-      const reply=await this.call('login',{username:author.username,password:author.password}).catch(error=>{
+      signal?.throwIfAborted();
+      const reply=await this.call('login',{username:author.username,password:author.password},undefined,signal).catch(error=>{
         if(error instanceof CommunityHttpError&&error.status===401)return undefined;
         throw error;
       });

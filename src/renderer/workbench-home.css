@@ -20,6 +20,9 @@
 @media(max-width:600px){.hub-project-with-cover{grid-template-columns:auto minmax(0,1fr)}.hub-project-with-cover>.hub-button{grid-column:2;justify-self:start}.hub-project-with-cover .hub-cover{width:88px}.hub-group-levels{grid-template-columns:1fr}}
 .hub-segment{display:flex;flex:none;align-items:center;gap:3px;padding:3px;border:1px solid var(--hub-line);border-radius:8px;background:#111b20}.hub-segment button{min-height:30px;padding:4px 10px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--hub-muted);cursor:pointer;white-space:nowrap}.hub-segment button[aria-pressed=true]{border-color:#547161;background:#2c453a;color:var(--hub-accent)}.hub-segment button:hover{color:var(--hub-text)}.hub-filters:has(.hub-segment){flex-wrap:wrap}
 .hub-nav-footer{display:grid;gap:12px;margin-top:auto}.hub-nav-footer>.hub-nav-note{margin:0 9px}
+.hub-community-offline{display:block;padding:4px 12px;color:#efb09b;line-height:1.5}
+.hub-main[hidden]{display:none}
+@media(max-width:780px){.hub-desktop .hub-nav nav[aria-label="工作台导航"]{flex-wrap:wrap}.hub-community-offline{flex-basis:100%;padding-block:0}}
 .hub-cover-open{display:block;width:100%;height:100%;padding:0;border:0;background:none;cursor:zoom-in}
 .hub-cover-open:focus-visible{outline-offset:-3px!important}
 .hub-shell .hub-remove:hover{border-color:#bc7770;color:#ffbeb4}

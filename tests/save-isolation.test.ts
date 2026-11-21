@@ -1,6 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';
 import {patchSaveDirectory,bindIsolatedSaves,isolatedFolder,isolationSupported,preparePlaytestSaves,reportedSavePath} from '../src/main/save-isolation';
+import {locateNativeSavePath} from '../src/main/native-save-path';
 import {TestProfiles} from '../src/main/test-profiles';
 import {sha256} from '../src/core/package';
 import {readCampaign} from '../src/core/campaign';
@@ -78,6 +79,13 @@ test('真实游戏程序按隔离检验结果处理，源程序字节保持不�
   rebuilt[2]^=1; // DOS header, outside the game initializer and PE section table.
   assert.notEqual(sha256(rebuilt),r.sourceHash);
   assert.equal(isolationSupported(rebuilt),true);
+  const layout=locateNativeSavePath(source)!;
+  const shiftedFrame=Buffer.from(source),start=layout.displacement-0x0f;
+  const relocatedSlots=[0x04,0x17,0xed,0x3e,0x4a,0x69,0x97,0xcd,0xdd,0xe5,0xf5,0x78,0x8f,0xd5];
+  for(const slot of relocatedSlots)shiftedFrame.writeUInt32LE(shiftedFrame.readUInt32LE(start+slot)+0x20,start+slot);
+  assert.deepEqual(locateNativeSavePath(shiftedFrame),layout);
+  shiftedFrame.writeUInt32LE(shiftedFrame.readUInt32LE(start+0x69)+8,start+0x69);
+  assert.equal(locateNativeSavePath(shiftedFrame),undefined);
   const differentFunction=Buffer.from(source),importName=differentFunction.indexOf('SHGetKnownFolderPath\0');
   assert.ok(importName>=0);
   differentFunction[importName]=0x58;

@@ -16,11 +16,13 @@ import {appendImportedLevels,fileForLibrary,fileImport,shareImport,type ImportDe
 import type {ProjectWindows} from './project-windows';
 import {CommunityAuthor,CommunityHttpError} from './community-author';
 import {CommunityCache} from './community-cache';
+import {CommunityConnectionError,communityDeadline,communityTimeout} from '../community-network';
 
 const apiRoute=/^\/api\/(?:works(?:\/[a-f0-9]{32}(?:\/(?:report|cover|previews\/[\w.-]{1,100}|download))?)?|account\/(?:signup|login|logout|recover|session))(?:\?[^#]{0,1200})?$/;
 const defaultCommunity='https://sinking-star-community-preview.lingxiao-clubhub.workers.dev';
 const minute=60_000,day=24*60*minute,mib=1024*1024;
-class CommunityConnectionError extends Error {}
+class CommunityResponseTooLarge extends Error {}
+type RequestBudget={limit?:number;signal?:AbortSignal};
 const offlineCacheAllowed=(error:unknown)=>error instanceof CommunityConnectionError||
   error instanceof CommunityHttpError&&(error.status===429||error.status>=500);
 const communityImageKey=(route:string,version:string='')=>JSON.stringify([route,version]);
@@ -31,11 +33,14 @@ function connectUrl(value:string){
   return url;
 }
 async function limited(res:Response, limit:number){
-  if(Number(res.headers.get('content-length'))>limit)throw Error('社区返回的文件超过大小上限');
+  if(Number(res.headers.get('content-length'))>limit){
+    void res.body?.cancel().catch(()=>{});
+    throw new CommunityResponseTooLarge('社区返回的文件超过大小上限');
+  }
   const reader=res.body?.getReader();if(!reader)return Buffer.alloc(0);
   const parts:Uint8Array[]=[];let size=0;
-  try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw Error('社区返回的文件超过大小上限');parts.push(value);}}
-  finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+  try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw new CommunityResponseTooLarge('社区返回的文件超过大小上限');parts.push(value);}}
+  finally{void reader.cancel().catch(()=>{});reader.releaseLock();}
   return Buffer.concat(parts,size);
 }
 type PendingShare = ShareDraft & {bytes:Buffer;source:WorldProject;selected?:string};
@@ -53,11 +58,11 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
   const details=new CommunityCache(path.join(cacheRoot,'details'),{freshMs:5*minute,keepMs:7*day,diskBytes:12*mib,entries:160});
   const images=new CommunityCache(path.join(cacheRoot,'images'),{freshMs:day,keepMs:30*day,diskBytes:96*mib,entries:1024});
   const credentialFile=path.join(app.getPath('userData'),'home','community-author-'+digest(Buffer.from(community?.origin??address)).slice(0,24)+'.bin');
-  const author=new CommunityAuthor(credentialFile,async(action,fields,token)=>{
-    const reply=await send('/api/account/'+action,'POST',fields===undefined?undefined:JSON.stringify(fields),'application/json',undefined,token);
-    return JSON.parse((await limited(reply,64*1024)).toString());
+  const author=new CommunityAuthor(credentialFile,async(action,fields,token,signal)=>{
+    const reply=await send('/api/account/'+action,'POST',fields===undefined?undefined:JSON.stringify(fields),'application/json',undefined,token,{limit:64*1024,signal});
+    return JSON.parse(reply.bytes.toString());
   });
-  async function send(route:string,method:string,value?:string|Buffer,contentType='application/json',meta?:string,token?:string){
+  async function send(route:string,method:string,value?:string|Buffer,contentType='application/json',meta?:string,token?:string,budget:RequestBudget={}){
     if(!apiRoute.test(route)||!['GET','POST','PATCH','DELETE'].includes(method))throw Error('社区请求无效');
     if(!community)throw Error('社区地址配置无效。');
     const url=new URL(route,community);
@@ -66,27 +71,36 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     if(token)headers.Authorization='Bearer '+token;
     if(value!==undefined)headers['Content-Type']=contentType;
     if(meta)headers['x-work-meta']=meta;
-    const signal=AbortSignal.timeout(30000);
-    const response=await net.fetch(url.toString(),{method,headers,cache:'no-store',credentials:'omit',body:value===undefined?undefined:typeof value==='string'?value:new Uint8Array(value),redirect:'error',signal}).catch(()=>{
-      throw new CommunityConnectionError(signal.aborted?'连接关卡社区超时，请重试。':'无法连接关卡社区，请检查网络后重试。');
-    });
-    if(!response.ok){const text=await limited(response,64*1024).catch(()=>Buffer.alloc(0));let error='社区请求失败（'+response.status+'）';try{error=JSON.parse(text.toString()).error??error;}catch{}throw new CommunityHttpError(response.status,String(error));}
-    return response;
+    return communityDeadline(communityTimeout,async signal=>{
+      let response:Response,bytes:Buffer;
+      try{
+        response=await net.fetch(url.toString(),{method,headers,cache:'no-store',credentials:'omit',body:value===undefined?undefined:typeof value==='string'?value:new Uint8Array(value),redirect:'error',signal});
+        bytes=await limited(response,response.ok?budget.limit??2_000_000:64*1024);
+      }catch(error){
+        signal.throwIfAborted();
+        if(error instanceof CommunityResponseTooLarge)throw error;
+        throw new CommunityConnectionError('无法连接关卡社区，请检查网络后重试。',{cause:error});
+      }
+      if(!response.ok){let error='社区请求失败（'+response.status+'）';try{error=JSON.parse(bytes.toString()).error??error;}catch{}throw new CommunityHttpError(response.status,String(error));}
+      return {headers:response.headers,bytes};
+    },budget.signal);
   }
-  async function request(route:string,method='GET',value?:string|Buffer,contentType?:string,meta?:string){
+  async function request(route:string,method='GET',value?:string|Buffer,contentType?:string,meta?:string,budget:RequestBudget={}){
     const ownCatalog=route.startsWith('/api/works?')&&new URLSearchParams(route.split('?',2)[1]).get('mine')==='1';
-    const session=ownCatalog||method!=='GET'&&!route.endsWith('/report')?await author.restore():author.current();
-    return send(route,method,value,contentType,meta,session?.token).catch(error=>{
-      if(error instanceof CommunityHttpError&&error.status===401)author.forget(session?.token);
-      throw error;
-    });
+    return communityDeadline(communityTimeout,async signal=>{
+      const session=ownCatalog||method!=='GET'&&!route.endsWith('/report')?await author.restore(signal):author.current();
+      return send(route,method,value,contentType,meta,session?.token,{...budget,signal}).catch(error=>{
+        if(error instanceof CommunityHttpError&&error.status===401)author.forget(session?.token);
+        throw error;
+      });
+    },budget.signal);
   }
   async function browse(route:string,refresh:boolean,localOnly:boolean){
     if(typeof route!=='string'||!/^\/api\/works(?:\?[^#]{0,1200}|\/[a-f0-9]{32})?$/.test(route))throw Error('社区浏览地址无效');
     const url=new URL(route,defaultCommunity);
     url.searchParams.sort();
     const list=url.pathname==='/api/works',mine=list&&url.searchParams.get('mine')==='1',endpoint=url.pathname+url.search;
-    const account=mine?await author.restore():undefined;
+    const account=mine?await communityDeadline(communityTimeout,signal=>author.restore(signal)):undefined;
     if(mine&&!account)throw Error('请登录后查看自己的作品');
     const key=account?JSON.stringify([account.username,endpoint]):endpoint;
     const cache=list?catalogs:details;
@@ -96,18 +110,18 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
       try{return {data:JSON.parse(bytes.toString()),stale:false};}catch{return null;}
     }
     const load=async()=>{
-      const bytes=await limited(await send(endpoint,'GET',undefined,undefined,undefined,account?.token),2_000_000);
+      const {bytes}=await send(endpoint,'GET',undefined,undefined,undefined,account?.token);
       const data=JSON.parse(bytes.toString());
       if(list?!Array.isArray(data?.works):data?.id!==url.pathname.split('/').at(-1))throw Error('无法识别社区返回的数据');
       return bytes;
     };
     const options={refresh,persist:!mine,canUseStale:offlineCacheAllowed};
     const entry=await cache.get(key,load,options);
-    try{return {data:JSON.parse(entry.bytes!.toString()),stale:entry.stale};}
+    try{return {data:JSON.parse(entry.bytes!.toString()),stale:entry.stale,checked:entry.checked};}
     catch{
       await cache.invalidate(key);
       const recovered=await cache.get(key,load,{...options,refresh:true});
-      return {data:JSON.parse(recovered.bytes!.toString()),stale:false};
+      return {data:JSON.parse(recovered.bytes!.toString()),stale:recovered.stale,checked:recovered.checked};
     }
   }
   async function invalidateWork(id:string){
@@ -160,7 +174,7 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
   }
   function storeDraft(host:ReturnType<ProjectWindows['homeOwner']>,bundle:{bytes:Buffer;manifest:ShareDraft['manifest']},source:WorldProject,selected?:string,images:{cover?:string;previews:Record<string,string>}={previews:{}}){
     if(bundle.manifest.scope==='group')throw Error('这关依赖其他关卡。请选择可独立游玩的单关，或发布原来的完整工程。');
-    const summary={manifest:bundle.manifest,size:bundle.bytes.length,...images};
+    const summary={id:randomUUID(),manifest:bundle.manifest,size:bundle.bytes.length,...images};
     if(!host.window.isDestroyed()){
       const id=hostId(host);
       if(!drafts.has(id))host.window.webContents.once('destroyed',()=>drafts.delete(id));
@@ -249,33 +263,36 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
   handle('authorRecovery',()=>author.recovery());
   handle('browse',(_host,route:string,refresh=false,localOnly=false)=>browse(route,refresh===true,localOnly===true));
   handle('request',async(_host,route,method,json)=>{
-    if(route==='/api/account/session'&&(!method||method==='GET'))return {username:(await author.restore())?.username??null};
+    if(route==='/api/account/session'&&(!method||method==='GET'))return {username:(await communityDeadline(communityTimeout,signal=>author.restore(signal)))?.username??null};
     if(route==='/api/account/logout'&&method==='POST')return author.logout();
     if(!route.startsWith('/api/works')||method&&method!=='GET'&&!/^\/api\/works\/[a-f0-9]{32}(?:\/report)?$/.test(route))throw Error('请使用专用社区操作入口');
     const reply=await request(route,method,json===undefined?undefined:JSON.stringify(json));
     if(method==='PATCH'||method==='DELETE')await invalidateWork(route.split('/')[3]);
-    return JSON.parse((await limited(reply,2_000_000)).toString());
+    return JSON.parse(reply.bytes.toString());
   });
   handle('image',async(_host,route:string,version?:string,refresh=false)=>{
     if(!/^\/api\/works\/[a-f0-9]{32}\/(?:cover|previews\/[\w.-]{1,100})$/.test(route)||version!==undefined&&(typeof version!=='string'||version.length>40))throw Error('无效的社区图片');
     const entry=await images.get(communityImageKey(route,version),async()=>{
-      const res=await send(route,'GET');
-      return res.headers.get('content-type')==='image/webp'?limited(res,coverLimit):null;
+      const res=await send(route,'GET',undefined,undefined,undefined,undefined,{limit:coverLimit});
+      return res.headers.get('content-type')==='image/webp'?res.bytes:null;
     },{refresh:refresh===true,canUseStale:offlineCacheAllowed});
     return entry.bytes?'data:image/webp;base64,'+entry.bytes.toString('base64'):null;
   });
   handle('download',async(_host,id,level)=>{
-    const metadata=await request('/api/works/'+id);
-    const work=JSON.parse((await limited(metadata,2_000_000)).toString()) as SharedWork;
-    if(work.localSample)throw Error('此样本可在桌面首页打开');
-    const isLevel=Boolean(level)||work.manifest.scope!=='project',source=community!.origin;
-    if(isLevel){
-      const cached=(await downloads.list()).find(row=>row.work===id&&row.source===source&&row.level===level&&row.version===work.version);
-      if(cached&&await downloads.bytes(cached.key).catch(()=>null))return {kind:'level',item:cached};
-    }
-    const res=await request(`/api/works/${id}/download${level?'?level='+encodeURIComponent(level):''}`);
-    const bytes=await limited(res,shareLimit);
-    if(res.headers.get('x-design-sha256')!==digest(bytes))throw Error('下载校验值不匹配');
+    const {work,source,isLevel,cached,bytes}=await communityDeadline(communityTimeout,async signal=>{
+      const metadata=await request('/api/works/'+id,'GET',undefined,undefined,undefined,{signal});
+      const work=JSON.parse(metadata.bytes.toString()) as SharedWork;
+      if(work.localSample)throw Error('此样本可在桌面首页打开');
+      const isLevel=Boolean(level)||work.manifest.scope!=='project',source=community!.origin;
+      if(isLevel){
+        const cached=(await downloads.list()).find(row=>row.work===id&&row.source===source&&row.level===level&&row.version===work.version);
+        if(cached&&await downloads.bytes(cached.key).catch(()=>null))return {work,source,isLevel,cached};
+      }
+      const res=await request(`/api/works/${id}/download${level?'?level='+encodeURIComponent(level):''}`,'GET',undefined,undefined,undefined,{limit:shareLimit,signal});
+      if(res.headers.get('x-design-sha256')!==digest(res.bytes))throw Error('下载校验值不匹配');
+      return {work,source,isLevel,bytes:res.bytes};
+    });
+    if(cached)return {kind:'level',item:cached};
     return isLevel?{kind:'level',item:await downloads.save(bytes,work,source,level)}:{kind:'project',project:await installShare(bytes)};
   });
   handle('downloadSave',async(host,key)=>{
@@ -344,6 +361,12 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     });
   });
   const hostId=(host:ReturnType<ProjectWindows['homeOwner']>)=>host.window.webContents.id;
+  function shareDraft(host:ReturnType<ProjectWindows['homeOwner']>,id?:string){
+    const draft=drafts.get(hostId(host));
+    if(!draft)throw Error('请先准备分享包');
+    if(id!==undefined&&id!==draft.id)throw Error('发布草稿已切换，请重新确认要发布的作品。');
+    return draft;
+  }
   handle('prepareShareFrom',async(host,choice:HomeShareSource)=>{
     if(choice.kind==='project'){
       const {document,row}=await library.inspect(choice.key);
@@ -368,8 +391,8 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     const thumbnail=(!choice.level||choice.level===(manifest.primaryId??manifest.levels[0].id))?await downloads.thumbnail(choice.key):null;
     return storeDraft(host,bundle,source,selected,{cover:thumbnail?.image,previews:{}});
   });
-  handle('shareDraft',host=>{const draft=drafts.get(hostId(host));if(!draft)return null;const {manifest,size,cover,previews}=draft;return {manifest,size,cover,previews};});
-  handle('shareClear',host=>drafts.delete(hostId(host)));
+  handle('shareDraft',host=>{const draft=drafts.get(hostId(host));if(!draft)return null;const {id,manifest,size,cover,previews}=draft;return {id,manifest,size,cover,previews};});
+  handle('shareClear',(host,id?:string)=>{const key=hostId(host);if(id===undefined||drafts.get(key)?.id===id)drafts.delete(key);});
   handle('publishedThumbnail',async(_host,id:string,version:string,level:string,image?:string)=>{
     if(!/^[a-f0-9]{32}$/.test(id)||typeof version!=='string'||version.length>40||typeof level!=='string'||level.length>100)throw Error('预览来源无效');
     const key=JSON.stringify(['generated',id,version,level]);
@@ -387,8 +410,8 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
       pending=async function(){
         const local=(await downloads.list()).find(row=>row.work===id&&row.version===version&&!row.level&&row.source===community?.origin);
         if(local){const bytes=await downloads.bytes(local.key).catch(()=>null);if(bytes)return parseShare(bytes);}
-        const reply=await request('/api/works/'+id+'/download');
-        const bytes=await limited(reply,shareLimit);
+        const reply=await request('/api/works/'+id+'/download','GET',undefined,undefined,undefined,{limit:shareLimit});
+        const {bytes}=reply;
         if(reply.headers.get('x-design-sha256')!==digest(bytes))throw Error('预览文件校验失败');
         return parseShare(bytes);
       }();
@@ -402,8 +425,8 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     const engine=service();
     return engine.preview(await engine.adaptProject(project));
   });
-  handle('sharePreview',async(host,level:string)=>{
-    const draft=drafts.get(hostId(host));if(!draft)throw Error('请选择要分享的工程');
+  handle('sharePreview',async(host,level:string,id?:string)=>{
+    const draft=shareDraft(host,id);
     if(!await backgroundGame())throw Error('请先连接 Steam 原游戏，再生成场景预览。');
     const engine=service();
     if(level==='world'){
@@ -415,8 +438,8 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     if(!scene)throw Error('该关卡不在工程中');
     return engine.preview(await engine.adaptProject(scene.project));
   });
-  handle('shareImage',(host,level:string,image:string)=>{
-    const draft=drafts.get(hostId(host));if(!draft)throw Error('请选择要分享的工程');
+  handle('shareImage',(host,level:string,image:string,id?:string)=>{
+    const draft=shareDraft(host,id);
     imageBytes(image);
     if(level==='world')draft.cover=image;
     else if(draft.manifest.levels.some(row=>row.id===level))draft.previews[level]=image;
@@ -428,8 +451,8 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     await request(route,'POST',imageBytes(image),'image/webp');
     await Promise.all([images.invalidate(communityImageKey(route,version)),invalidateWork(id)]);
   });
-  handle('shareSave',async host=>{
-    const draft=drafts.get(hostId(host));if(!draft)throw Error('请选择要分享的关卡或工程');
+  handle('shareSave',async(host,id?:string)=>{
+    const draft=shareDraft(host,id);
     const title=draft.manifest.levels.length===1?draft.manifest.levels[0].title:draft.manifest.title;
     const choice=await dialog.showSaveDialog(host.window,{title:'保存社区分享包',defaultPath:title.replace(/[<>:"/\\|?*]/g,'_')+shareExtension,filters:[{name:'沉星之序社区分享包',extensions:['gz']}]});
     if(choice.canceled||!choice.filePath)return null;
@@ -438,24 +461,40 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     return file;
   });
   handle('publish',async(host,input)=>{
-    const draft=drafts.get(hostId(host));if(!draft)throw Error('请先准备分享包');
+    const draft=shareDraft(host,input.draftId);
     const {title,description,version,id,images,tags}=input;
     const route=id?'/api/works/'+id:'/api/works';
     const metadata=JSON.stringify({title,description,version,tags});
     if(Buffer.byteLength(metadata)>4096)throw Error('作品说明过长');
-    const result=await request(route,id?'PATCH':'POST',draft.bytes,'application/gzip',Buffer.from(metadata).toString('base64'));
-    const work=JSON.parse((await limited(result,64*1024)).toString());
-    if(images)try{
-      if(draft.cover&&input.cover!==false)await request(`/api/works/${work.id}/cover`,'POST',imageBytes(draft.cover),'image/webp');
+    let work:(SharedWork&{warning?:string})|undefined;
+    try{await communityDeadline(communityTimeout,async signal=>{
+      const result=await request(route,id?'PATCH':'POST',draft.bytes,'application/gzip',Buffer.from(metadata).toString('base64'),{limit:64*1024,signal});
+      signal.throwIfAborted();
+      work=JSON.parse(result.bytes.toString()) as SharedWork;
+      if(!images)return;
+      const workId=work.id;
+      const upload=(suffix:string,image:string)=>request(`/api/works/${workId}/${suffix}`,'POST',imageBytes(image),'image/webp',undefined,{limit:64*1024,signal});
+      if(draft.cover&&input.cover!==false)await upload('cover',draft.cover);
       const selection=Array.isArray(input.previews)?new Set<string>(input.previews):null;
       const selected=draft.manifest.levels.filter(level=>draft.previews[level.id]&&(!selection||selection.has(level.id)));
       for(let start=0;start<selected.length;start+=4){
-        const results=await Promise.allSettled(selected.slice(start,start+4).map(level=>request(`/api/works/${work.id}/previews/${level.id}`,'POST',imageBytes(draft.previews[level.id]),'image/webp')));
-        if(results.some(result=>result.status==='rejected'))throw Error('部分关卡缩略图上传失败');
+        signal.throwIfAborted();
+        const results=await Promise.allSettled(selected.slice(start,start+4).map(level=>upload('previews/'+level.id,draft.previews[level.id])));
+        const failure=results.find(result=>result.status==='rejected');
+        if(failure)throw failure.reason;
       }
-    }catch{work.warning='作品已上架，部分预览图未上传，可在作品详情中补传。';}
+    });}catch(error){
+      if(!work){
+        if(error instanceof CommunityConnectionError)throw new CommunityConnectionError(error.message+' 重新发布前，请先刷新「我的发布」确认作品状态。',{cause:error});
+        throw error;
+      }
+      work.warning=error instanceof CommunityConnectionError
+        ?'作品已上架，部分预览图因网络问题未上传。连接 VPN 后可在详情中补传。'
+        :'作品已上架，部分预览图未上传，可在作品详情中补传。';
+    }
+    if(!work)throw Error('社区未确认发布结果');
     await invalidateWork(work.id);
-    drafts.delete(hostId(host));
+    if(drafts.get(hostId(host))===draft)drafts.delete(hostId(host));
     return work;
   });
   function editor(event:Electron.IpcMainInvokeEvent){

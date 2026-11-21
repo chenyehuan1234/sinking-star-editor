@@ -11,7 +11,7 @@ export interface SceneThumbnail {image:string;fallback?:boolean}
 export type ThumbnailSource='project'|'library';
 export type HomeShareSource={kind:ThumbnailSource;key:string;level?:string};
 export type CommunitySignIn={mode:'device';username:string}|{mode:'recover';username:string;recovery:string}|{mode:'legacy';username:string;password:string};
-export type CommunityRead={data:unknown;stale:boolean};
+export type CommunityRead={data:unknown;stale:boolean;checked?:true};
 export type LevelImportChoice = {kind:'download'|'file';key:string};
 export interface LevelImportSource {choice:LevelImportChoice;title:string;levels:HomeLevel[];primary:string}
 export interface HomeApi {
@@ -31,9 +31,9 @@ export interface HomeApi {
   useCover(image:string):Promise<void>;
   prepare(project:WorldProject, level:string|undefined, cover?:string):Promise<ShareDraft>;
   prepareShareFrom(source:HomeShareSource):Promise<ShareDraft>;
-  shareSave():Promise<string|null>;
+  shareSave(draftId?:string):Promise<string|null>;
   shareDraft():Promise<ShareDraft|null>;
-  shareClear():Promise<void>;
+  shareClear(draftId?:string):Promise<void>;
   onShareDraft(listener:()=>void):()=>void;
   authorSignIn(input:CommunitySignIn):Promise<{username:string}>;
   authorRecovery():Promise<string|null>;
@@ -53,11 +53,11 @@ export interface HomeApi {
   libraryAddScene(project:WorldProject,level:string):Promise<DownloadedLevel>;
   importPick():Promise<LevelImportSource|null>;
   importInto(project:WorldProject,choice:LevelImportChoice,folderId?:string):Promise<{project:WorldProject;primary:string;count:number}>;
-  publish(input:{title:string;description:string;version:string;tags?:string[];id?:string;images:boolean;cover?:boolean;previews?:string[]}):Promise<{id:string;warning?:string}>;
+  publish(input:{title:string;description:string;version:string;tags?:string[];id?:string;draftId?:string;images:boolean;cover?:boolean;previews?:string[]}):Promise<{id:string;warning?:string}>;
   publishedPreview(work:string,version:string,level:string):Promise<LevelView|null>;
   publishedThumbnail(work:string,version:string,level:string,image?:string):Promise<string|null>;
-  sharePreview(level:string):Promise<LevelView>;
-  shareImage(level:string,image:string):Promise<void>;
+  sharePreview(level:string,draftId?:string):Promise<LevelView>;
+  shareImage(level:string,image:string,draftId?:string):Promise<void>;
   replaceImage(work:string,level:string,image:string,version?:string):Promise<void>;
   onOpenScene(listener:(id:string)=>void):()=>void;
   startScene():Promise<{scene?:string;singleLevel:boolean}>;
