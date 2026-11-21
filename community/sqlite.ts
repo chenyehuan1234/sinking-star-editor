@@ -8,7 +8,7 @@ export function localDatabase(filename = ':memory:'): Database & {close(): void}
   sqlite.exec('BEGIN IMMEDIATE');
   try {
     const version=Number(sqlite.prepare('PRAGMA user_version').get()!.user_version);
-    const migrations=['0001_community.sql','0002_work_tags.sql'];
+    const migrations=['0001_community.sql','0002_work_tags.sql','0003_full_images.sql'];
     for(let index=version;index<migrations.length;index++){
       sqlite.exec(readFileSync(new URL('./migrations/'+migrations[index], import.meta.url), 'utf8'));
       sqlite.exec('PRAGMA user_version = '+(index+1));

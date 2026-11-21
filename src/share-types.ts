@@ -11,14 +11,21 @@ export interface SharedWork {
   cover: boolean; previews: string[]; size: number;
   tags?:string[];
   localSample?:boolean;
+  scenePreview?:boolean;
+  fullImagePreview?:boolean;
 }
 export interface ShareDraft {
-  id: string; manifest: ShareManifest; size: number; cover?: string; previews: Record<string, string>;
+  id: string; manifest: ShareManifest; size: number; cover?: string; previews: Record<string, string>; fullImages?:Record<string,string>;
 }
+export type CommunityPreviewSource='scene'|'standalone'|'stage'|'local';
+export interface CommunityImage {thumbnail:string;full?:string}
 export const shareExtension = '.sstar-share.gz';
 export const shareLimit = 5 * 1024 * 1024;
 export const shareExpandedLimit = 64 * 1024 * 1024;
 export const coverLimit = 180 * 1024;
+export const fullImageLimit = 1024 * 1024;
+export const fullImageSize = {width:1920,height:1080} as const;
+export const scenePreviewLimit = 512 * 1024;
 export const previewImagesLimit = 16 * 1024 * 1024;
 export const tagLimit = 6;
 export const tagLength = 24;

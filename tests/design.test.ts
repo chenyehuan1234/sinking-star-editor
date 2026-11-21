@@ -12,3 +12,23 @@ test('v1/v2 工程迁移到 v3 保留关卡与相机',{skip:!available},()=>{con
 
 test('水域复制旋转重排格子，自动孔洞转换为独立水格',{skip:!available},()=>{const w=fixture(),p=w.levels[0].project,f=applyProject(pkg!,p,c!),water={id:900*0x100000+50,type:'Ocean_Map',typeIndex:f.types.indexOf('Ocean_Map'),diff:Buffer.from([0xfd])};const cells=[1,0,2,1,0,1],r=c!.patch(water,{'position.x':0,'position.y':0,'position.z':0,'grid.corner.x':2,'grid.corner.y':3,'grid.corner.z':0,'grid.squares_x':2,'grid.squares_y':3,'grid.num_squares':6,ocean_values:cells,detect_holes:false});f.records.push(r);const bundle=captureRegion(c!,f,p,{ids:[r.id]},projectSources(p)),out={...f,records:[]};applyStamp(pkg!,c!,out,{kind:'stamp',id:900*0x100000+100,bundle,position:[10,10,0],yaw:90});const result=out.records[0];const waterResult=waterView(c!,out,result);assert.equal(waterResult.width,3);assert.equal(waterResult.height,2);assert.equal(waterResult.x,5);assert.equal(waterResult.y,12);assert.equal(c!.get(result,'grid.corner.x'),2);assert.equal(c!.get(result,'grid.corner.y'),3);assert.deepEqual((c!.get(result,'ocean_values')as number[]).slice().sort(),cells.slice().sort());const proto=f.records.find(r=>r.type==='Wall_Set')!,hole=c!.patch({...proto,id:900*0x100000+51},{kind:1,ocean_hole_id:r.id,'position.x':2,'position.y':3,'position.z':0,'wall_data.corner.x':0,'wall_data.corner.y':0,'wall_data.corner.z':0,'wall_data.dimensions.x':1,'wall_data.dimensions.y':1,'wall_data.dimensions.z':1,'wall_data.bits.count':1,'wall_data.bits.slots':['1']});f.records=f.records.filter(v=>v.id!==r.id);f.records.push(c!.patch(r,{detect_holes:true}),hole);const holes=captureRegion(c!,f,p,{ids:[r.id]},projectSources(p)),raw={...holes.records[0],typeIndex:water.typeIndex,diff:Buffer.from(holes.records[0].diff,'base64')};assert.equal(c!.get(raw,'detect_holes'),false);assert.deepEqual(c!.get(raw,'ocean_values'),[0,1,3,1,1,1]); /* Native detect_holes sets wet, then clears only wet on linked hole cells. */});
 test('恢复历史各自限额，时间严格递增，错误记录不能跨工程读取',async()=>{const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'sstar-retention-'));try{const store=new DesignStore(dir),w=fixture();for(let i=0;i<23;i++){const x=structuredClone(w);x.name='自动 '+i;await store.saveRecovery(x);}for(let i=0;i<12;i++){const x=structuredClone(w);x.name='正式 '+i;await store.saveRecovery(x,undefined,'manual');}const rows=await store.recoveries(w);assert.equal(rows.filter(r=>r.kind==='auto').length,20);assert.equal(rows.filter(r=>r.kind==='manual').length,10);assert.equal(new Set(rows.map(r=>r.at)).size,30);await assert.rejects(()=>store.restore(w,'../file'));const b=structuredClone(w);b.id='111111111111';await assert.rejects(()=>store.restore(b,rows[0].id));}finally{await fsp.rm(dir,{recursive:true,force:true});}});
+
+test('正式保存排在在途自动保存之后，只提示之后发生的不同编辑',async()=>{
+ const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'sstar-recovery-order-'));
+ const world=fixture(),file=path.join(dir,'design.json'),store=new DesignStore(dir);
+ const old={...world,name:'在途的草稿'};
+ await Promise.all([store.saveRecovery(old,file),store.commitProject(world,file,()=>fsp.writeFile(file,JSON.stringify(world)))]);
+ const reopened=new DesignStore(dir);
+ assert.equal((await reopened.recoveryStatus(world,file)).length,1);
+ assert.ok(!(await reopened.recoveryStatus(world,file)).some(row=>row.recoverable));
+ await reopened.saveRecovery({...world,sourceBuild:'new-build',sourceHash:'a'.repeat(64)},file);
+ assert.ok(!(await reopened.recoveryStatus(world,file)).some(row=>row.recoverable));
+ const edited={...world,name:'新改动'};
+ await reopened.saveRecovery(edited,file);
+ assert.ok((await reopened.recoveryStatus(world,file))[0].recoverable);
+ await assert.rejects(()=>reopened.commitProject(edited,file,async()=>{throw Error('文件写入失败');}),/文件写入失败/);
+ assert.ok((await reopened.recoveryStatus(world,file))[0].recoverable);
+ assert.equal(JSON.parse(await fsp.readFile(file,'utf8')).name,world.name);
+ await reopened.commitProject(edited,file,()=>fsp.writeFile(file,JSON.stringify(edited)));
+ assert.ok(!(await reopened.recoveryStatus(edited,file)).some(row=>row.recoverable));
+})

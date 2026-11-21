@@ -5,6 +5,7 @@ import {newWorld, validateWorld} from './world';
 import {validateNativeWorld} from './native-world';
 import {validateRegionTransfer} from './regions';
 import {exportWorld} from './export-scope';
+import {nativeScene} from '../native-project';
 import type {EditorProject, WorldLevel, WorldProject} from '../shared';
 import type {NativeWorldProject} from '../v08-types';
 import {shareExpandedLimit, shareLimit, type ShareManifest, type SharedLevel} from '../share-types';
@@ -92,12 +93,19 @@ export function encodeShare(design: ShareDesign, scope: ShareManifest['scope'], 
   return {manifest,bytes};
 }
 
-export function parseShare(bytes: Buffer) {
+function readSharePayload(bytes: Buffer, maxOutputLength=shareExpandedLimit) {
   if (bytes.length < 20 || bytes.length > shareLimit) throw Error('分享文件大小无效，单文件上限为 5 MiB');
   let payload: {manifest: ShareManifest; design: unknown};
-  try { payload = JSON.parse(gunzipSync(bytes,{maxOutputLength:shareExpandedLimit}).toString('utf8')); }
-  catch { throw Error('分享包无法解压，格式无效或超过 64 MiB'); }
-  const manifest = payload?.manifest, design = payload?.design;
+  try { payload = JSON.parse(gunzipSync(bytes,{maxOutputLength}).toString('utf8')); }
+  catch(error) {
+    if(maxOutputLength<shareExpandedLimit&&(error as NodeJS.ErrnoException).code==='ERR_BUFFER_TOO_LARGE')throw error;
+    throw Error('分享包无法解压，格式无效或超过 64 MiB');
+  }
+  return payload;
+}
+
+export function parseShare(bytes: Buffer) {
+  const payload=readSharePayload(bytes),manifest=payload?.manifest,design=payload?.design;
   if(payload&&Object.keys(payload).some(key=>key!=='manifest'&&key!=='design'))throw Error('分享包包含额外数据');
   validateShareDesign(design);
   if (manifest?.format !== 'sstar-share' || manifest.version !== 1 || !['level','group','project'].includes(manifest.scope) ||
@@ -167,4 +175,19 @@ export function shareLevel(design: ShareDesign, manifest: ShareManifest, id: str
     return encodeShare(project,'level',manifest.editorVersion,levels);
   }
   return encodeShare(selected,'group',manifest.editorVersion,levels,id);
+}
+
+export function previewScene(design:ShareDesign,manifest:ShareManifest,id:string):EditorProject|undefined{
+  if(!manifest.levels.some(level=>level.id===id))return undefined;
+  if(design.format==='sinking-star-project')return design;
+  if(design.format==='sinking-star-native-world')return nativeScene(design,id);
+  return design.levels.find(level=>level.id===id)?.project;
+}
+
+/** Immutable publication bytes have already passed parseShare at upload.
+ * Only validate and encode the selected scenario on this read path. */
+export function publishedSceneBytes(bytes:Buffer,manifest:ShareManifest,id:string,maxOutputLength:number){
+  const {design}=readSharePayload(bytes,maxOutputLength);
+  const scene=previewScene(design as ShareDesign,manifest,id);
+  return scene?encodeShare(scene,'level',manifest.editorVersion).bytes:undefined;
 }

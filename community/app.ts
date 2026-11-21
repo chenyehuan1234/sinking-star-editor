@@ -1,8 +1,8 @@
 import {randomBytes, scrypt, timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
-import {digest,groupedManifest,parseShare,shareLevel} from '../src/core/share';
+import {digest,groupedManifest,parseShare,publishedSceneBytes,shareLevel} from '../src/core/share';
 import {searchKey} from '../src/level-catalog';
-import {coverLimit,previewImagesLimit,shareExtension,shareLimit,tagLength,tagLimit,type ShareManifest,type SharedWork} from '../src/share-types';
+import {coverLimit,fullImageLimit,fullImageSize,previewImagesLimit,scenePreviewLimit,shareExtension,shareLimit,tagLength,tagLimit,type ShareManifest,type SharedWork} from '../src/share-types';
 import type {Database, Objects, Statement} from './database';
 
 const derive=promisify(scrypt);
@@ -35,22 +35,23 @@ async function body(request:Request,maximum:number){
   return Buffer.concat(chunks,size);
 }
 async function jsonBody(request:Request){try{return JSON.parse((await body(request,4096)).toString());}catch(e){if(e instanceof HttpError)throw e;throw inputError('提交信息格式无效');}}
-function checkImage(bytes:Buffer){
+function checkImage(bytes:Buffer,full=false){
   if(bytes.length<30||bytes.toString('ascii',0,4)!=='RIFF'||bytes.readUInt32LE(4)!==bytes.length-8||bytes.toString('ascii',8,12)!=='WEBP')throw inputError('请选择 WebP 图片');
   const type=bytes.toString('ascii',12,16);let width=0,height=0;
   if(type==='VP8X'&&!(bytes[20]&2)){width=1+bytes.readUIntLE(24,3);height=1+bytes.readUIntLE(27,3);}
   if(type==='VP8 '&&bytes.readUIntLE(23,3)===0x2a019d){width=bytes.readUInt16LE(26)&0x3fff;height=bytes.readUInt16LE(28)&0x3fff;}
   if(type==='VP8L'&&bytes[20]===0x2f){const bits=bytes.readUInt32LE(21);width=1+(bits&0x3fff);height=1+((bits>>>14)&0x3fff);}
-  if(width<1||height<1||width>640||height>360)throw inputError('图片尺寸上限为 640 × 360');
+  const max=full?fullImageSize:{width:640,height:360};
+  if(width<1||height<1||width>max.width||height>max.height)throw inputError(`图片尺寸上限为 ${max.width} × ${max.height}`);
 }
-const workSelect=`SELECT w.id,w.account,w.created,w.updated,w.active,r.id AS release,r.title,r.description,r.version,r.manifest,r.bytes,r.cover,r.previews,r.tags,a.username
+const workSelect=`SELECT w.id,w.account,w.created,w.updated,w.active,r.id AS release,r.title,r.description,r.version,r.manifest,r.bytes,r.cover,r.previews,r.full_images,r.tags,a.username
   FROM works w JOIN releases r ON r.id=w.latest JOIN accounts a ON a.id=w.account`;
-type WorkRecord={id:string;account:string;created:string;updated:string;active:number;release:string;title:string;description:string;version:string;manifest:string;bytes:number;cover:string|null;previews:string;tags:string;username:string};
-type WorkRow=Omit<WorkRecord,'manifest'|'previews'|'tags'>&{manifest:ShareManifest;previews:Record<string,string>;tags:string[]};
-const readWork=(row:WorkRecord):WorkRow=>({...row,manifest:JSON.parse(row.manifest),previews:JSON.parse(row.previews),tags:JSON.parse(row.tags)});
+type WorkRecord={id:string;account:string;created:string;updated:string;active:number;release:string;title:string;description:string;version:string;manifest:string;bytes:number;cover:string|null;previews:string;full_images:string;tags:string;username:string};
+type WorkRow=Omit<WorkRecord,'manifest'|'previews'|'full_images'|'tags'>&{manifest:ShareManifest;previews:Record<string,string>;full_images:Record<string,string>;tags:string[]};
+const readWork=(row:WorkRecord):WorkRow=>({...row,manifest:JSON.parse(row.manifest),previews:JSON.parse(row.previews),full_images:JSON.parse(row.full_images),tags:JSON.parse(row.tags)});
 function publicWork(row:WorkRow,account?:string):SharedWork {
   return {id:row.id,title:row.title,description:row.description,author:row.username,owner:row.account===account,version:row.version,
-    updated:new Date(row.updated).toISOString(),created:new Date(row.created).toISOString(),manifest:row.manifest,cover:Boolean(row.cover),previews:Object.keys(row.previews),tags:row.tags,size:row.bytes};
+    updated:new Date(row.updated).toISOString(),created:new Date(row.created).toISOString(),manifest:row.manifest,cover:Boolean(row.cover),previews:Object.keys(row.previews),tags:row.tags,size:row.bytes,scenePreview:true,fullImagePreview:true};
 }
 async function takeQuota(db:Database,key:string,amount:number,limit:number){
   const updated=await db.query(`INSERT INTO limits (key,value) SELECT ?,? WHERE ?<=?
@@ -175,37 +176,53 @@ export function community(database:Database,objects:Objects){
     });
     await writeObject(key,bytes,()=>database.batch(statements),
       async()=>Boolean((await database.query('SELECT id FROM releases WHERE id=?',[release])).length));
-    return json({id},existing?200:201);
+    return json({id,fullImagePreview:true},existing?200:201);
   }
   async function thumbnail(row:WorkRow,level:string|undefined,request:Request,owner?:string){
     const old=level?(Object.hasOwn(row.previews,level)?row.previews[level]:null):row.cover;
+    const slot=level?'level:'+level:'cover',oldFull=row.full_images[slot]??null;
+    const full=new URL(request.url).searchParams.get('size')==='full';
     if(request.method==='GET'){
-      if(!old)throw inputError('该作品没有预览图',404);
-      const bytes=await objects.get(old);if(!bytes)throw inputError('预览图丢失',404);
+      const key=full?oldFull??old:old;
+      if(!key)throw inputError('该作品没有预览图',404);
+      const bytes=await objects.get(key);if(!bytes)throw inputError('预览图丢失',404);
       await takeQuota(database,'transfer:'+month(),bytes.length,maxTransfer);
       return new Response(new Uint8Array(bytes),{headers:{'content-type':'image/webp','cache-control':'public,max-age=120','x-content-type-options':'nosniff'}});
     }
     if(request.method!=='POST'||owner!==row.account)throw inputError('只有作者可以修改预览图',403);
     if(level&&!row.manifest.levels.some(l=>l.id===level))throw inputError('找不到此关卡',404);
-    const bytes=await body(request,coverLimit);checkImage(bytes);
-    const key=`image/${row.id}/${row.release}/${random()}`;
-    const previous=old?await objects.size(old)??0:0;
-    const previewPath=level?'$.'+JSON.stringify(level):'';
+    const bodyBytes=await body(request,full?4+coverLimit+fullImageLimit:coverLimit);
+    let bytes=bodyBytes,large:Buffer|undefined;
+    if(full){
+      if(bodyBytes.length<4)throw inputError('高清图片数据无效');
+      const smallSize=bodyBytes.readUInt32BE(0);
+      if(!smallSize||smallSize>coverLimit||smallSize+4>=bodyBytes.length||bodyBytes.length-4-smallSize>fullImageLimit)throw inputError('高清图片大小无效');
+      bytes=bodyBytes.subarray(4,4+smallSize);
+      large=bodyBytes.subarray(4+smallSize);
+      checkImage(large,true);
+    }
+    checkImage(bytes);
+    const key=`image/${row.id}/${row.release}/${random()}`,largeKey=large?key+'-full':null;
+    const previous=await Promise.all([old,oldFull].map(async item=>item?await objects.size(item)??0:0));
+    const delta=bytes.length+(large?.length??0)-previous[0]-previous[1];
+    const previewPath=level?'$.'+JSON.stringify(level):'',fullPath='$.'+JSON.stringify(slot);
     const update=level?'previews=json_set(previews,?,?)':'cover=?';
     const unchanged=level?'json_extract(previews,?) IS ?':'cover IS ?';
-    await writeObject(key,bytes,async()=>{
-      const changed=await database.query(`UPDATE releases SET ${update},image_bytes=image_bytes+?
-        WHERE id=? AND ${unchanged} AND image_bytes+?<=? AND EXISTS (
+    const commit=async()=>{
+      const changed=await database.query(`UPDATE releases SET ${update},full_images=${largeKey?'json_set(full_images,?,?)':'json_remove(full_images,?)'},image_bytes=image_bytes+?
+        WHERE id=? AND ${unchanged} AND json_extract(full_images,?) IS ? AND image_bytes+?<=? AND EXISTS (
           SELECT 1 FROM works WHERE id=? AND latest=? AND active=1
         ) RETURNING id`,
-        [...level?[previewPath,key]:[key],bytes.length-previous,row.release,
-          ...level?[previewPath,old??null]:[row.cover],bytes.length-previous,previewImagesLimit,row.id,row.release]);
+        [...level?[previewPath,key]:[key],...largeKey?[fullPath,largeKey]:[fullPath],delta,row.release,
+          ...level?[previewPath,old??null]:[row.cover],fullPath,oldFull,delta,previewImagesLimit,row.id,row.release]);
       if(!changed.length)throw inputError('预览图超过作品的容量限制，或作品已修改，请刷新后再试',409);
-    },async()=>{
-      const [release]=await database.query<{cover:string|null;previews:string}>('SELECT cover,previews FROM releases WHERE id=?',[row.release]);
-      return Boolean(release&&(release.cover===key||Object.values(JSON.parse(release.previews)).includes(key)));
-    });
-    if(old)await objects.remove(old).catch(()=>{});
+    };
+    const references=async(item:string)=>{
+      const [release]=await database.query<{cover:string|null;previews:string;full_images:string}>('SELECT cover,previews,full_images FROM releases WHERE id=?',[row.release]);
+      return Boolean(release&&(release.cover===item||Object.values(JSON.parse(release.previews)).includes(item)||Object.values(JSON.parse(release.full_images)).includes(item)));
+    };
+    await writeObject(key,bytes,large&&largeKey?()=>writeObject(largeKey,large!,commit,()=>references(largeKey)):commit,()=>references(key));
+    await Promise.all([old,oldFull].map(async item=>{if(item)await objects.remove(item).catch(()=>{});}));
     return json({ok:true});
   }
   return async (request:Request,ip='local'):Promise<Response>=>{
@@ -262,13 +279,28 @@ export function community(database:Database,objects:Objects){
       if(action==='download'&&method==='GET'){
         const stored=await objects.get(`design/${id}/${row.release}`);if(!stored)throw inputError('作品文件暂时不可用',503);
         const selected=url.searchParams.get('level');let bytes=stored,title=row.title;
-        if(selected){
+        const preview=url.searchParams.get('preview')==='1';
+        if(preview){
+          if(!selected||!row.manifest.levels.some(level=>level.id===selected))throw inputError('找不到要预览的关卡',404);
+          if(row.manifest.scope!=='level'){
+            // Bound the work for an online preview, including concatenated gzip streams.
+            const expandedLimit=4*1024*1024;
+            const tooLarge=()=>inputError('工程预览数据过大，可下载后在关卡库预览',413);
+            if(stored.readUInt32LE(stored.length-4)>expandedLimit)throw tooLarge();
+            let scene;
+            try{scene=publishedSceneBytes(stored,row.manifest,selected,expandedLimit);}
+            catch(error){if((error as NodeJS.ErrnoException).code==='ERR_BUFFER_TOO_LARGE')throw tooLarge();throw error;}
+            if(!scene)throw inputError('无法读取此关的预览',404);
+            bytes=scene;
+          }
+          if(bytes.length>scenePreviewLimit)throw inputError('关卡预览超过 512 KiB，可下载后在关卡库预览',413);
+        }else if(selected){
           const level=row.manifest.levels.find(l=>l.id===selected);if(!level)throw inputError('找不到此关卡',404);
           if(row.manifest.scope!=='level')bytes=shareLevel(parseShare(stored).design,row.manifest,selected).bytes;
           title=level.title;
         }
         await takeQuota(database,'transfer:'+month(),bytes.length,maxTransfer);
-        return new Response(new Uint8Array(bytes),{headers:{'content-type':'application/gzip','cache-control':'no-store','x-content-type-options':'nosniff','x-design-sha256':digest(bytes),'content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(title.replace(/[<>:"/\\|?*]/g,'_')+shareExtension)}`}});
+        return new Response(new Uint8Array(bytes),{headers:{'content-type':'application/gzip','cache-control':'no-store','x-content-type-options':'nosniff','x-design-sha256':digest(bytes),...(preview?{'x-sstar-scene-preview':'1','x-sstar-work-content':row.manifest.sha256}:{}),'content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(title.replace(/[<>:"/\\|?*]/g,'_')+shareExtension)}`}});
       }
       throw inputError('找不到请求入口',404);
     }catch(e){

@@ -1,4 +1,4 @@
-import {app,BrowserWindow,session,WebContentsView} from 'electron';
+import {app,BrowserWindow,dialog,session,WebContentsView} from 'electron';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -87,11 +87,82 @@ app.whenReady().then(async()=>{
   assert.ok(Date.now()-publishStarted<12_500,'发布应在约 10 秒超时');
   assert.ok(await home('window.workbenchHome.shareDraft()'));
   pendingPublish.stop();
+  await clickHome('刷新社区');
+  await until(()=>home('!document.querySelector("[aria-label=发布作品] [role=alert]")&&document.querySelector("[aria-label=发布作品] [role=status]")?.textContent.includes("重新发布前")'),'刷新恢复后清除发布网络错误并保留草稿检查提示');
   console.log('发布卡住时可切换工程、关卡库和社区，约十秒超时并保留草稿');
   await clickHome('确认发布');
   await until(()=>home('Boolean(document.querySelector(".hub-work h2"))'),'在桌面端发布并进入作品详情');
   assert.equal(await home('document.querySelector(".hub-work h2").textContent'),levels[0].title);
   await until(()=>home('Boolean(document.querySelector(".hub-detail-cover img")?.naturalWidth)'),'无自定义封面时使用场景缩略图');
+  let sceneReads=0,fullImageReads=0;
+  network.onBeforeRequest({urls:[address+'/api/*']},(request,done)=>{
+    const url=new URL(request.url);
+    if(url.searchParams.get('preview')==='1')sceneReads++;
+    if(url.searchParams.get('size')==='full')fullImageReads++;
+    done({});
+  });
+  assert.equal(sceneReads,0);
+  assert.equal(fullImageReads,0);
+  await home('document.querySelector(".hub-detail-cover .hub-cover-open").click()');
+  await until(()=>home('Boolean(document.querySelector(".hub-image-stage img")?.naturalWidth)'),'大图预览');
+  await until(()=>fullImageReads===1,'打开大图后才请求高清图片');
+  await home(`document.querySelector('.hub-image-stage').dispatchEvent(new WheelEvent('wheel',{deltaY:-300,cancelable:true}))`);
+  await until(()=>home('!document.querySelector(".hub-image-stage img").style.transform.endsWith("scale(1)")'),'滚轮放大图片');
+  await clickHome('适应窗口');
+  assert.match(await home('document.querySelector(".hub-image-stage img").style.transform'),/scale\(1\)$/);
+  const originalImageDialog=dialog.showSaveDialog,imageFile=path.join(output,'保存的关卡预览.webp');
+  dialog.showSaveDialog=async()=>({canceled:false,filePath:imageFile});
+  try{
+    await clickHome('下载图片','dialog button');
+    const savedImage=await until(()=>fs.readFile(imageFile),'下载实际 WebP 文件');
+    assert.equal(savedImage.toString('ascii',0,4),'RIFF');
+    assert.equal(savedImage.toString('ascii',8,12),'WEBP');
+  }finally{dialog.showSaveDialog=originalImageDialog;}
+  await clickHome('关闭','dialog button');
+  const previewIcon='button[title="3D 预览"][aria-haspopup="dialog"]';
+  const openPreview=async(selector:string)=>{
+    const button='document.querySelector('+JSON.stringify(selector+' '+previewIcon)+')';
+    await until(()=>home('Boolean('+button+')'),'3D 图标');
+    assert.equal(await home(button+'.textContent.trim()'),'','3D 入口只显示图标');
+    await home(button+'.click()');
+  };
+  await openPreview('.hub-work');
+  await until(()=>home('Boolean(document.querySelector("dialog[open] .hub-live-stage:not([hidden]) canvas"))'),'社区实时 3D 弹窗');
+  assert.equal(sceneReads,1);
+  await home(`document.querySelector('.hub-live-stage canvas').dispatchEvent(new WheelEvent('wheel',{deltaY:-80,cancelable:true}))`);
+  const point=await home(`(() => {const r=document.querySelector('.hub-live-stage canvas').getBoundingClientRect();return [Math.round(r.x+r.width/2),Math.round(r.y+r.height/2)];})()`);
+  const [x,y]=point;
+  window.webContents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1});
+  window.webContents.sendInputEvent({type:'mouseMove',x:x+30,y:y+15,modifiers:['leftbuttondown']});
+  window.webContents.sendInputEvent({type:'mouseUp',x:x+30,y:y+15,button:'left'});
+  await clickHome('重置视角');
+  await delay(180);
+  const beforePan=await window.webContents.capturePage();
+  window.webContents.sendInputEvent({type:'mouseDown',x,y,button:'middle',clickCount:1});
+  window.webContents.sendInputEvent({type:'mouseMove',x:x+60,y:y+36,modifiers:['middlebuttondown']});
+  window.webContents.sendInputEvent({type:'mouseUp',x:x+60,y:y+36,button:'middle'});
+  await delay(200);
+  const afterPan=await window.webContents.capturePage();
+  const imageBounds=beforePan.getSize();
+  const center={x:Math.floor(imageBounds.width*.37),y:Math.floor(imageBounds.height*.27),width:Math.floor(imageBounds.width*.32),height:Math.floor(imageBounds.height*.38)};
+  const firstFrame=beforePan.crop(center).toBitmap();
+  const distance=(frame:Buffer)=>frame.reduce((sum,value,index)=>sum+Math.abs(value-firstFrame[index]),0)/frame.length;
+  const panDistance=distance(afterPan.crop(center).toBitmap());
+  assert.ok(panDistance>1,'中键拖动移动实际画面');
+  await clickHome('重置视角');
+  await delay(180);
+  const afterReset=await window.webContents.capturePage();
+  assert.ok(distance(afterReset.crop(center).toBitmap())<panDistance*.2,'视角复位后画面恢复');
+  await clickHome('关闭','dialog[open] button');
+  assert.equal(await home('document.querySelector(".hub-live-stage canvas")===null'),true);
+  await openPreview('.hub-work');
+  await until(()=>home('Boolean(document.querySelector(".hub-live-stage:not([hidden]) canvas"))'),'关卡预览缓存命中');
+  assert.equal(sceneReads,1);
+  window.webContents.sendInputEvent({type:'mouseDown',x:4,y:50,button:'left',clickCount:1});
+  window.webContents.sendInputEvent({type:'mouseUp',x:4,y:50,button:'left',clickCount:1});
+  await until(()=>home('document.querySelector(".hub-live-stage canvas")===null'),'点击窗口外关闭 3D');
+  network.onBeforeRequest(null);
+  console.log('按需高清、图片放大和复位、图标打开 3D 弹窗、旋转缩放中键平移、复位及窗外关闭通过，重复预览未再联网');
   let reads=0;
   const directoryButtons='[aria-label="社区浏览类型"] button';
   network.onBeforeRequest({urls:[address+'/api/*']},(request,done)=>{
@@ -152,10 +223,17 @@ app.whenReady().then(async()=>{
   await clickHome('我的发布','.hub-nav button');
   await until(()=>home('document.querySelector(".hub-main:not([hidden]) [role=alert]")?.textContent.includes("超时")'),'返回社区后可见下载超时');
   pendingDownload.stop();
+  await clickHome('刷新社区');
+  await until(()=>home('!document.querySelector(".hub-main:not([hidden]) [role=alert]")&&!Array.from(document.querySelectorAll(".hub-main:not([hidden]) [role=status]")).some(node=>node.textContent.includes("VPN")||node.textContent.includes("正在重新连接"))'),'刷新恢复后清除下载错误和离线提示');
   console.log('下载卡住时仍可使用主页，约十秒超时且回到社区可重试');
   await clickHome('下载关卡');
   await clickHome('查看本机关卡库');
   await until(()=>home('Boolean(document.querySelector(".hub-download-row .hub-publish"))'),'游客下载到本机关卡库');
+  await openPreview('.hub-download-row');
+  await until(()=>home('Boolean(document.querySelector("dialog[open] .hub-live-stage:not([hidden]) canvas"))'),'关卡库实时 3D 弹窗');
+  await capture(window,'desktop-library-3d');
+  await clickHome('关闭','dialog[open] button');
+  assert.equal(await home('document.querySelector(".hub-live-stage canvas")===null'),true);
   const publishLocal=await home('document.querySelector(".hub-download-row .hub-publish").getAttribute("aria-label")');
   await clickHome(publishLocal,'.hub-download-row .hub-publish');
   await until(()=>home('Boolean(document.querySelector("[aria-label=\\"发布作品\\"]"))'),'关卡库发布入口');
@@ -183,6 +261,25 @@ app.whenReady().then(async()=>{
   const run=(code:string)=>editor.executeJavaScript(code,true);
   await until(()=>run('document.querySelector(".s-scene-breadcrumb")?.textContent'),'指定关卡打开');
   assert.ok(scene.includes(levels[0].title));
+  const original=await run('window.editor.worldStartup()');
+  const changed={...original,name:'原址保存验收'};
+  const originalDialog=dialog.showSaveDialog;
+  let dialogCount=0;
+  dialog.showSaveDialog=(async()=>{dialogCount++;return {canceled:true,filePath:""};}) as typeof originalDialog;
+  try{
+    const save=(world:object,saveAs=false)=>run('window.editor.worldSave('+JSON.stringify(world)+','+saveAs+')');
+    const saved=await save(changed);
+    assert.equal(path.basename(saved),'fixture.sstar-world.json');
+    assert.equal(dialogCount,0);
+    assert.equal(JSON.parse(await fs.readFile(saved,'utf8')).name,changed.name);
+    assert.equal(JSON.parse(await fs.readFile(saved+'.previous.bak','utf8')).sourceBuild,'previous-qa-build');
+    assert.equal(await save(changed,true),null);
+    assert.equal(dialogCount,1);
+    assert.equal(await save(original),saved);
+    assert.ok((await run('window.editor.recoveryList('+JSON.stringify(original)+')')).every((row:{recoverable?:boolean})=>!row.recoverable));
+  }finally{dialog.showSaveDialog=originalDialog;}
+  console.log('跨 Build 工程保留原址、旧文件备份、取消另存、连续保存均已核对');
+
   const tabs=await home('window.projectTabs.state()');
   await home('window.projectTabs.action("home")');
   assert.deepEqual((await home('window.projectTabs.state()')).tabs.map((r:{id:string})=>r.id),tabs.tabs.map((r:{id:string})=>r.id));
@@ -310,6 +407,47 @@ app.whenReady().then(async()=>{
   await until(()=>home('!Array.from(document.querySelectorAll("[role=status]")).some(node=>node.textContent.includes("VPN"))'),'刷新成功后清除离线状态');
   await clickHome('我的工程','.hub-nav button');
   assert.equal(await home('document.querySelector(".hub-community-offline")===null'),true);
+  const fixtureFolder=path.resolve(output,'workspace','projects');
+  const solo={...original.levels[0].project,title:'跨版本单关验收'};
+  const native={...await run('window.editor.nativeCreate()'),name:'跨版本原版世界验收'};
+  const nativeLevels=await run('window.editor.nativeIndex()');
+  const sceneId=nativeLevels.levels.find((level:string)=>level!=='overworld');
+  const examples=[
+    {title:solo.title,scene:undefined,file:'standalone.sstar.json',design:solo,scope:'sinking-star-project'},
+    {title:native.name,scene:sceneId,file:'native.sstar-native-world.json',design:native,scope:'sinking-star-native-world'},
+  ];
+  for(const row of examples){
+    const file=path.join(fixtureFolder,row.file);
+    await fs.writeFile(file,JSON.stringify(row.design,(key,value)=>key==='sourceBuild'?'previous-qa-build':value));
+    const item=(await home('window.workbenchHome.list()')).find((item:{name:string})=>item.name===row.title);
+    assert.ok(item,'可在首页找到 '+row.title);
+    await home('window.workbenchHome.open('+JSON.stringify(item.key)+(row.scene?','+JSON.stringify(row.scene):'')+')');
+    const tab=await until(async()=>{
+      const state=await home('window.projectTabs.state()');
+      return state.tabs.some((tab:{id:string;title:string;busy:boolean})=>tab.id===state.active&&tab.title===row.title&&!tab.busy)&&
+        window.contentView.children.find((view):view is WebContentsView=>view instanceof WebContentsView&&view.getVisible());
+    },row.title);
+    const invoke=(js:string)=>tab.webContents.executeJavaScript(js,true);
+    const opened=await invoke('window.editor.worldStartup()');
+    assert.notEqual(opened.sourceBuild,'previous-qa-build');
+    opened.name=row.title;
+    const save=(world:object,saveAs=false)=>invoke('window.editor.worldSave('+JSON.stringify(world)+','+saveAs+')');
+    const previousDialog=dialog.showSaveDialog;
+    let chooserCalls=0;
+    dialog.showSaveDialog=async()=>{chooserCalls++;return {canceled:true,filePath:''};};
+    try{
+      assert.equal(await save(opened),file);
+      assert.equal(chooserCalls,0);
+      assert.equal(JSON.parse(await fs.readFile(file,'utf8')).format,row.scope);
+      assert.equal(JSON.parse(await fs.readFile(file+'.previous.bak','utf8')).sourceBuild,'previous-qa-build');
+      assert.equal(await save(opened,true),null);
+      assert.equal(await save(opened),file);
+      assert.equal(chooserCalls,1);
+      assert.ok((await invoke('window.editor.recoveryList('+JSON.stringify(opened)+')')).every((row:{recoverable?:boolean})=>!row.recoverable));
+    }finally{dialog.showSaveDialog=previousDialog;}
+    await home('window.projectTabs.action("home")');
+  }
+  console.log('独立单关与原版完整世界跨 Build 原路径保存、备份及取消另存通过');
   await delay(100);
   app.exit(0);
 }).catch(error=>{console.error(error);app.exit(1);});

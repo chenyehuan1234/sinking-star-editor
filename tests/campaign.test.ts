@@ -53,7 +53,7 @@ test('从头试玩清空自己的关卡历史并保留继续试玩和正式战�
   try{
     const manager=new CampaignManager(root,root);
     await manager.startSharedPlaytest('ed_normal');
-    await manager.startSharedPlaytest('overworld',true);
+    await manager.startSharedPlaytest('overworld','fresh');
     const regular=path.join(root,'Editor_Playtest'),fresh=path.join(root,'Editor_Playtest_Fresh'),normal=path.join(root,'original');
     await fs.mkdir(normal);
     const status='Status.sokoban_status',history='overworld.history';
@@ -63,8 +63,8 @@ test('从头试玩清空自己的关卡历史并保留继续试玩和正式战�
     await fs.writeFile(path.join(fresh,'ed_small.history'),'previous solved playtest');
     await fs.writeFile(path.join(fresh,status+'.backup'),'previous backup');
     await fs.writeFile(path.join(fresh,status),newCampaign('ed_old'));
-    await manager.startSharedPlaytest('overworld',true);
-    await manager.finishSharedPlaytest(true);
+    await manager.startSharedPlaytest('overworld','fresh');
+    await manager.finishSharedPlaytest('fresh');
     const state=readCampaign(await fs.readFile(path.join(fresh,status)));
     assert.equal(state.current,'overworld');
     assert.equal(state.time,0n);
@@ -86,16 +86,16 @@ test('关卡库从测试初始状态启动，并优先于时间在未来的正�
     await fs.writeFile(file,original);await fs.utimes(file,mtime,mtime);
     const originalMtime=(await fs.stat(file)).mtimeMs;
     await fs.writeFile(path.join(official,'overworld.history'),'original history');
-    await manager.startSharedPlaytest('ed_first',false,true);
+    await manager.startSharedPlaytest('ed_first','library');
     const status=path.join(slot,'Status.sokoban_status');
     assert.ok(readCampaign(await fs.readFile(status)).time>future);
     assert.ok((await fs.stat(status)).mtimeMs>originalMtime);
     await fs.writeFile(path.join(slot,'ed_first.history'),'previous world data');
     await fs.writeFile(path.join(slot,'Status.sokoban_status.backup'),'previous library backup');
-    await manager.startSharedPlaytest('ed_second',false,true);
+    await manager.startSharedPlaytest('ed_second','library');
     assert.equal(readCampaign(await fs.readFile(status)).current,'ed_second');
     assert.deepEqual((await fs.readdir(slot)).sort(),['Status.sokoban_status','_editor-shared-playtest.json']);
-    await manager.finishSharedPlaytest(false,true);
+    await manager.finishSharedPlaytest('library');
     assert.equal(readCampaign(await fs.readFile(status)).time,0n);
     assert.deepEqual(await fs.readFile(file),original);
     assert.equal((await fs.stat(file)).mtimeMs,originalMtime);

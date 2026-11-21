@@ -2,11 +2,13 @@ import fs from'node:fs/promises';import path from'node:path';import os from'node
 import{newCampaign,readCampaign,writeCampaign,apolloNow,campaignTimestamp}from'../core/campaign';
 interface Owner {format:'sinking-star-test-campaign';worldId:string;sourceHash:string}
 interface Session {worldId:string;sourceHash:string;active:boolean}
+const sharedCampaigns={resume:'Editor_Playtest',fresh:'Editor_Playtest_Fresh',library:'Editor_Playtest_Library',single:'Editor_Playtest_Single'} as const;
+export type PlaytestCampaign=keyof typeof sharedCampaigns;
 export class CampaignManager {
   constructor(readonly workspace:string,readonly saves=path.join(os.homedir(),'Saved Games','Order of the Sinking Star')){}
-  private async sharedPlaytestDirectory(create=false,fresh=false,library=false){
+  private async sharedPlaytestDirectory(create:boolean,mode:PlaytestCampaign){
     if(create)await fs.mkdir(this.saves,{recursive:true});
-    const name=library?'Editor_Playtest_Library':fresh?'Editor_Playtest_Fresh':'Editor_Playtest';
+    const name=sharedCampaigns[mode];
     const root=await fs.realpath(this.saves),dir=path.join(root,name);
     const owner=path.join(dir,'_editor-shared-playtest.json');
     if(create){
@@ -42,22 +44,22 @@ export class CampaignManager {
     if(time>=(1n<<127n)-1n)throw Error('无法为试玩设置启动顺序，正式战役保持原样');
     return {time:time+1n,mtime:new Date(modified+2000)};
   }
-  async startSharedPlaytest(current:string,fresh=false,library=false){
+  async startSharedPlaytest(current:string,mode:PlaytestCampaign='resume'){
     if(!/^[a-zA-Z0-9_.-]{1,116}$/.test(current)||current==='.'||current.includes('..'))throw Error('试玩起始关卡无效');
-    const directory=await this.sharedPlaytestDirectory(true,fresh,library);
+    const directory=await this.sharedPlaytestDirectory(true,mode);
     const file=path.join(directory,'Status.sokoban_status');
     const data=await this.readSharedStatus(file),priority=await this.startupPriority(directory);
-    if(fresh||library){
+    if(mode!=='resume'){
       const histories=(await fs.readdir(directory,{withFileTypes:true})).filter(entry=>/\.history(?:\.[\w.-]+)?$|^Status\.sokoban_status\.[\w.-]+$/i.test(entry.name));
       if(histories.some(entry=>!entry.isFile()||entry.isSymbolicLink()))throw Error('从头试玩的旧进度包含异常文件');
       for(const entry of histories)await fs.unlink(path.join(directory,entry.name));
     }
     // The rivers backdrop crashes when it is first drawn on the affected build.
-    await this.write(file,writeCampaign(!fresh&&!library&&data?data:newCampaign(),{current,menu:'menu_heroes_a',time:priority.time}));
+    await this.write(file,writeCampaign(mode==='resume'&&data?data:newCampaign(),{current,menu:'menu_heroes_a',time:priority.time}));
     await fs.utimes(file,priority.mtime,priority.mtime);
   }
-  async finishSharedPlaytest(fresh=false,library=false){
-    const directory=await this.sharedPlaytestDirectory(false,fresh,library);
+  async finishSharedPlaytest(mode:PlaytestCampaign='resume'){
+    const directory=await this.sharedPlaytestDirectory(false,mode);
     const file=path.join(directory,'Status.sokoban_status'),data=await this.readSharedStatus(file);
     if(!data)return;
     // Let Steam resume its most recently played regular campaign on next launch.

@@ -4,7 +4,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {sha256} from '../core/package';
 import {TestProfiles} from './test-profiles';
-import {CampaignManager} from './campaigns';
+import {CampaignManager,type PlaytestCampaign} from './campaigns';
 import {directoriesOverlap} from './game-installation';
 import {locateNativeSavePath} from './native-save-path';
 import type {TestContext} from '../v08-types';
@@ -12,13 +12,17 @@ import type {TestContext} from '../v08-types';
 const formalFolder='Order of the Sinking Star';
 const originalName=Buffer.from(formalFolder);
 const legacyProgram='978b302fd0952e4ea8d869553aec875d9c635278a7d0f8cdb752f5a797a370aa';
+const fastTimeBuild='69ddb71fb6768a097f9bff204201f3a9ce960f1a325f5ed3a5c9160dc64a6ae8';
+// Build 26825502 tests the same world-progress condition in the action
+// callback and in the controller polling path. Keep both later input checks.
+const fastTimeBranches=[{offset:0xa974e,instruction:'7e38'},{offset:0x265d1e,instruction:'0f8e02010000'}];
 export const SOURCE_EXE='_editor-source.exe.disabled';
 export const RUNTIME_EXE='SinkingStarPlaytest.exe';
 export function isolationSupported(source:Buffer){return Boolean(locateNativeSavePath(source))||sha256(source)===legacyProgram;}
 export const isolationUnavailable='无法识别当前游戏的存档路径结构，已停止试玩以保护正式存档';
 export function isolatedFolder(id:string){if(!/^[a-f0-9]{12}$/.test(id))throw Error('测试存档标识无效');return 'SStar_Editor_'+id;}
 
-export function patchSaveDirectory(source:Buffer,id:string){
+export function patchSaveDirectory(source:Buffer,id:string,allowFastTime=false){
  const sourceHash=sha256(source),layout=locateNativeSavePath(source);
  if(!layout&&sourceHash!==legacyProgram)throw Error(isolationUnavailable);
  const folder=isolatedFolder(id),replacement=Buffer.from(folder),buffer=Buffer.from(source);
@@ -31,7 +35,11 @@ export function patchSaveDirectory(source:Buffer,id:string){
  replacement.copy(buffer,offset);
  const changes=[{offset,length:replacement.length}];
  if(layout)changes.push({offset:layout.displacement,length:4},{offset:layout.virtualSizeOffset,length:4});
- return {buffer,folder,offset,changes,sourceHash,hash:sha256(buffer)};
+ const fastTime=allowFastTime&&sourceHash===fastTimeBuild&&fastTimeBranches.every(({offset,instruction})=>source.toString('hex',offset,offset+instruction.length/2)===instruction);
+ if(fastTime)for(const {offset,instruction} of fastTimeBranches){
+  const length=instruction.length/2;buffer.fill(0x90,offset,offset+length);changes.push({offset,length});
+ }
+ return {buffer,folder,offset,changes,sourceHash,hash:sha256(buffer),fastTime};
 }
 
 export function reportedSavePath(output:string){
@@ -83,7 +91,7 @@ async function validateSaveTree(file:string){
 }
 
 type BoundPlaytest = Awaited<ReturnType<typeof bindIsolatedSaves>> & {id:string};
-export async function preparePlaytestSaves(workspace:string,sourceHash:string,current:string,options:{fresh?:boolean;library?:boolean;verify?:(save:BoundPlaytest)=>Promise<void>},folderRoot?:string){
+export async function preparePlaytestSaves(workspace:string,sourceHash:string,current:string,options:{mode?:PlaytestCampaign;verify?:(save:BoundPlaytest)=>Promise<void>},folderRoot?:string){
  const root=await fs.realpath(workspace),savedGames=folderRoot??await savedGamesDirectory();
  const original=path.join(savedGames,formalFolder),formal=await fs.realpath(original).catch(error=>{if(error.code==='ENOENT')return original;throw error;});
  if(directoriesOverlap(root,formal))throw Error('工作区与正式存档目录重叠，试玩已停止');
@@ -96,7 +104,7 @@ export async function preparePlaytestSaves(workspace:string,sourceHash:string,cu
  await options.verify?.({id:profile.id,...bound});
  await profiles.prepareSettings(profile.id,original);
  const campaigns=new CampaignManager(root,bound.saves);
- await campaigns.startSharedPlaytest(current,options.fresh,options.library);
+ await campaigns.startSharedPlaytest(current,options.mode);
  await profiles.used(profile.id);
  return {id:profile.id,...bound,profiles};
 }

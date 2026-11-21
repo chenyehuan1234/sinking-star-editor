@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
 import {digest, encodeShare, parseShare} from '../src/core/share';
 import {newWorld} from '../src/core/world';
 import type {EditorProject} from '../src/shared';
@@ -23,7 +24,7 @@ const design = encodeShare(project,'project','0.11.2',[
 ]);
 const image = Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA','base64');
 
-let token = '', work: string | undefined;
+let token = '', work: string | undefined, largeWork: string | undefined;
 async function request(path:string, expected=200, method='GET', body?:object|Buffer, version?:string){
   const headers = new Headers({'x-sstar-desktop':'1'});
   if(token)headers.set('authorization','Bearer '+token);
@@ -33,6 +34,21 @@ async function request(path:string, expected=200, method='GET', body?:object|Buf
   const failure = response.status === expected ? '' : (await response.text()).slice(0,250);
   assert.equal(response.status,expected,method+' '+path+' '+failure);
   return response;
+}
+
+async function measureScene(id:string,level:string,label:string){
+  let bytes!:Buffer;
+  const wallMs=[];
+  for(let i=0;i<5;i++){
+    const started=performance.now();
+    const response=await request('/api/works/'+id+'/download?level='+level+'&preview=1');
+    bytes=Buffer.from(await response.arrayBuffer());
+    assert.equal(response.headers.get('x-sstar-scene-preview'),'1');
+    assert.equal(response.headers.get('x-design-sha256'),digest(bytes));
+    wallMs.push(Math.round(performance.now()-started));
+  }
+  console.log(JSON.stringify({label,sceneBytes:bytes.length,wallMs}));
+  return bytes;
 }
 
 try {
@@ -59,6 +75,23 @@ try {
   const single = Buffer.from(await (await request(resource+'/download?level=one')).arrayBuffer());
   assert.equal(parseShare(single).manifest.primaryId,'one');
   assert.equal(parseShare(single).manifest.scope,'group');
+  const full=Buffer.from(image);full.writeUInt16LE(1920,26);full.writeUInt16LE(1080,28);
+  const length=Buffer.alloc(4);length.writeUInt32BE(image.length);
+  await request(resource+'/cover?size=full',200,'POST',Buffer.concat([length,image,full]));
+  assert.deepEqual(Buffer.from(await (await request(resource+'/cover?size=full')).arrayBuffer()),full);
+  const smallScene=await measureScene(work!,'one','两关工程');
+  assert.equal(parseShare(smallScene).manifest.levels.length,1);
+  const big={...project,levels:[project.levels[0],project.levels[1],...Array.from({length:298},(_,index)=>{
+    const id='scene_'+index;
+    const operations=Array.from({length:32},(_,i)=>({kind:'transform' as const,id:i+1,x:index+i,y:index,z:0,yaw:90}));
+    return {id,title:'测试关卡 '+index,project:{...stage,name:id,operations}};
+  })]};
+  const large=encodeShare(big,'project',design.manifest.editorVersion);
+  largeWork=(await (await request('/api/works',201,'POST',large.bytes,'1.0')).json()).id;
+  assert.deepEqual(await measureScene(largeWork!,'one','300 关工程'),smallScene);
+  console.log(JSON.stringify({fullProjectBytes:large.bytes.length,expandedProjectBytes:gunzipSync(large.bytes).length,levels:big.levels.length}));
+  await request('/api/works/'+largeWork,200,'DELETE');
+  largeWork=undefined;
   await request(resource,409,'PATCH',design.bytes,'1.0');
   await request(resource,200,'PATCH',design.bytes,'1.1');
   assert.equal((await (await request(resource)).json()).version,'1.1');
@@ -72,5 +105,6 @@ try {
   work=undefined;
   console.log('Cloudflare 社区验收通过，覆盖静态站点、注册、搜索、预览、完整及依赖关卡下载、更新、举报、账号恢复和下架');
 } finally {
+  if(largeWork&&token)await request('/api/works/'+largeWork,200,'DELETE').catch(()=>{});
   if(work && token)await request('/api/works/'+work,200,'DELETE').catch(()=>{});
 }

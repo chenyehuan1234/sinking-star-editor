@@ -1,15 +1,17 @@
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import type {CommunityRead,HomeApi,HomeProject} from '../home-types';
-import {shareExpandedLimit,shareExtension,shareLimit,tagLength,tagLimit,type CommunitySort,type ShareDraft,type ShareManifest,type SharedWork} from '../share-types';
+import {shareExpandedLimit,shareExtension,shareLimit,tagLength,tagLimit,type CommunitySort,type CommunityImage,type ShareDraft,type ShareManifest,type SharedWork} from '../share-types';
 import {Icon} from './studio-ui';
 import {GroupedLevels} from './grouped-levels';
 import {HubSidebar} from './hub-sidebar';
 import {HubModal} from './hub-modal';
 import {matchDirectory} from '../level-catalog';
-import {renderCompactThumbnail,withDeadline} from './scene-preview';
+import {asDataUrl,communityImage,imageUploadBody} from './community-images';
+import {ImageViewer} from './image-viewer';
+import type {LevelView} from '../shared';
 import {CommunityConnectionError,communityDeadline,communityTimeout} from '../community-network';
 
-type Bridge=Pick<HomeApi,'request'|'browse'|'image'|'download'|'publish'|'shareSave'|'authorSignIn'|'authorRecovery'|'shareImage'|'replaceImage'|'publishedPreview'|'publishedThumbnail'>;
+type Bridge=Pick<HomeApi,'request'|'browse'|'image'|'download'|'publish'|'shareSave'|'authorSignIn'|'authorRecovery'|'shareImage'|'replaceImage'|'publishedPreview'>;
 type CommunityList={works:SharedWork[];more:boolean};
 type CommunityNotice={text:string;target?:'projects'|'library'|{id:string}};
 const recentPages=new Map<string,CommunityRead>();
@@ -35,58 +37,42 @@ function parseTags(value:string){
 }
 const vpnHint=(error:string)=>/无法连接关卡社区|连接关卡社区超时|fetch failed|failed to fetch|networkerror|load failed/i.test(error);
 const primaryLevel=(work:SharedWork)=>work.manifest.primaryId??work.manifest.levels[0]?.id??'';
-const fallbackThumbnails=new Map<string,Promise<string>>();
-function previewThumbnail(bridge:Bridge,work:string,version:string,level:string){
-  const key=JSON.stringify([work,version,level]);
-  const cached=fallbackThumbnails.get(key);
-  if(cached)return cached;
-  if(fallbackThumbnails.size>=160)fallbackThumbnails.delete(fallbackThumbnails.keys().next().value!);
-  const preview=(async()=>{
-    const saved=await bridge.publishedThumbnail(work,version,level).catch(()=>null);
-    if(saved)return saved;
-    const scene=await withDeadline(bridge.publishedPreview(work,version,level),30000,'关卡缩略图读取超时');
-    if(!scene)return '';
-    const image=renderCompactThumbnail(scene);
-    await bridge.publishedThumbnail(work,version,level,image).catch(()=>{});
-    return image;
-  })();
-  fallbackThumbnails.set(key,preview);
-  const clear=()=>{if(fallbackThumbnails.get(key)===preview)fallbackThumbnails.delete(key);};
-  void preview.then(image=>{if(!image)clear();},clear);
-  return preview;
-}
 function workCover(item:SharedWork){
   if(item.cover)return workUrl(item.id)+'/cover';
   const primary=item.manifest.primaryId??item.manifest.levels[0]?.id;
   const level=primary&&item.previews.includes(primary)?primary:item.previews[0];
   return level?workUrl(item.id)+'/previews/'+encodeURIComponent(level):'';
 }
-export function Cover({src,alt='',className='',onError,zoomable=false}:{src:string;alt?:string;className?:string;onError?:()=>void;zoomable?:boolean}){
+export function Cover({src,alt='',className='',onError,zoomable=false,loadFull}:{src:string;alt?:string;className?:string;onError?:()=>void;zoomable?:boolean;loadFull?:()=>Promise<string|null>}){
   const [large,setLarge]=useState(false),image=src&&<img src={src} alt={alt} loading="lazy" onError={onError}/>;
   return <><span className={'hub-cover '+className}>{image?zoomable?
     <button type="button" className="hub-cover-open" aria-label={alt?'放大预览 '+alt:'放大缩略图'} title="放大缩略图" onClick={()=>setLarge(true)}>{image}</button>:image
     :<span className="hub-cover-grid" aria-hidden="true"><Icon name="cube" size={26}/></span>}</span>
-    {large&&src&&<HubModal title={alt||'关卡预览'} wide onClose={()=>setLarge(false)}><img className="hub-large-preview" src={src} alt={alt}/></HubModal>}
+    {large&&src&&<ImageViewer src={src} loadFull={loadFull} title={alt||'关卡预览'} close={()=>setLarge(false)}/>}
   </>;
 }
-function RemoteCover({bridge,route,alt,className,work,version,level,localSample,imageRevision}:{bridge?:Bridge;route:string;alt?:string;className?:string;work?:string;version?:string;level?:string;localSample?:boolean;imageRevision:number}){
+function RemoteCover({bridge,route,alt,className,version,imageRevision,fullPreview}:{bridge?:Bridge;route:string;alt?:string;className?:string;version?:string;imageRevision:number;fullPreview?:boolean}){
   const [src,setSrc]=useState(''),[visible,setVisible]=useState(false),[failed,setFailed]=useState(false),[attempt,retry]=useState(0);
   const holder=React.useRef<HTMLSpanElement>(null);
   useEffect(()=>{if(!bridge||!holder.current)return;const observer=new IntersectionObserver(rows=>{if(rows.some(row=>row.isIntersecting)){setVisible(true);observer.disconnect();}},{rootMargin:'100px'});observer.observe(holder.current);return()=>observer.disconnect();},[bridge]);
   useEffect(()=>{
     let live=true;setSrc('');setFailed(false);
-    if(bridge&&visible){
-      const fallback=()=>!localSample&&work&&version&&level?previewThumbnail(bridge,work,version,level):'';
-      void (async()=>{
-        const image=route?await bridge.image(route,version,attempt>0).catch(()=>null):null;
-        if(live)return image||await fallback();
-        return '';
-      })().then(value=>{if(live){setSrc(value);setFailed(!value&&Boolean(route));}}).catch(()=>{if(live)setFailed(true);});
-    }
+    if(bridge&&route&&visible)void bridge.image(route,version,attempt>0||imageRevision>0)
+      .then(image=>{if(live){setSrc(image??'');setFailed(!image);}}).catch(()=>{if(live)setFailed(true);});
     return()=>{live=false;};
-  },[bridge,route,visible,attempt,work,version,level,localSample,imageRevision]);
+  },[bridge,route,visible,attempt,version,imageRevision]);
+  async function loadFull(){
+    const fullRoute=route+'?size=full';
+    if(bridge)return bridge.image(fullRoute,version);
+    return communityDeadline(communityTimeout,async signal=>{
+      const response=await fetch(fullRoute,{signal});
+      return response.ok&&response.headers.get('content-type')==='image/webp'?asDataUrl(await response.blob()):null;
+    });
+  }
   return <span ref={holder} className="hub-cover-holder hub-remote-preview">
-    <Cover src={failed?'':bridge?src:route&&route+(attempt?'?retry='+attempt:'')} alt={alt} className={className} zoomable onError={()=>{setFailed(true);}}/>
+    <Cover src={failed?'':bridge?src:route&&route+(attempt?'?retry='+attempt:'')} alt={alt} className={className} zoomable
+      loadFull={route&&fullPreview?loadFull:undefined}
+      onError={()=>setFailed(true)}/>
     {failed&&<button type="button" className="hub-thumb-state" onClick={()=>{setFailed(false);retry(n=>n+1);}}>加载失败 · 重试</button>}
   </span>;
 }
@@ -119,31 +105,13 @@ function webJson(route:string,init:RequestInit){
 function webRequest(route:string,method='GET',input?:unknown){
   return webJson(route,{method,headers:input===undefined?undefined:{'content-type':'application/json'},body:input===undefined?undefined:JSON.stringify(input)});
 }
-async function webImage(file:File){
-  if(file.size>8*1024*1024)throw Error('请选择 8 MB 以内的图片');
-  const image=await createImageBitmap(file);
-  try{
-    const scale=Math.min(1,640/image.width,360/image.height),canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));
-    canvas.getContext('2d')!.drawImage(image,0,0,canvas.width,canvas.height);
-    return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('图片转换失败')),'image/webp',.78));
-  }finally{image.close();}
-}
-async function imageData(file:File){
-  const bytes=await webImage(file);
-  return new Promise<string>((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(Error('读取图片失败'));
-    reader.readAsDataURL(bytes);
-  });
-}
-
-export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePreview,onDraftClear,onImported,onDownloaded,onProjects,onDownloads,onChooseSource,onPublishBusy,connectionOffline,onConnectionChange}:{bridge?:Bridge;mine?:boolean;visible?:boolean;draft?:ShareDraft|null;generatePreview?:(id:string,compact:boolean,draftId:string)=>Promise<string>;onDraftClear?:(id:string)=>void;onImported?:(item:HomeProject)=>void;onDownloaded?:()=>void;onProjects?:()=>void;onDownloads?:()=>void;onChooseSource?:()=>void;onPublishBusy?:(busy:boolean)=>void;connectionOffline?:boolean;onConnectionChange?:(online:boolean)=>void}){
+export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePreview,onDraftClear,onImported,onDownloaded,onProjects,onDownloads,onChooseSource,onPublishBusy,connectionOffline,onConnectionChange,renderLive}:{bridge?:Bridge;mine?:boolean;visible?:boolean;draft?:ShareDraft|null;generatePreview?:(id:string,compact:boolean,draftId:string)=>Promise<string|CommunityImage>;onDraftClear?:(id:string)=>void;onImported?:(item:HomeProject)=>void;onDownloaded?:()=>void;onProjects?:()=>void;onDownloads?:()=>void;onChooseSource?:()=>void;onPublishBusy?:(busy:boolean)=>void;connectionOffline?:boolean;onConnectionChange?:(online:boolean)=>void;renderLive?:(props:{id:string;title:string;load:()=>Promise<LevelView|null>;close:()=>void;fallback:React.ReactNode})=>React.ReactNode}){
   const request=bridge?.request??webRequest;
   const [query,setQuery]=useState(''),[type,setType]=useState<Directory>('projects'),[page,setPage]=useState(0),[generation,refresh]=useState(0);
   const [tag,setTag]=useState(''),[sort,setSort]=useState<CommunitySort>('newest'),[editingInfo,setEditingInfo]=useState(false);
   const [tagInput,setTagInput]=useState(''),[previewProgress,setPreviewProgress]=useState('');
   const getHash=()=>!bridge?/^#work\/([a-f0-9]{32})$/.exec(location.hash)?.[1]??'':'';
+  const [three,setThree]=useState<{item:SharedWork;level:string;route:string}|null>(null);
   const [workId,setWorkId]=useState(getHash),[expanded,setExpanded]=useState<Record<string,boolean>>({});
   const [username,setUsername]=useState(''),[auth,setAuth]=useState<''|'login'|'signup'|'recover'|'device'|'device-recover'|'legacy'|'account'>(''),[recovery,setRecovery]=useState('');
   const [tasks,setTasks]=useState<ReadonlySet<string>>(()=>new Set()),[error,setError]=useState(''),[notice,setNotice]=useState<CommunityNotice|null>(null);
@@ -152,6 +120,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
   const downloadCount=[...tasks].filter(key=>key.startsWith('download:')).length;
   const [readError,setReadError]=useState<{key:string;text:string}|null>(null);
   const [readResult,setReadResult]=useState<{key:string;revision:number;value:CommunityRead}|null>(null);
+  const [checking,setChecking]=useState(false),[reviewPublication,setReviewPublication]=useState(false);
   const [imageRevision,changeImages]=useState(0);
   const [publishing,setPublishing]=useState(false),[update,setUpdate]=useState<SharedWork|null>(null),[file,setFile]=useState<File|null>(null),[metadata,setMetadata]=useState<ShareManifest|null>(null);
   const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[version,setVersion]=useState('1.0'),[images,setImages]=useState(false);
@@ -168,6 +137,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
   const currentView=useRef({visible,route,draftId:draft?.id});
   useLayoutEffect(()=>{currentView.current={visible,route,draftId:draft?.id};},[visible,route,draft?.id]);
   const ownList=mine&&!workId;
+  useEffect(()=>{setThree(null);},[route,visible,mine]);
   const readKey=JSON.stringify([bridge&&!ownList?'':username,route]);
   const read=readResult?.key===readKey&&readResult.revision===pagesRevision?readResult.value:recentPages.get(readKey);
   const catalog=!workId?read?.data as CommunityList|undefined:undefined;
@@ -188,14 +158,18 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
     return()=>{live=false;};
   },[request,generation,visible]);
   useEffect(()=>{
-    if(!visible||ownList&&!username)return;
+    if(!visible||ownList&&!username){setChecking(false);return;}
     let live=true;
     const revision=pagesRevision;
+    setChecking(forceRoute.current===route);
     setReadError(null);
     const apply=(value:CommunityRead)=>{
       if(!live||revision!==pagesRevision)return;
       if(value.stale)onConnectionChange?.(false);
-      else if(value.checked)onConnectionChange?.(true);
+      else if(value.checked){
+        onConnectionChange?.(true);
+        setError(previous=>vpnHint(previous)?'':previous);
+      }
       const result=ownList?{...value,data:{...value.data as CommunityList,works:(value.data as CommunityList).works.filter(item=>item.owner)}}:value;
       rememberPage(readKey,result);
       setReadResult({key:readKey,revision,value:result});
@@ -209,7 +183,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
           if(local)apply(local);
           if(!live)return;
         }
-        const result=bridge?await bridge.browse(route,force):{data:await webRequest(route),stale:false};
+        const result=bridge?await bridge.browse(route,force):{data:await webRequest(route),stale:false,checked:true as const};
         if(result)apply(result);
       }catch(error){
         if(!live||revision!==pagesRevision)return;
@@ -218,7 +192,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
         const message=errorText(error);
         if(vpnHint(message))onConnectionChange?.(false);
         setReadError({key:readKey,text:message});
-      }
+      }finally{if(live)setChecking(false);}
     },!workId&&query.trim()&&!recentPages.has(readKey)&&forceRoute.current!==route?180:0);
     return()=>{live=false;clearTimeout(timer);};
   },[bridge,route,readKey,generation,workId,ownList,onConnectionChange,visible]);
@@ -226,7 +200,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
   useEffect(()=>{if(draft){
     const {manifest}=draft;
     setPublishing(true);setTitle(update?.title??(manifest.scope==='project'?manifest.title:manifest.levels.find(level=>level.id===manifest.primaryId)?.title??manifest.levels[0]?.title??manifest.title));
-    setPreviewLevel('world');setGenerated({});setImages(true);setSelectedImages(['world',...Object.keys(draft.previews)]);
+    setReviewPublication(false);setPreviewLevel('world');setGenerated({});setImages(true);setSelectedImages(['world',...Object.keys(draft.previews)]);
   }},[draft]);
   useEffect(()=>()=>{if(imagePreview)URL.revokeObjectURL(imagePreview);},[imagePreview]);
 
@@ -234,7 +208,12 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
     if(running.current.has(key))return;
     running.current.add(key);setTasks(new Set(running.current));setError('');
     if(key==='draft')onPublishBusy?.(true);
-    try{await fn();}catch(e){const message=errorText(e);if(vpnHint(message))onConnectionChange?.(false);setError(message);}
+    try{await fn();}catch(e){
+      const message=errorText(e);
+      if(vpnHint(message))onConnectionChange?.(false);
+      if(key==='draft'&&message.includes('重新发布前'))setReviewPublication(true);
+      setError(message);
+    }
     finally{
       running.current.delete(key);setTasks(new Set(running.current));
       if(key==='draft'){setPreviewProgress('');onPublishBusy?.(false);}
@@ -257,14 +236,14 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
     setPublishing(true);
   }
   function logout(){void run(async()=>{await request('/api/account/logout','POST');clearPages();setUsername('');setAuth('');setRecovery('');if(mine)show('');refresh(n=>n+1);setNotice({text:'已退出登录。'});});}
-  function closePublish(){setPublishing(false);setUpdate(null);setMetadata(null);setFile(null);setImagePreview('');setImages(false);setSelectedImages([]);setTagInput('');if(draft)onDraftClear?.(draft.id);}
-  async function upload(image:File,id:string,level='world',version?:string){
+  function closePublish(){setPublishing(false);setUpdate(null);setMetadata(null);setFile(null);setImagePreview('');setImages(false);setSelectedImages([]);setTagInput('');setReviewPublication(false);if(draft)onDraftClear?.(draft.id);}
+  async function upload(image:File,id:string,level='world',version?:string,fullPreview=false){
     if(bridge){
-      await bridge.replaceImage(id,level,await imageData(image),version);return;
+      await bridge.replaceImage(id,level,await communityImage(image),version,fullPreview);return;
     }
-    const bytes=await webImage(image);
+    const bytes=await imageUploadBody(image,fullPreview);
     const suffix=level==='world'?'cover':'previews/'+level;
-    await webJson(workUrl(id)+'/'+suffix,{method:'POST',headers:{'content-type':'image/webp'},body:bytes});
+    await webJson(workUrl(id)+'/'+suffix+(fullPreview?'?size=full':''),{method:'POST',headers:{'content-type':bytes.type},body:bytes});
   }
   function selectImage(id:string,checked:boolean){
     setSelectedImages(old=>{
@@ -276,7 +255,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
     if(!bridge||!generatePreview||!draft)return;
     const id=previewLevel,image=await generatePreview(id,false,draft.id);
     await bridge.shareImage(id,image,draft.id);
-    setGenerated(old=>({...old,[id]:image}));
+    setGenerated(old=>({...old,[id]:typeof image==='string'?image:image.thumbnail}));
     selectImage(id,true);
   }
   function download(id:string,level?:string){
@@ -306,14 +285,26 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
   function thumbnail(item:SharedWork,level?:string,className?:string){
     const route=level?item.previews.includes(level)?workUrl(item.id)+'/previews/'+encodeURIComponent(level):'':workCover(item);
     return <RemoteCover bridge={bridge} route={route} alt={level?item.manifest.levels.find(row=>row.id===level)?.title:item.title}
-      work={item.id} version={item.version} level={level??primaryLevel(item)} localSample={item.localSample} className={className} imageRevision={imageRevision}/>;
+      version={item.version} className={className} imageRevision={imageRevision} fullPreview={item.fullImagePreview}/>;
+  }
+  function previewAction(item:SharedWork,level=primaryLevel(item)){
+    if(!renderLive||!bridge||item.localSample||!level)return null;
+    const title=item.manifest.levels.find(stage=>stage.id===level)?.title??item.title;
+    return <button type="button" className="hub-icon" title="3D 预览" aria-label={'3D 预览 '+title} aria-haspopup="dialog" onClick={()=>setThree({item,level,route})}><Icon name="cube"/></button>;
+  }
+  function activePreview(){
+    if(!visible||!bridge||!renderLive||!three||three.route!==route)return null;
+    const {item,level}=three,stage=item.manifest.levels.find(stage=>stage.id===level);
+    const source=item.scenePreview?'scene':item.manifest.scope==='level'?'standalone':stage&&!stage.requires?.length?'stage':'local';
+    return renderLive({id:`${item.id}:${level}:${item.manifest.sha256}`,title:stage?.title??item.title,
+      load:()=>bridge.publishedPreview(item.id,item.version,level,item.manifest.sha256,source),fallback:thumbnail(item,item.previews.includes(level)?level:undefined),close:()=>setThree(null)});
   }
   const draftImages:Record<string,string>=draft?{...draft.previews,...draft.cover?{world:draft.cover}:{},...generated}:{};
   const directory=(item:SharedWork,inSearch=false)=>{
     const match=matchDirectory(item.manifest.levels,item.manifest.groups,inSearch?query:'',[item.title,item.manifest.title,item.author,item.description,...item.tags??[]]);
     return <GroupedLevels sections={match.sections} query={inSearch?query:''} reveal={inSearch&&!match.rootMatch} renderLevel={level=><div className="hub-level-row">
       {thumbnail(item,level.id)}
-      <div><strong>{level.title}</strong>{level.requires?.length?<small>还需 {level.requires.map(id=>item.manifest.levels.find(l=>l.id===id)?.title??id).join('、')}</small>:null}</div>{downloadAction(item,level.id)}
+      <div><strong>{level.title}</strong>{level.requires?.length?<small>还需 {level.requires.map(id=>item.manifest.levels.find(l=>l.id===id)?.title??id).join('、')}</small>:null}</div><div className="hub-actions">{previewAction(item,level.id)}{downloadAction(item,level.id)}</div>
     </div>}/>;
   };
   const activeDirectory=workId&&work?.id===workId?(work.manifest.scope==='level'?'library':'projects'):type;
@@ -330,11 +321,12 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
     </HubSidebar>}
     <section className="hub-main" hidden={!visible} aria-labelledby="community-title">
     <header className="hub-header"><div><h1 id="community-title">{mine?'我的发布':'关卡社区'}</h1></div><div className="hub-actions">
-      {(!ownList||username)&&<button className="hub-icon" title="刷新社区" aria-label="刷新社区" onClick={refreshPage}><Icon name="refresh"/></button>}
+      {(!ownList||username)&&<button className="hub-icon" title="刷新社区" aria-label="刷新社区" disabled={checking} onClick={refreshPage}><Icon name="refresh"/></button>}
       {username?<button className="hub-button" onClick={bridge?()=>{setAuth('account');setRecovery('');}:logout}><Icon name="user"/>{username}{!bridge&&' · 退出'}</button>:<button className="hub-button" onClick={()=>{setAuth(bridge?'device':'login');setRecovery('');}}><Icon name="user"/>登录</button>}
       <button className="hub-primary" disabled={draftBusy||Boolean(draft)} onClick={()=>startPublish()}><Icon name="export"/>发布作品</button>
     </div></header>
-    {connectionError&&<div className="hub-message hub-error hub-row" role="alert"><span>{connectionError}{vpnHint(connectionError)&&' 如果当前网络无法访问社区，请连接 VPN 后重试。'}</span><button className="hub-button" onClick={refreshPage}>重试</button></div>}
+    {checking&&<p className="hub-message" role="status">正在重新连接社区…</p>}
+    {connectionError&&<div className="hub-message hub-error hub-row" role="alert"><span>{connectionError}{vpnHint(connectionError)&&' 如果当前网络无法访问社区，请连接 VPN 后重试。'}</span><button className="hub-button" disabled={checking} onClick={refreshPage}>重试</button></div>}
     {read?.stale&&<p className="hub-message" role="status">社区暂时无法刷新，正在显示本地缓存。如果当前网络无法访问社区，可以连接 VPN 后刷新。</p>}
     {connectionOffline&&!connectionError&&!read?.stale&&!vpnHint(error)&&<p className="hub-message" role="status">上次连接社区失败，可以连接 VPN 后刷新。</p>}
     {!publishOpen&&actionError}
@@ -379,16 +371,16 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
       <form className="hub-form" onSubmit={e=>{e.preventDefault();const cover=new FormData(e.currentTarget).get('cover');void run(async()=>{
         if(!username){setAuth(bridge?'device':'login');return;}
         const tags=parseTags(tagInput);
-        let result:{id:string;warning?:string};
+        let result:{id:string;warning?:string;fullImagePreview?:boolean};
         if(bridge&&draft){
           const customCover=cover instanceof File&&cover.size>0;
           const attachCover=customCover||images&&selectedImages.includes('world');
           let noThumbnail=false;
-          if(customCover)await bridge.shareImage('world',await imageData(cover),draft.id);
-          else if(attachCover&&!draftImages.world){
+          if(customCover)await bridge.shareImage('world',await communityImage(cover),draft.id);
+          else if(attachCover&&!draft?.fullImages?.world&&!generated.world){
             try{
               const primary=currentManifest?.primaryId??currentManifest?.levels[0]?.id;
-              const thumbnail=(primary?draftImages[primary]:undefined)??await generatePreview?.('world',false,draft.id);
+              const thumbnail=await generatePreview?.('world',false,draft.id)??draftImages.world??(primary?draftImages[primary]:undefined);
               if(!thumbnail)throw Error('没有可用的缩略图');
               await bridge.shareImage('world',thumbnail,draft.id);
             }catch{noThumbnail=true;}
@@ -406,13 +398,14 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
             }
           }
           setPreviewProgress('正在发布作品和关卡缩略图…');
+          setReviewPublication(false);
           result=await bridge.publish({title,description,version,tags,id:update?.id,draftId:draft.id,images:images||customCover,cover:attachCover,previews:[...previews]});
-          if(noThumbnail&&!result.warning)result.warning='作品已上架，部分缩略图会在浏览时自动补生成。';
+          if(noThumbnail&&!result.warning)result.warning='作品已上架，部分缩略图生成失败，可在作品详情补传。';
         }
         else{
           if(!file||!metadata)throw Error('请先选择社区分享包');
           result=await webJson(update?workUrl(update.id):'/api/works',{method:update?'PATCH':'POST',headers:{'content-type':'application/gzip','x-work-meta':meta({title,description,version,tags})},body:file});
-          if(cover instanceof File&&cover.size)try{await upload(cover,result.id);}catch{result.warning='作品已上架，封面上传失败，可在详情中补传。';}
+          if(cover instanceof File&&cover.size)try{await upload(cover,result.id,'world',undefined,result.fullImagePreview===true);}catch{result.warning='作品已上架，封面上传失败，可在详情中补传。';}
         }
         onConnectionChange?.(!result.warning?.includes('VPN'));
         setNotice({text:result.warning??'作品已上架。',target:{id:result.id}});
@@ -439,16 +432,18 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
         <label>{bridge?'自定义封面（可选，默认使用场景缩略图）':'封面（可选）'}<input name="cover" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setImagePreview(e.target.files?.[0]?URL.createObjectURL(e.target.files[0]):'')}/>{imagePreview&&<Cover src={imagePreview} alt="即将公开的封面"/>}</label>
         {previewProgress&&<p className="hub-message" role="status">{previewProgress}</p>}
         {actionError}
+        {reviewPublication&&!vpnHint(error)&&<p className="hub-message" role="status">重新发布前，请先查看「我的发布」确认作品状态。</p>}
         <div className="hub-actions"><button className="hub-primary" disabled={draftBusy||!currentManifest}>{bridge&&!username?'登录后发布':'确认发布'}</button>{bridge&&draft&&<button type="button" className="hub-button" disabled={draftBusy} onClick={()=>void run(async()=>{if(await bridge.shareSave(draft.id))setNotice({text:'分享包已保存。'});},'draft')}>保存分享包</button>}</div>
       </form>
     </section>}
+    {activePreview()}
     {workId&&<><div className="hub-actions"><button className="hub-button" onClick={()=>mine?show(''):selectDirectory(activeDirectory)}>{mine?'‹ 返回我的发布':'‹ 返回作品列表'}</button>{directoryTabs}</div>{work?.id===workId?<article className="hub-work hub-card">
       <div className="hub-detail-intro">{thumbnail(work,undefined,'hub-detail-cover')}
       <div className="hub-detail-copy"><h2>{work.title}</h2><p className="hub-muted">{work.localSample?'本机样本 · Steam 原版目录':work.author+' · '+date(work.created)+' 发布 · 版本 '+work.version}</p>
       <p className="hub-description">{work.description||'作者未填写简介。'}</p>
       {tagsFor(work)}
       <p className="hub-muted">{label(work.manifest.scope)} · {work.manifest.levels.length} 关 · 游戏 Build {work.manifest.sourceBuild}{!work.localSample&&(' · 编辑器 '+work.manifest.editorVersion+' · '+size(work.size))}</p>
-      {!work.localSample&&<div className="hub-actions">{downloadAction(work)}{work.owner&&<>{bridge&&<button className="hub-icon" title="修改作品信息" aria-label="修改作品信息" onClick={()=>{setError('');setEditingInfo(true);}}><Icon name="rename"/></button>}<button className="hub-icon" title="发布新版本" aria-label="发布新版本" disabled={draftBusy||Boolean(draft)} onClick={()=>startPublish(work)}><Icon name="export"/></button><button className="hub-icon hub-remove" title="下架" aria-label="下架" disabled={busy} onClick={()=>{if(confirm('下架此作品？'))void run(async()=>{await request(workUrl(work.id),'DELETE');if(currentView.current.visible&&currentView.current.route===route)show('');setNotice({text:'作品已下架。'});refreshAfterChange();});}}><Icon name="trash"/></button></>}{!work.owner&&<button className="hub-icon" title="举报" aria-label="举报" onClick={()=>setReport(v=>!v)}><Icon name="warning"/></button>}</div>}</div></div>
+      {!work.localSample&&<div className="hub-actions">{previewAction(work)}{downloadAction(work)}{work.owner&&<>{bridge&&<button className="hub-icon" title="修改作品信息" aria-label="修改作品信息" onClick={()=>{setError('');setEditingInfo(true);}}><Icon name="rename"/></button>}<button className="hub-icon" title="发布新版本" aria-label="发布新版本" disabled={draftBusy||Boolean(draft)} onClick={()=>startPublish(work)}><Icon name="export"/></button><button className="hub-icon hub-remove" title="下架" aria-label="下架" disabled={busy} onClick={()=>{if(confirm('下架此作品？'))void run(async()=>{await request(workUrl(work.id),'DELETE');if(currentView.current.visible&&currentView.current.route===route)show('');setNotice({text:'作品已下架。'});refreshAfterChange();});}}><Icon name="trash"/></button></>}{!work.owner&&<button className="hub-icon" title="举报" aria-label="举报" onClick={()=>setReport(v=>!v)}><Icon name="warning"/></button>}</div>}</div></div>
       {visible&&work.owner&&editingInfo&&<HubModal title="修改作品信息" onClose={()=>setEditingInfo(false)}>
         <form className="hub-manage-form" onSubmit={event=>{
           event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget));
@@ -461,7 +456,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
           <div className="hub-actions"><button type="button" className="hub-button" onClick={()=>setEditingInfo(false)}>关闭</button><button className="hub-primary" disabled={busy}>保存修改</button></div>
         </form>
       </HubModal>}
-      {work.owner&&<form className="hub-form" onSubmit={e=>{e.preventDefault();const image=new FormData(e.currentTarget).get('image');if(image instanceof File&&image.size)void run(async()=>{await upload(image,work.id,replacement,work.version);changeImages(n=>n+1);refreshAfterChange();setNotice({text:'预览图已更新。'});});}}>
+      {work.owner&&<form className="hub-form" onSubmit={e=>{e.preventDefault();const image=new FormData(e.currentTarget).get('image');if(image instanceof File&&image.size)void run(async()=>{await upload(image,work.id,replacement,work.version,work.fullImagePreview===true);changeImages(n=>n+1);refreshAfterChange();setNotice({text:'预览图已更新。'});});}}>
         <label>补传或更换预览<select value={replacement} onChange={e=>setReplacement(e.target.value)}><option value="world">作品封面</option>{work.manifest.levels.map(level=><option key={level.id} value={level.id}>{level.title}</option>)}</select></label>
         <label>图片文件<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required/></label><button className="hub-button" disabled={busy}>上传预览</button></form>}
       {report&&<form className="hub-form" onSubmit={e=>{e.preventDefault();const reason=new FormData(e.currentTarget).get('reason');void run(async()=>{await request(workUrl(work.id)+'/report','POST',{reason});if(currentView.current.route===route)setReport(false);setNotice({text:'举报已提交。'});});}}><label>举报理由<textarea name="reason" required maxLength={500}/></label><button className="hub-button" disabled={busy}>提交举报</button></form>}

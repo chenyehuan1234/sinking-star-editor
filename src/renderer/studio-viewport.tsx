@@ -36,6 +36,7 @@ import{relations,visibility,heightVisibility,categoryOf,canModify,type SceneDisp
 import React,{useEffect,useMemo,useRef,useState}from'react';import * as T from'three';
 import{OrbitControls}from'three/addons/controls/OrbitControls.js';import{TransformControls}from'three/addons/controls/TransformControls.js';
 import{ViewAssets}from'./native-assets';import{cachedRegionView,presetView}from'./thumbnails';import{IconButton}from'./studio-ui';import{readPref,writePref}from'./asset-library';
+import {fullImageSize} from '../share-types';
 import {cellKey,worldContains} from '../world-space';
 import {regionCorners,regionPoint} from '../region-placement';
 import{quarterTurn,rotationCenter,cameraDragThreshold,gameplayObject,designVisible,selectableObject,rectangleCells,type EditorTool}from'../editor-math';import type{EditOp,EntityView,LevelView,Vec3,WorldProject,RegionBundle}from'../shared';
@@ -132,11 +133,13 @@ export function StudioViewport(props:Props){
     return drag||gizmoStart?'object':'camera';
   }
   let coverRequested:((image:string)=>void)|undefined;
-  function captureCover(){
+  let coverLarge=false;
+  function captureCover(large=false){
     if(!alive)return Promise.resolve('');
     return new Promise<string>(resolve=>{
       coverRequested?.('');
       coverRequested=resolve;
+      coverLarge=large;
       setTimeout(()=>{if(coverRequested===resolve){coverRequested=undefined;resolve('');}},5000);
       draw();
     });
@@ -151,10 +154,12 @@ export function StudioViewport(props:Props){
  renderer.render(scene,camera);
  if(coverRequested&&latest.current.level){
    const done=coverRequested;coverRequested=undefined;
-   const origin=renderer.domElement,output=document.createElement('canvas');output.width=640;output.height=360;
-   const context=output.getContext('2d'),scale=Math.min(output.width/origin.width,output.height/origin.height),width=origin.width*scale,height=origin.height*scale;
+   const origin=renderer.domElement,output=document.createElement('canvas');
+   const scale=Math.min(1,(coverLarge?fullImageSize.width:640)/origin.width,(coverLarge?fullImageSize.height:360)/origin.height);
+   output.width=Math.max(1,Math.round(origin.width*scale));output.height=Math.max(1,Math.round(origin.height*scale));
+   const context=output.getContext('2d'),width=output.width,height=output.height;
    context?.fillRect(0,0,output.width,output.height);context?.drawImage(origin,(output.width-width)*.5,(output.height-height)*.5,width,height);
-   done(output.toDataURL('image/webp',.76));
+   done(coverLarge?output.toDataURL('image/png'):output.toDataURL('image/webp',.76));
  }
  perf.end(renderSample,'frame.render');
  if(onFrame)onFrame(performance.now()-renderStart);

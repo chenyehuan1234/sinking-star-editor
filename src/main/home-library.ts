@@ -117,7 +117,9 @@ export class HomeLibrary {
   }
 }
 
-export function imageBytes(image:string){
-  if(typeof image!=='string'||!/^data:image\/webp;base64,[a-zA-Z0-9+/]+=*$/.test(image)||image.length>Math.ceil(coverLimit/3)*4+32)throw Error('预览图片无效或过大');
-  return Buffer.from(image.slice(image.indexOf(',')+1),'base64');
+export function imageBytes(image:string,limit=coverLimit){
+  if(typeof image!=='string'||image.length>Math.ceil(limit/3)*4+32||!/^data:image\/webp;base64,[a-zA-Z0-9+/]+=*$/.test(image))throw Error('预览图片无效或过大');
+  const bytes=Buffer.from(image.slice(image.indexOf(',')+1),'base64');
+  if(bytes.length>limit||bytes.toString('ascii',0,4)!=='RIFF'||bytes.toString('ascii',8,12)!=='WEBP')throw Error('不是有效的 WebP 图片');
+  return bytes;
 }

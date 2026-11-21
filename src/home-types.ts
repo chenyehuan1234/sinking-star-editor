@@ -1,5 +1,5 @@
 import type {LevelView, PreparationProgress, WorldProject} from './shared';
-import type {ShareDraft,ShareManifest,SharedGroup,SharedLevel} from './share-types';
+import type {CommunityImage,CommunityPreviewSource,ShareDraft,ShareManifest,SharedGroup,SharedLevel} from './share-types';
 
 export type HomeLevel = SharedLevel;
 export interface HomeDirectory {groups:SharedGroup[];levels:HomeLevel[]}
@@ -29,7 +29,7 @@ export interface HomeApi {
   preview(key:string, level:string, source?:ThumbnailSource):Promise<{level:LevelView; cameraKey?:string;signature:string}|null>;
   thumbnailSave(key:string, level:string, image:SceneThumbnail,signature:string,source?:ThumbnailSource):Promise<void>;
   useCover(image:string):Promise<void>;
-  prepare(project:WorldProject, level:string|undefined, cover?:string):Promise<ShareDraft>;
+  prepare(project:WorldProject, level:string|undefined, cover?:string|CommunityImage):Promise<ShareDraft>;
   prepareShareFrom(source:HomeShareSource):Promise<ShareDraft>;
   shareSave(draftId?:string):Promise<string|null>;
   shareDraft():Promise<ShareDraft|null>;
@@ -40,6 +40,7 @@ export interface HomeApi {
   request(route:string, method?:string, json?:unknown):Promise<unknown>;
   browse(route:string,refresh?:boolean,localOnly?:boolean):Promise<CommunityRead|null>;
   image(route:string,version?:string,refresh?:boolean):Promise<string|null>;
+  saveImage(image:string,title?:string):Promise<boolean>;
   download(id:string, level?:string):Promise<DownloadResult>;
   downloads():Promise<DownloadedLevel[]>;
   renameLibraryItem(key:string,title:string):Promise<void>;
@@ -54,11 +55,11 @@ export interface HomeApi {
   importPick():Promise<LevelImportSource|null>;
   importInto(project:WorldProject,choice:LevelImportChoice,folderId?:string):Promise<{project:WorldProject;primary:string;count:number}>;
   publish(input:{title:string;description:string;version:string;tags?:string[];id?:string;draftId?:string;images:boolean;cover?:boolean;previews?:string[]}):Promise<{id:string;warning?:string}>;
-  publishedPreview(work:string,version:string,level:string):Promise<LevelView|null>;
+  publishedPreview(work:string,version:string,level:string,content?:string,source?:CommunityPreviewSource):Promise<LevelView|null>;
   publishedThumbnail(work:string,version:string,level:string,image?:string):Promise<string|null>;
   sharePreview(level:string,draftId?:string):Promise<LevelView>;
-  shareImage(level:string,image:string,draftId?:string):Promise<void>;
-  replaceImage(work:string,level:string,image:string,version?:string):Promise<void>;
+  shareImage(level:string,image:string|CommunityImage,draftId?:string):Promise<void>;
+  replaceImage(work:string,level:string,image:string|CommunityImage,version?:string,fullImagePreview?:boolean):Promise<void>;
   onOpenScene(listener:(id:string)=>void):()=>void;
   startScene():Promise<{scene?:string;singleLevel:boolean}>;
 }

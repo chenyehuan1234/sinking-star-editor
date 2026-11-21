@@ -33,6 +33,14 @@
 .hub-modal-body>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .hub-modal-body>header strong{overflow-wrap:anywhere}
 .hub-large-preview{display:block;width:100%;max-height:calc(100vh - 130px);object-fit:contain;border-radius:7px;background:var(--hub-bg)}
+.hub-image-stage{display:grid;place-items:center;overflow:hidden;min-height:120px;height:min(58vh,720px);background:var(--hub-bg);border-radius:7px;touch-action:none}
+.hub-image-stage .hub-large-preview{width:auto;height:auto;max-width:100%;max-height:min(58vh,720px);user-select:none;cursor:grab}
+.hub-image-stage .hub-large-preview:active{cursor:grabbing}
+.hub-live{min-width:0;width:100%;display:grid;gap:10px}
+.hub-live-stage{height:min(64vh,560px);overflow:hidden;border-radius:7px;background:#283239;touch-action:none;cursor:grab}
+.hub-live-stage:active{cursor:grabbing}
+.hub-live-stage[hidden]{display:none}
+.hub-live-stage canvas{display:block;width:100%;height:100%}
 .hub-manage-form{display:grid;gap:14px}.hub-manage-form label{display:grid;gap:6px}.hub-manage-form p{margin:0;overflow-wrap:anywhere}.hub-manage-form>.hub-actions{justify-content:flex-end}
 .hub-level-item .hub-publish{flex:none;width:30px;min-height:30px;padding:3px}.hub-library-levels{grid-column:1/-1}.hub-library-levels summary{cursor:pointer;color:var(--hub-muted)}.hub-library-levels ul{display:grid;gap:4px;padding:0;margin:6px 0 0;list-style:none}.hub-library-levels li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 0;border-top:1px solid var(--hub-line)}
 .hub-work-summary{display:grid;gap:5px;min-width:0}.hub-tags{display:flex;flex-wrap:wrap;gap:5px;min-width:0}.hub-tags button{max-width:100%;padding:2px 7px;border:1px solid var(--hub-line);border-radius:5px;background:var(--hub-surface);color:var(--hub-muted);font:inherit;font-size:12px;overflow-wrap:anywhere;cursor:pointer}.hub-tags button:hover{color:var(--hub-text);border-color:var(--hub-accent)}.hub-sort{display:flex;align-items:center;gap:5px;color:var(--hub-muted);white-space:nowrap}.hub-sort select{padding:6px 8px}.hub-filters:has(.hub-sort){flex-wrap:wrap}

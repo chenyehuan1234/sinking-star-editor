@@ -1,11 +1,11 @@
-import {app,dialog,ipcMain,net,shell} from 'electron';
+import {app,dialog,ipcMain,net,session,shell} from 'electron';
 import {randomUUID} from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {HomeLibrary,imageBytes} from './home-library';
-import {digest,designLevels,encodeShare,independentDesign,parseShare,retargetDesignId,shareLevel,singleWorld,type ShareDesign} from '../core/share';
+import {digest,designLevels,encodeShare,independentDesign,parseShare,previewScene,retargetDesignId,shareLevel,singleWorld,type ShareDesign} from '../core/share';
 import {nativeScene,nativeWorkbench} from '../native-project';
-import {coverLimit,shareExtension,shareLimit,type ShareDraft,type SharedWork} from '../share-types';
+import {coverLimit,fullImageLimit,scenePreviewLimit,shareExtension,shareLimit,type CommunityImage,type CommunityPreviewSource,type ShareDraft,type SharedWork} from '../share-types';
 import type {CommunitySignIn,HomeShareSource,LevelImportChoice,LibraryAddResult,SceneThumbnail,ThumbnailSource} from '../home-types';
 import type {WorldProject} from '../shared';
 import {atomicWrite,type EditorService} from './service';
@@ -47,7 +47,6 @@ type PendingShare = ShareDraft & {bytes:Buffer;source:WorldProject;selected?:str
 
 export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:()=>EditorService,backgroundGame:()=>Promise<boolean>,lastProject:string){
   const drafts=new Map<number,PendingShare>();
-  const previewDesigns=new Map<string,Promise<ReturnType<typeof parseShare>>>();
   const downloads=new DownloadLibrary(path.join(app.getPath('userData'),'home','downloads'));
   const picked=new Map<number,{key:string;file:string}>();
   const address=process.env.SINKING_STAR_COMMUNITY_URL?.trim()||defaultCommunity;
@@ -57,6 +56,7 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
   const catalogs=new CommunityCache(path.join(cacheRoot,'lists'),{freshMs:5*minute,keepMs:7*day,diskBytes:12*mib,entries:96});
   const details=new CommunityCache(path.join(cacheRoot,'details'),{freshMs:5*minute,keepMs:7*day,diskBytes:12*mib,entries:160});
   const images=new CommunityCache(path.join(cacheRoot,'images'),{freshMs:day,keepMs:30*day,diskBytes:96*mib,entries:1024});
+  const sceneDesigns=new CommunityCache(path.join(cacheRoot,'scenes'),{freshMs:90*day,keepMs:90*day,diskBytes:50*mib,entries:2048});
   const credentialFile=path.join(app.getPath('userData'),'home','community-author-'+digest(Buffer.from(community?.origin??address)).slice(0,24)+'.bin');
   const author=new CommunityAuthor(credentialFile,async(action,fields,token,signal)=>{
     const reply=await send('/api/account/'+action,'POST',fields===undefined?undefined:JSON.stringify(fields),'application/json',undefined,token,{limit:64*1024,signal});
@@ -100,7 +100,14 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     const url=new URL(route,defaultCommunity);
     url.searchParams.sort();
     const list=url.pathname==='/api/works',mine=list&&url.searchParams.get('mine')==='1',endpoint=url.pathname+url.search;
-    const account=mine?await communityDeadline(communityTimeout,signal=>author.restore(signal)):undefined;
+    async function reloadProxy(signal:AbortSignal){
+      if(refresh&&!localOnly)await session.defaultSession.forceReloadProxyConfig().catch(()=>{});
+      signal.throwIfAborted();
+    }
+    const account=mine?await communityDeadline(communityTimeout,async signal=>{
+      await reloadProxy(signal);
+      return author.restore(signal);
+    }):undefined;
     if(mine&&!account)throw Error('请登录后查看自己的作品');
     const key=account?JSON.stringify([account.username,endpoint]):endpoint;
     const cache=list?catalogs:details;
@@ -109,12 +116,13 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
       if(!bytes)return null;
       try{return {data:JSON.parse(bytes.toString()),stale:false};}catch{return null;}
     }
-    const load=async()=>{
-      const {bytes}=await send(endpoint,'GET',undefined,undefined,undefined,account?.token);
+    const load=()=>communityDeadline(communityTimeout,async signal=>{
+      if(!mine)await reloadProxy(signal);
+      const {bytes}=await send(endpoint,'GET',undefined,undefined,undefined,account?.token,{signal});
       const data=JSON.parse(bytes.toString());
       if(list?!Array.isArray(data?.works):data?.id!==url.pathname.split('/').at(-1))throw Error('无法识别社区返回的数据');
       return bytes;
-    };
+    });
     const options={refresh,persist:!mine,canUseStale:offlineCacheAllowed};
     const entry=await cache.get(key,load,options);
     try{return {data:JSON.parse(entry.bytes!.toString()),stale:entry.stale,checked:entry.checked};}
@@ -172,7 +180,7 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     const previews=Object.fromEntries(files.filter((entry):entry is readonly [string,string]=>Boolean(entry[1])));
     return {cover,previews};
   }
-  function storeDraft(host:ReturnType<ProjectWindows['homeOwner']>,bundle:{bytes:Buffer;manifest:ShareDraft['manifest']},source:WorldProject,selected?:string,images:{cover?:string;previews:Record<string,string>}={previews:{}}){
+  function storeDraft(host:ReturnType<ProjectWindows['homeOwner']>,bundle:{bytes:Buffer;manifest:ShareDraft['manifest']},source:WorldProject,selected?:string,images:Pick<ShareDraft,'cover'|'previews'|'fullImages'>={previews:{}}){
     if(bundle.manifest.scope==='group')throw Error('这关依赖其他关卡。请选择可独立游玩的单关，或发布原来的完整工程。');
     const summary={id:randomUUID(),manifest:bundle.manifest,size:bundle.bytes.length,...images};
     if(!host.window.isDestroyed()){
@@ -243,9 +251,9 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     if(source==='library'){
       const signature=await downloads.signature(key);
       const entry=shareImport(await downloads.bytes(key));
-      const primary=entry.levels.find(scene=>scene.id===entry.primary);
-      if(!primary)throw Error('关卡库记录缺少主关卡');
-      return {level:await engine.preview(primary.project),signature};
+      const stage=entry.levels.find(scene=>scene.id===(id==='primary'?entry.primary:id));
+      if(!stage)throw Error('关卡库中没有找到此关卡');
+      return {level:await engine.preview(await engine.adaptProject(stage.project)),signature};
     }
     const {document,signature}=await library.inspect(key);
     let level;
@@ -271,12 +279,20 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     return JSON.parse(reply.bytes.toString());
   });
   handle('image',async(_host,route:string,version?:string,refresh=false)=>{
-    if(!/^\/api\/works\/[a-f0-9]{32}\/(?:cover|previews\/[\w.-]{1,100})$/.test(route)||version!==undefined&&(typeof version!=='string'||version.length>40))throw Error('无效的社区图片');
+    if(!/^\/api\/works\/[a-f0-9]{32}\/(?:cover|previews\/[\w.-]{1,100})(?:\?size=full)?$/.test(route)||version!==undefined&&(typeof version!=='string'||version.length>40))throw Error('无效的社区图片');
     const entry=await images.get(communityImageKey(route,version),async()=>{
-      const res=await send(route,'GET',undefined,undefined,undefined,undefined,{limit:coverLimit});
+      const res=await send(route,'GET',undefined,undefined,undefined,undefined,{limit:route.endsWith('?size=full')?fullImageLimit:coverLimit});
       return res.headers.get('content-type')==='image/webp'?res.bytes:null;
     },{refresh:refresh===true,canUseStale:offlineCacheAllowed});
     return entry.bytes?'data:image/webp;base64,'+entry.bytes.toString('base64'):null;
+  });
+  handle('saveImage',async(host,image:string,title='关卡预览')=>{
+    const bytes=imageBytes(image,fullImageLimit);
+    const name=typeof title==='string'?title.replace(/[^\p{L}\p{N} _.-]/gu,'_').slice(0,80):'关卡预览';
+    const choice=await dialog.showSaveDialog(host.window,{title:'保存预览图片',defaultPath:(name||'关卡预览')+'.webp',filters:[{name:'WebP 图片',extensions:['webp']}]});
+    if(choice.canceled||!choice.filePath)return false;
+    await atomicWrite(choice.filePath,bytes);
+    return true;
   });
   handle('download',async(_host,id,level)=>{
     const {work,source,isLevel,cached,bytes}=await communityDeadline(communityTimeout,async signal=>{
@@ -391,7 +407,7 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     const thumbnail=(!choice.level||choice.level===(manifest.primaryId??manifest.levels[0].id))?await downloads.thumbnail(choice.key):null;
     return storeDraft(host,bundle,source,selected,{cover:thumbnail?.image,previews:{}});
   });
-  handle('shareDraft',host=>{const draft=drafts.get(hostId(host));if(!draft)return null;const {id,manifest,size,cover,previews}=draft;return {id,manifest,size,cover,previews};});
+  handle('shareDraft',host=>{const draft=drafts.get(hostId(host));if(!draft)return null;const {id,manifest,size,cover,previews,fullImages}=draft;return {id,manifest,size,cover,previews,fullImages};});
   handle('shareClear',(host,id?:string)=>{const key=hostId(host);if(id===undefined||drafts.get(key)?.id===id)drafts.delete(key);});
   handle('publishedThumbnail',async(_host,id:string,version:string,level:string,image?:string)=>{
     if(!/^[a-f0-9]{32}$/.test(id)||typeof version!=='string'||version.length>40||typeof level!=='string'||level.length>100)throw Error('预览来源无效');
@@ -400,30 +416,48 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     const bytes=await images.peek(key);
     return bytes?'data:image/webp;base64,'+bytes.toString('base64'):null;
   });
-  handle('publishedPreview',async(_host,id:string,version:string,level:string)=>{
-    if(!/^[a-f0-9]{32}$/.test(id)||typeof version!=='string'||version.length>40||typeof level!=='string')throw Error('预览来源无效');
-    if(!await backgroundGame())return null;
-    const key=JSON.stringify([id,version]);
-    let pending=previewDesigns.get(key);
-    if(!pending){
-      if(previewDesigns.size>=3)previewDesigns.delete(previewDesigns.keys().next().value!);
-      pending=async function(){
-        const local=(await downloads.list()).find(row=>row.work===id&&row.version===version&&!row.level&&row.source===community?.origin);
-        if(local){const bytes=await downloads.bytes(local.key).catch(()=>null);if(bytes)return parseShare(bytes);}
-        const reply=await request('/api/works/'+id+'/download','GET',undefined,undefined,undefined,{limit:shareLimit});
-        const {bytes}=reply;
-        if(reply.headers.get('x-design-sha256')!==digest(bytes))throw Error('预览文件校验失败');
-        return parseShare(bytes);
-      }();
-      previewDesigns.set(key,pending);
-      void pending.catch(()=>{if(previewDesigns.get(key)===pending)previewDesigns.delete(key);});
-    }
-    const {design,manifest}=await pending;
-    if(!manifest.levels.some(row=>row.id===level))throw Error('该关卡不在作品中');
-    const project=design.format==='sinking-star-project'?design:design.format==='sinking-star-native-world'?nativeScene(design,level):design.levels.find(row=>row.id===level)?.project;
-    if(!project)throw Error('无法读取关卡场景');
+  handle('publishedPreview',async(_host,id:string,version:string,level:string,content?:string,source:CommunityPreviewSource='scene')=>{
+    if(!/^[a-f0-9]{32}$/.test(id)||typeof version!=='string'||version.length>40||typeof level!=='string'||!/^[-\w.]{1,100}$/.test(level)||
+      content!==undefined&&!/^[a-f0-9]{64}$/.test(content)||!['scene','standalone','stage','local'].includes(source))throw Error('预览来源无效');
+    if(!await backgroundGame())throw Error('连接 Steam 游戏后可查看实时 3D');
     const engine=service();
-    return engine.preview(await engine.adaptProject(project));
+    const local=(await downloads.list()).filter(item=>item.work===id&&item.version===version&&item.source===community?.origin&&item.manifest.levels.some(row=>row.id===level));
+    for(const item of local){
+      const bytes=await downloads.bytes(item.key).catch(()=>null);
+      if(!bytes)continue;
+      const {design,manifest}=parseShare(bytes),scene=previewScene(design,manifest,level);
+      if(scene)return engine.preview(await engine.adaptProject(scene));
+    }
+    const key=JSON.stringify([id,content??version,level]);
+    const entry=await sceneDesigns.get(key,async()=>{
+      if(source==='local')throw Error('当前社区接口只能在线预览可独立下载的单关。这一关有依赖，可下载到关卡库预览。');
+      const route='/api/works/'+id;
+      return communityDeadline(communityTimeout,async signal=>{
+        const query=(source==='scene'?'preview=1&':'')+'level='+encodeURIComponent(level);
+        const reply=await request(route+'/download?'+query,'GET',undefined,undefined,undefined,{limit:scenePreviewLimit,signal}).catch(error=>{
+          if(error instanceof CommunityResponseTooLarge)throw Error('关卡预览超过 512 KiB，可下载到关卡库预览');
+          throw error;
+        });
+        if(reply.headers.get('x-design-sha256')!==digest(reply.bytes))throw Error('关卡预览文件校验失败');
+        const {manifest}=parseShare(reply.bytes);
+        if(manifest.scope!=='level')throw Error('此关需要其他关卡，可下载到关卡库预览');
+        if(source==='scene'){
+          if(reply.headers.get('x-sstar-scene-preview')!=='1')throw Error('社区服务暂未开放实时 3D 预览，请刷新作品详情');
+          if(content&&reply.headers.get('x-sstar-work-content')!==content)throw Error('作品已更新，请刷新后再试');
+        }else if(source==='standalone'){
+          if(content&&manifest.sha256!==content)throw Error('作品已更新，请刷新后再试');
+        }else{
+          const current=await request(route,'GET',undefined,undefined,undefined,{signal});
+          const work=JSON.parse(current.bytes.toString()) as SharedWork;
+          if(manifest.levels[0]?.id!==level||work.version!==version||work.manifest.sha256!==content)throw Error('作品已更新，请刷新后再试');
+        }
+        return reply.bytes;
+      });
+    },{canUseStale:offlineCacheAllowed});
+    if(!entry.bytes)throw Error('没有可用的关卡预览');
+    const {design}=parseShare(entry.bytes);
+    if(design.format!=='sinking-star-project')throw Error('预览文件不是单关');
+    return engine.preview(await engine.adaptProject(design));
   });
   handle('sharePreview',async(host,level:string,id?:string)=>{
     const draft=shareDraft(host,id);
@@ -438,18 +472,33 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     if(!scene)throw Error('该关卡不在工程中');
     return engine.preview(await engine.adaptProject(scene.project));
   });
-  handle('shareImage',(host,level:string,image:string,id?:string)=>{
+  function readImage(image:string|CommunityImage){
+    return {thumbnail:imageBytes(typeof image==='string'?image:image.thumbnail),full:typeof image!=='string'&&image.full?imageBytes(image.full,fullImageLimit):undefined};
+  }
+  async function uploadImage(route:string,image:string|CommunityImage,fullPreview:boolean,signal?:AbortSignal){
+    const {thumbnail,full}=readImage(image);
+    if(!full||!fullPreview)return request(route,'POST',thumbnail,'image/webp',undefined,{limit:64*1024,signal});
+    const size=Buffer.alloc(4);size.writeUInt32BE(thumbnail.length);
+    return request(route+'?size=full','POST',Buffer.concat([size,thumbnail,full]),'application/octet-stream',undefined,{limit:64*1024,signal});
+  }
+  handle('shareImage',(host,level:string,image:string|CommunityImage,id?:string)=>{
     const draft=shareDraft(host,id);
-    imageBytes(image);
-    if(level==='world')draft.cover=image;
-    else if(draft.manifest.levels.some(row=>row.id===level))draft.previews[level]=image;
-    else throw Error('该关卡不在分享范围');
+    readImage(image);
+    const thumbnail=typeof image==='string'?image:image.thumbnail;
+    if(level==='world')draft.cover=thumbnail;
+    else if(draft.manifest.levels.some(row=>row.id===level))draft.previews[level]=thumbnail;
+    else throw Error('关卡不在分享范围');
+    const full=typeof image==='string'?undefined:image.full;
+    if(full)(draft.fullImages??={})[level]=full;
+    else if(draft.fullImages)delete draft.fullImages[level];
   });
-  handle('replaceImage',async(_host,id:string,level:string,image:string,version?:string)=>{
+  handle('replaceImage',async(_host,id:string,level:string,image:string|CommunityImage,version?:string,fullPreview=false)=>{
     const ending=level==='world'?'cover':'previews/'+level;
     const route='/api/works/'+id+'/'+ending;
-    await request(route,'POST',imageBytes(image),'image/webp');
-    await Promise.all([images.invalidate(communityImageKey(route,version)),invalidateWork(id)]);
+    await uploadImage(route,image,fullPreview===true);
+    await images.invalidate(communityImageKey(route,version));
+    await images.invalidate(communityImageKey(route+'?size=full',version));
+    await invalidateWork(id);
   });
   handle('shareSave',async(host,id?:string)=>{
     const draft=shareDraft(host,id);
@@ -473,13 +522,13 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
       work=JSON.parse(result.bytes.toString()) as SharedWork;
       if(!images)return;
       const workId=work.id;
-      const upload=(suffix:string,image:string)=>request(`/api/works/${workId}/${suffix}`,'POST',imageBytes(image),'image/webp',undefined,{limit:64*1024,signal});
-      if(draft.cover&&input.cover!==false)await upload('cover',draft.cover);
+      const upload=(suffix:string,level:string,thumbnail:string)=>uploadImage(`/api/works/${workId}/${suffix}`,{thumbnail,full:draft.fullImages?.[level]},work?.fullImagePreview===true,signal);
+      if(draft.cover&&input.cover!==false)await upload('cover','world',draft.cover);
       const selection=Array.isArray(input.previews)?new Set<string>(input.previews):null;
       const selected=draft.manifest.levels.filter(level=>draft.previews[level.id]&&(!selection||selection.has(level.id)));
       for(let start=0;start<selected.length;start+=4){
         signal.throwIfAborted();
-        const results=await Promise.allSettled(selected.slice(start,start+4).map(level=>upload('previews/'+level.id,draft.previews[level.id])));
+        const results=await Promise.allSettled(selected.slice(start,start+4).map(level=>upload('previews/'+level.id,level.id,draft.previews[level.id])));
         const failure=results.find(result=>result.status==='rejected');
         if(failure)throw failure.reason;
       }
@@ -543,16 +592,18 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     const key=await library.remember(tab.file),{row}=await library.inspect(key);
     await library.thumbnailSave(key,row.cover,{image});
   });
-  ipcMain.handle('home:prepare',async(event,project:WorldProject,level?:string,cover?:string)=>{
+  ipcMain.handle('home:prepare',async(event,project:WorldProject,level?:string,image?:string|CommunityImage)=>{
     const tab=editor(event),host=tab.owner;
-    if(cover)imageBytes(cover);
+    if(image)readImage(image);
+    const cover=typeof image==='string'?image:image?.thumbnail;
     const bundle=await service().prepareShare(project,level,editorVersion);
-    let images:{cover?:string;previews:Record<string,string>}={cover,previews:{}};
+    let images:Pick<ShareDraft,'cover'|'previews'|'fullImages'>={cover,previews:{}};
     if(tab.file){
       const key=await library.remember(tab.file);
       const row=(await library.inspect(key)).row;
       images=await projectImages(key,bundle.manifest,level??row.cover,cover);
     }
+    if(typeof image==='object'&&image.full)images.fullImages={world:image.full};
     const summary=storeDraft(host,bundle,project,level,images);
     if(host.window.isDestroyed())return summary;
     windows.showHome(host);

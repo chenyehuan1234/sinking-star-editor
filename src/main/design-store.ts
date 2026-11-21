@@ -1,4 +1,9 @@
 import fs from'node:fs/promises';import path from'node:path';import{randomUUID,createHash}from'node:crypto';import type{WorldProject,RecoveryItem,AssemblyItem,RegionBundle}from'../shared';import{validateBundle,validateRegionTransfer}from'../core/regions';
+import {upgradeWorld} from '../core/migrate';
+import {isDeepStrictEqual} from 'node:util';
+function editableWorld(world:WorldProject){
+ return JSON.parse(JSON.stringify(upgradeWorld(world),(key,value)=>['sourceEvidence','sourceHash','sourceBuild'].includes(key)?undefined:value));
+}
 async function write(file:string,data:unknown){await fs.mkdir(path.dirname(file),{recursive:true});const temp=file+'.'+randomUUID()+'.tmp';await fs.writeFile(temp,JSON.stringify(data));try{await fs.rename(temp,file);}catch(e){await fs.rm(temp,{force:true});throw e;}}
 export class DesignStore{
  async clipboard(bundle?:RegionBundle):Promise<RegionBundle|null>{
@@ -14,6 +19,23 @@ export class DesignStore{
  private serial<T>(fn:()=>Promise<T>){const next=this.queue.then(fn);this.queue=next.then(()=>{},()=>{});return next;}
  private key(w:WorldProject,file?:string){return createHash('sha256').update(w.id+':'+(file?path.resolve(file).toLowerCase():'unsaved')).digest('hex').slice(0,24);}
  private directory(w:WorldProject,file?:string){return path.join(this.root,'recovery',this.key(w,file));}
+ commitProject(w:WorldProject,file:string,save:()=>Promise<void>){return this.serial(async()=>{
+   await save();
+   this.lastTime=Math.max(Date.now(),this.lastTime)+1;
+   await write(path.join(this.directory(w,file),'saved.json'),{cutoff:this.lastTime}).catch(()=>{});
+ });}
+ async recoveryStatus(w:WorldProject,file?:string){
+   await this.queue;
+   const rows=await this.recoveries(w,file),latest=rows.find(row=>row.kind==='auto');
+   if(!latest)return rows;
+   let cutoff=file?(await fs.stat(file)).mtimeMs:0;
+   if(file)try{
+     const marker=JSON.parse(await fs.readFile(path.join(this.directory(w,file),'saved.json'),'utf8'));
+     if(Number.isSafeInteger(marker.cutoff))cutoff=Math.max(cutoff,marker.cutoff);
+   }catch{/* Existing projects may only have a file timestamp. */}
+   const recoverable=Date.parse(latest.at)>cutoff&&!isDeepStrictEqual(editableWorld(w),editableWorld(await this.restore(w,latest.id,file)));
+   return rows.map(row=>({...row,recoverable:row.id===latest.id&&recoverable}));
+ }
  async recoveries(w:WorldProject,file?:string):Promise<RecoveryItem[]>{const dir=this.directory(w,file);try{const files=await fs.readdir(dir);const rows=await Promise.all(files.filter(n=>n.endsWith('.json')).map(async n=>{try{return JSON.parse(await fs.readFile(path.join(dir,n),'utf8')).item as RecoveryItem;}catch{return null;}}));return rows.filter((r):r is RecoveryItem=>Boolean(r)).sort((a,b)=>b.at.localeCompare(a.at));}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return[];throw e;}}
  saveRecovery(w:WorldProject,file?:string,kind:'auto'|'manual'='auto'){const snapshot=structuredClone(w);return this.serial(async()=>{const dir=this.directory(snapshot,file),old=await this.recoveries(snapshot,file),text=JSON.stringify(snapshot),hash=createHash('sha256').update(text).digest('hex');if(old[0]?.id.endsWith(hash.slice(0,12))&&old[0].kind===kind)return;const time=Math.max(Date.now(),this.lastTime+1);this.lastTime=time;const item:RecoveryItem={id:time+'-'+hash.slice(0,12),name:snapshot.name,at:new Date(time).toISOString(),kind,summary:`${snapshot.levels.length} 个关卡 · ${snapshot.map.entries.length} 个入口`};await write(path.join(dir,item.id+'.json'),{item,world:snapshot});const rows=[item,...old].filter(i=>i.kind===kind);for(const i of rows.slice(kind==='auto'?20:10))await fs.rm(path.join(dir,i.id+'.json'),{force:true});});}
  async restore(w:WorldProject,id:string,file?:string){if(!/^[0-9]+-[a-f0-9]{12}$/.test(id))throw Error('恢复记录无效');const v=JSON.parse(await fs.readFile(path.join(this.directory(w,file),id+'.json'),'utf8'));if(v.world.id!==w.id)throw Error('恢复记录不属于当前工程');return v.world as WorldProject;}

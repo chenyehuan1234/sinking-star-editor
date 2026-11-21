@@ -74,3 +74,20 @@ test('a late response cannot restore an invalidated community page and the disk 
   assert.equal(files.length,1);
   assert.equal((await fs.stat(path.join(folder,files[0]))).size,12);
 });
+
+test('manual refresh can recover while an older catalog request is stalled',async t=>{
+  const folder=await fixture(t),cache=new CommunityCache(folder,policy);
+  let release!:(data:Buffer)=>void;
+  let started!:()=>void;
+  const held=new Promise<Buffer>(resolve=>{release=resolve;});
+  const loading=new Promise<void>(resolve=>{started=resolve;});
+  const pending=cache.get('catalog',()=>{started();return held;},options);
+  await loading;
+  const latest=bytes('fresh catalog');
+  const refreshed=await cache.get('catalog',async()=>latest,{...options,refresh:true});
+  assert.deepEqual(refreshed,{bytes:latest,stale:false,checked:true});
+  release(bytes('outdated catalog'));
+  await pending;
+  assert.deepEqual(await cache.peek('catalog'),latest);
+  assert.deepEqual(await new CommunityCache(folder,policy).peek('catalog'),latest);
+});

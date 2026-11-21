@@ -6,10 +6,11 @@ type Entry={bytes:Buffer;at:number};
 type FileEntry={size:number;at:number};
 export type CommunityCacheResult={bytes:Buffer|null;stale:boolean;checked?:true};
 type Policy={freshMs:number;keepMs:number;diskBytes:number;entries:number};
+type CacheRequest={result:Promise<CommunityCacheResult>;refresh:boolean};
 
 export class CommunityCache {
   private memory=new Map<string,Entry>();
-  private pending=new Map<string,Promise<CommunityCacheResult>>();
+  private pending=new Map<string,CacheRequest>();
   private files?:Map<string,FileEntry>;
   private writes=Promise.resolve();
   private revision=0;
@@ -100,31 +101,32 @@ export class CommunityCache {
 
   get(key:string,load:()=>Promise<Buffer|null>,options:{refresh?:boolean;persist?:boolean;canUseStale:(error:unknown)=>boolean}){
     const active=this.pending.get(key);
-    if(active)return active;
+    if(active&&(!options.refresh||active.refresh))return active.result;
     const revision=this.revision,persist=options.persist!==false;
+    const current=()=>revision===this.revision&&this.pending.get(key)?.result===pending;
     const fetch=async():Promise<CommunityCacheResult>=>{
       const previous=await this.read(key,persist);
       const usable=previous&&Date.now()-previous.at<=this.policy.keepMs;
       if(usable&&!options.refresh&&Date.now()-previous.at<this.policy.freshMs){
-        if(revision===this.revision)this.remember(key,previous);
+        if(current())this.remember(key,previous);
         return {bytes:previous.bytes,stale:false};
       }
       let bytes:Buffer|null;
       try{bytes=await load();}
       catch(error){
         if(usable&&options.canUseStale(error))return {bytes:previous.bytes,stale:true};
-        if(previous&&!options.canUseStale(error)&&revision===this.revision)await this.invalidate(key);
+        if(previous&&!options.canUseStale(error)&&current())await this.invalidate(key);
         throw error;
       }
-      if(bytes&&revision===this.revision){
+      if(bytes&&current()){
         const entry={bytes,at:Date.now()};
         this.remember(key,entry);
         if(persist)await this.save(key,entry,revision);
       }
       return {bytes,stale:false,checked:true};
     };
-    const pending=fetch().finally(()=>{if(this.pending.get(key)===pending)this.pending.delete(key);});
-    this.pending.set(key,pending);
+    const pending=fetch().finally(()=>{if(this.pending.get(key)?.result===pending)this.pending.delete(key);});
+    this.pending.set(key,{result:pending,refresh:options.refresh===true});
     return pending;
   }
 

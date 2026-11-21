@@ -40,8 +40,7 @@ if(lock)app.whenReady().then(async()=>{
   let service=new EditorService(process.env.SINKING_STAR_WORKSPACE??preferences.workspace??path.join(root,'workspace'),path.join(__dirname,'asset-worker.cjs'));
   let store=new DesignStore(service.workspace);const quickSlots=new QuickSlotStore(path.join(app.getPath('userData'),'quick-slots'));
   const persistPreferences=()=>atomicWrite(config,JSON.stringify(preferences));
-  const migratedWorldPaths=new Map<string,string>();
-  const adaptedPaths=new Map<string,string>();const projectPaths=new Map<string,string>(),lastProject=path.join(app.getPath('userData'),'last-project.json');
+  const projectPaths=new Map<string,string>(),lastProject=path.join(app.getPath('userData'),'last-project.json');
   const nativePaths=new Map<string,string>();
   const library=new HomeLibrary(path.join(app.getPath('userData'),'home'),()=>service.workspace);
   const caller=new AsyncLocalStorage<ProjectTab>();
@@ -50,7 +49,7 @@ if(lock)app.whenReady().then(async()=>{
   const pathKey=(id:string)=>tab().id+':'+id;
   projectWindows=new ProjectWindows(path.join(__dirname,'../renderer/index.html'),path.join(__dirname,'preload.cjs'),
     ()=>path.join(service.workspace,'projects'),closed=>{
-      for(const entries of [projectPaths,nativePaths,migratedWorldPaths,adaptedPaths])
+      for(const entries of [projectPaths,nativePaths])
         for(const key of entries.keys())if(key.startsWith(closed.id+':'))entries.delete(key);
     });
   const rememberProject=async(w:WorldProject,file:string)=>{
@@ -74,8 +73,6 @@ if(lock)app.whenReady().then(async()=>{
       const id=/^level_([a-f0-9]{12})$/.exec(p.name)?.[1]??digest(file).slice(0,12);
       const w=standaloneWorld(p,id);
       await rememberProject(w,file);
-      if(p!==original)adaptedPaths.set(pathKey(w.id),file);
-      else adaptedPaths.delete(pathKey(w.id));
       return w;
     }
     projectWindows.recordFile(tab(),file);
@@ -83,24 +80,20 @@ if(lock)app.whenReady().then(async()=>{
     if(original.format==='sinking-star-native-world'){
       const project=await service.adaptNativeWorld(original),index=await service.nativeIndex(project);
       const w=nativeWorkbench(project,index,nativeRegions(service.pkg,service.codec!,await fs.readFile(path.join(service.gamePath,'data/strings/s-cn.localization'),'utf8')));
-      if(project!==original){nativePaths.delete(pathKey(w.id));projectPaths.delete(pathKey(w.id));adaptedPaths.set(pathKey(w.id),file);}
-      else if(project.version===5){nativePaths.set(pathKey(w.id),file);await rememberProject(w,file);}
+      nativePaths.set(pathKey(w.id),file);
+      await rememberProject(w,file);
       return w;
     }
     const w=await service.adaptWorld(original);
     await service.checkWorld(w);
-    if(w===original){
-      await rememberProject(w,file);
-      if(w.version<4)migratedWorldPaths.set(pathKey(w.id),file);else migratedWorldPaths.delete(pathKey(w.id));
-    }else{projectPaths.delete(pathKey(w.id));adaptedPaths.set(pathKey(w.id),file);}
+    await rememberProject(w,file);
     return service.upgradeWorldEntries(upgradeWorld(w));
   };
   const saveStandalone=async(w:WorldProject,saveAs:boolean)=>{
     if(w.native||w.levels.length!==1)throw Error('单关编辑只保存当前关卡');
     const {project,title}=w.levels[0],saved={...upgradeProject(project),title};
     await service.checkProject(saved);
-    const adapted=adaptedPaths.get(pathKey(w.id));
-    let file=saveAs||adapted?undefined:projectPaths.get(pathKey(w.id));
+    let file=saveAs?undefined:projectPaths.get(pathKey(w.id));
     if(!file){
       const folder=path.join(service.workspace,'projects');
       await fs.mkdir(folder,{recursive:true});
@@ -110,19 +103,18 @@ if(lock)app.whenReady().then(async()=>{
       file=r.filePath;
     }
     file=await projectWindows.fileAvailable(tab(),file);
-    if(adapted&&directoriesOverlap(file,adapted))throw Error('请为适配关卡选择新文件，保留来源关卡');
     try{
       const previous=await library.readFile(file);
       if(previous.format!=='sinking-star-project')throw Error('请选择新的单关文件名，保留现有工程');
       const backup=singleWorld(upgradeProject(previous));backup.id=w.id;
       await store.saveRecovery(backup,file,'manual');
+      if(previous.sourceHash!==saved.sourceHash||previous.sourceBuild!==saved.sourceBuild||previous.version!==saved.version)await atomicWrite(file+'.previous.bak',await fs.readFile(file,'utf8'));
     }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
     saved.sourceEvidence={...service.evidence(saved),history:project.sourceEvidence?.history};
     const text=JSON.stringify(saved,null,2);
     if(Buffer.byteLength(text)>64_000_000)throw Error('单关文件超过可保存的 64 MB');
-    await atomicWrite(file,text);
+    await store.commitProject(w,file,()=>atomicWrite(file,text));
     await rememberProject(w,file);
-    adaptedPaths.delete(pathKey(w.id));
     tab().start='file';tab().levelDraft=undefined;
     return file;
   };
@@ -148,8 +140,41 @@ if(lock)app.whenReady().then(async()=>{
   handle('nativeIndex',p=>service.nativeIndex(p));handle('nativeAssociations',p=>service.nativeAssociations(p));handle('nativeRegion',r=>service.nativeRegion(r));handle('nativePreviewUpdate',r=>service.nativePreviewUpdate(r,tab().id));handle('nativeBuild',p=>service.nativeBuild(p),true);handle('nativeDeploy',p=>service.nativeDeploy(p),true);
   const nativeProject=async():Promise<NativeWorldProject>=>{await service.unchanged();return{format:'sinking-star-native-world',version:4,id:randomUUID().replaceAll('-','').slice(0,12),name:'原版三层世界',sourceHash:service.sourceHash,sourceBuild:service.build,base:'overworld',edits:{},levelEdits:{},assignments:[]};};
   handle('nativeCreate',nativeProject);
-  handle('nativeSave',async(p:NativeWorldProject,saveAs=false)=>{validateNativeWorld(p);let file=saveAs?undefined:nativePaths.get(pathKey(p.id));if(file){try{const previous=JSON.parse(await fs.readFile(file,'utf8'));if(previous.version===4&&p.version===5)file=undefined;}catch{}}if(!file){const r=await dialog.showSaveDialog(parent(),{defaultPath:path.join(service.workspace,'projects',p.id+(p.version===5?'.v5':'')+'.sstar-native-world.json'),filters:[{name:'原版世界 v4／v5',extensions:['json']}]});if(r.canceled||!r.filePath)return null;file=r.filePath;}file=await projectWindows.fileAvailable(tab(),file);if(adaptedPaths.get(pathKey(p.id))?.toLowerCase()===path.resolve(file).toLowerCase())throw Error('请使用新文件名另存此工程');try{const old=JSON.parse(await fs.readFile(file,'utf8'));if(old.version===4&&p.version===5)throw Error('升级工程请选择新的 v5 文件名，保留原版 v4 文件');await fs.copyFile(file,file+'.previous.bak');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}await atomicWrite(file,JSON.stringify(p,null,2));nativePaths.set(pathKey(p.id),file);if(p.version===5)await rememberProject(nativeWorkbench(p,await service.nativeIndex(p)),file);return file;},true);
-  handle('nativeLoad',async()=>{const r=await dialog.showOpenDialog(parent(),{defaultPath:path.join(service.workspace,'projects'),filters:[{name:'原版世界 v4／v5',extensions:['json']}],properties:['openFile']});if(r.canceled)return null;const file=await projectWindows.fileAvailable(tab(),r.filePaths[0]);if((await fs.stat(file)).size>20_000_000)throw Error('工程超过20MB');const original=JSON.parse(await fs.readFile(file,'utf8')),p=await service.adaptNativeWorld(original);await service.nativeIndex(p);if(p===original)nativePaths.set(pathKey(p.id),file);else{nativePaths.delete(pathKey(p.id));adaptedPaths.set(pathKey(p.id),path.resolve(file));}projectWindows.recordFile(tab(),file);return p;},true);
+  const saveNative=async(p:NativeWorldProject,saveAs=false)=>{
+    validateNativeWorld(p);
+    let file=saveAs?undefined:nativePaths.get(pathKey(p.id));
+    if(!file){
+      await fs.mkdir(path.join(service.workspace,'projects'),{recursive:true});
+      const choice=await dialog.showSaveDialog(parent(),{defaultPath:path.join(service.workspace,'projects',p.id+'.sstar-native-world.json'),filters:[{name:'原版世界 v4／v5',extensions:['json']}]});
+      if(choice.canceled||!choice.filePath)return null;
+      file=choice.filePath;
+    }
+    const target=await projectWindows.fileAvailable(tab(),file);
+    const index=await service.nativeIndex(p),world=nativeWorkbench(p,index);
+    try{
+      const previous=await library.readFile(target);
+      if(previous.format!=='sinking-star-native-world')throw Error('请选择新的原版世界文件名');
+      const backup=nativeWorkbench(previous,index);
+      if(backup.id===world.id)await store.saveRecovery(backup,target,'manual');
+      await atomicWrite(target+'.previous.bak',await fs.readFile(target,'utf8'));
+    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+    await store.commitProject(world,target,()=>atomicWrite(target,JSON.stringify(p,null,2)));
+    nativePaths.set(pathKey(p.id),target);
+    await rememberProject(world,target);
+    return target;
+  };
+  handle('nativeSave',saveNative,true);
+  handle('nativeLoad',async()=>{
+    const choice=await dialog.showOpenDialog(parent(),{defaultPath:path.join(service.workspace,'projects'),filters:[{name:'原版世界 v4／v5',extensions:['json']}],properties:['openFile']});
+    if(choice.canceled)return null;
+    const file=await projectWindows.fileAvailable(tab(),choice.filePaths[0]);
+    if((await fs.stat(file)).size>64_000_000)throw Error('工程超过 64 MB');
+    const p=await service.adaptNativeWorld(JSON.parse(await fs.readFile(file,'utf8')));
+    const w=nativeWorkbench(p,await service.nativeIndex(p));
+    nativePaths.set(pathKey(p.id),file);
+    await rememberProject(w,file);
+    return p;
+  },true);
   const updates=new Updates();handle('updateCheck',()=>updates.check());handle('updateDownload',()=>updates.fetch());handle('updateInstall',async()=>{if(projectWindows.hasDirtyProjects)throw Error('请先保存所有打开的工程');return updates.install(parent());});
   let connection:Promise<Catalog>|undefined,connectionKey='';
   const connectGame=async(selected?:string):Promise<Catalog>=>{const location=selected??preferences.gamePath;if(!location)throw Error('请先选择原游戏目录');const key=path.resolve(location).toLowerCase();if(connection&&connectionKey===key)return connection;if(connection&&projectWindows.size>1)throw Error('请先关闭其他工程标签，再切换游戏目录');
@@ -202,11 +227,43 @@ if(lock)app.whenReady().then(async()=>{
   handle('assemblyList',()=>store.assemblies());handle('assemblySave',async b=>{await service.regionPreview(b);return store.saveAssembly(b);},true);handle('assemblyRemove',id=>store.removeAssembly(id),true);
   handle('assemblyImport',async()=>{const r=await dialog.showOpenDialog(parent(),{filters:[{name:'原生组合',extensions:['json']}],properties:['openFile']});if(r.canceled)return null;const st=await fs.stat(r.filePaths[0]);if(st.size>20_000_000)throw Error('组合文件超过20MB');const b=JSON.parse(await fs.readFile(r.filePaths[0],'utf8'));validateBundle(b);await service.regionPreview(b);return store.saveAssembly(b);},true);
   handle('assemblyExport',async b=>{validateBundle(b);const r=await dialog.showSaveDialog(parent(),{defaultPath:b.name+'.sstar-assembly.json',filters:[{name:'原生组合',extensions:['json']}]});if(!r.canceled&&r.filePath)await atomicWrite(r.filePath,JSON.stringify(b,null,2));},true);
-  handle('recoveryWrite',async w=>{await service.checkWorld(w);await store.saveRecovery(w,projectPaths.get(pathKey(w.id)));});handle('recoveryList',async w=>{const file=projectPaths.get(pathKey(w.id)),rows=await store.recoveries(w,file);let modified=0;if(file)modified=(await fs.stat(file)).mtimeMs;const latest=rows.find(i=>i.kind==='auto');const changed=latest?JSON.stringify(upgradeWorld(await store.restore(w,latest.id,file)))!==JSON.stringify(upgradeWorld(w)):false;return rows.map(i=>({...i,recoverable:i.id===latest?.id&&changed&&Date.parse(i.at)>modified}));});handle('recoveryRestore',async(w,id)=>{const restored=await store.restore(w,id,projectPaths.get(pathKey(w.id)));return upgradeWorld(await service.adaptWorld(restored));});
+  handle('recoveryWrite',async(w:WorldProject)=>{const file=projectPaths.get(pathKey(w.id));await service.checkWorld(w);await store.saveRecovery(w,file);});
+  handle('recoveryList',async(w:WorldProject)=>store.recoveryStatus(w,projectPaths.get(pathKey(w.id))));
+  handle('recoveryRestore',async(w:WorldProject,id:string)=>{
+    const recovered=await store.restore(w,id,projectPaths.get(pathKey(w.id)));
+    return upgradeWorld(await service.adaptWorld(recovered));
+  });
   handle('runValidate',(w,r)=>service.runValidate(w,r));handle('runPlan',(w,r)=>service.runPlan(w,r));handle('runLaunch',(w,r,c)=>service.runLaunch(w,r,c),true);handle('nativeRunPlan',(p,r)=>service.nativeRunPlan(p,r));handle('nativeRunLaunch',(p,r,c)=>service.nativeRunLaunch(p,r,c),true);
   handle('previewMesh',r=>service.assets!.preview(r));
   handle('worldCreate',()=>service.worldCreate());handle('worldValidate',w=>service.worldValidate(w));handle('worldPrefabs',()=>service.worldPrefabs());
-  handle('worldSave',async(w:WorldProject,saveAs=false)=>{if(tab().singleLevel)return saveStandalone(w,saveAs);await service.checkWorld(w);const legacy=w.version===4?migratedWorldPaths.get(pathKey(w.id)):undefined;let file=saveAs||legacy?undefined:projectPaths.get(pathKey(w.id));if(!file){await fs.mkdir(path.join(service.workspace,'projects'),{recursive:true});const r=await dialog.showSaveDialog(parent(),{defaultPath:path.join(service.workspace,'projects',w.id+(adaptedPaths.has(pathKey(w.id))?'.build-'+service.build:'')+'.sstar-world.json'),filters:[{name:'大地图工程',extensions:['sstar-world.json']}]});if(r.canceled||!r.filePath)return null;file=r.filePath;}file=await projectWindows.fileAvailable(tab(),file);if(legacy?.toLowerCase()===path.resolve(file).toLowerCase())throw Error('请另存三维大地图，保留旧工程');if(adaptedPaths.get(pathKey(w.id))?.toLowerCase()===path.resolve(file).toLowerCase())throw Error('请为适配工程选择新文件，保留来源工程');try{const old=JSON.parse(await fs.readFile(file,'utf8'));if(old.version<3)await fs.copyFile(file,file+'.pre-v06.bak',fs.constants.COPYFILE_EXCL);}catch(e){if(!['ENOENT','EEXIST'].includes((e as NodeJS.ErrnoException).code??''))throw e;}try{const previous=JSON.parse(await fs.readFile(file,'utf8'));await store.saveRecovery(upgradeWorld(previous),file,'manual');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}const saved=upgradeWorld(w);if(!saved.native)saved.sourceEvidence={...service.evidence(saved),history:w.sourceEvidence?.history};const text=JSON.stringify(saved,null,saved.version===4?undefined:2);if(Buffer.byteLength(text)>64_000_000)throw Error('工程超过可保存的 64 MB，请缩小范围');await atomicWrite(file,text);await rememberProject(w,file);migratedWorldPaths.delete(pathKey(w.id));return file;},true);
+  handle('worldSave',async(w:WorldProject,saveAs=false)=>{
+    if(tab().singleLevel)return saveStandalone(w,saveAs);
+    const key=pathKey(w.id);
+    if(w.native&&(saveAs||nativePaths.has(key)||!projectPaths.has(key)))return saveNative(nativeDocument(w),saveAs);
+    await service.checkWorld(w);
+    let file=saveAs?undefined:projectPaths.get(pathKey(w.id));
+    if(!file){
+      const folder=path.join(service.workspace,'projects');
+      await fs.mkdir(folder,{recursive:true});
+      const choice=await dialog.showSaveDialog(parent(),{defaultPath:path.join(folder,w.id+'.sstar-world.json'),filters:[{name:'大地图工程',extensions:['sstar-world.json']}]});
+      if(choice.canceled||!choice.filePath)return null;
+      file=choice.filePath;
+    }
+    const target=await projectWindows.fileAvailable(tab(),file);
+    try{
+      const previous=await library.readFile(target);
+      if(previous.format!=='sinking-star-world')throw Error('请选择新的大地图工程文件名');
+      await store.saveRecovery(upgradeWorld(previous),target,'manual');
+      if(previous.sourceHash!==w.sourceHash||previous.sourceBuild!==w.sourceBuild||previous.version!==w.version)await atomicWrite(target+'.previous.bak',await fs.readFile(target,'utf8'));
+    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+    const saved=upgradeWorld(w);
+    if(!saved.native)saved.sourceEvidence={...service.evidence(saved),history:w.sourceEvidence?.history};
+    const text=JSON.stringify(saved,null,saved.version===4?undefined:2);
+    if(Buffer.byteLength(text)>64_000_000)throw Error('工程超过可保存的 64 MB，请缩小范围');
+    await store.commitProject(w,target,()=>atomicWrite(target,text));
+    await rememberProject(w,target);
+    return target;
+  },true);
   handle('worldStartup',async()=>{
     const current=tab();
     if(current.start==='blank')return null;

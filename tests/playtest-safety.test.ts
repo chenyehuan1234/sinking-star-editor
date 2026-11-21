@@ -50,10 +50,11 @@ test('工作台直接校验并隔离启动指定范围，无需选择存档',asy
     events.push(scoped.levels.map(level=>level.id).join(','));
     return 'deployed';
   };
-  Object.assign(service,{isolationReady:true,startPlaytest:async (level:string,fresh:boolean)=>{events.push(level);if(fresh)events.push('fresh');return 'started';}});
+  Object.assign(service,{isolationReady:true,startPlaytest:async (level:string,mode:string)=>{events.push(level,mode);return 'started';}});
   assert.equal(await service.runLaunch(world,{mode:'single',levelIds:['b']}),'started');
   assert.deepEqual(events.slice(0,3),['stopped','validate','b']);
   assert.match(events[3],/^ed_[a-f0-9]{12}_b$/);
+  assert.equal(events[4],'single');
   events.length=0;
   assert.equal(await service.runLaunch(world,{mode:'world',levelIds:[],start:'fresh'}),'started');
   assert.deepEqual(events,['stopped','validate','a,b','overworld','fresh']);

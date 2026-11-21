@@ -42,7 +42,7 @@ import type { Catalog, EditorProject } from '../shared';
 import type{WorldProject,WorldIssue}from'../shared';
 import{ExeReflection}from'../core/reflection';import{PropertyCodec}from'../core/properties';
 import{WorldCompiler,newWorld,validateWorld,worldIssues}from'../core/world';
-import{prefabs,validateReferences}from'../core/mechanisms';import{CampaignManager}from'./campaigns';
+import{prefabs,validateReferences}from'../core/mechanisms';import{CampaignManager,type PlaytestCampaign}from'./campaigns';
 import {buildObjectCatalog,currentCatalogLabels} from '../core/object-catalog';
 import type {ObjectCatalog} from '../catalog-types';
 import {NativeAssets} from './assets';
@@ -531,15 +531,15 @@ export class EditorService {
   private async isolatedRunPlan(context:TestContext):Promise<PlaytestPlan>{
     return {context,compatible:[],incompatible:[],supported:this.isolationReady,preparation:await this.preparationEstimate(),reason:this.isolationReady?'试玩前自动核对独立存档目录':isolationUnavailable};
   }
-  private async startPlaytest(initialLevel:string,fresh=false,fromLibrary=false,timing?:PlaytestTiming){
+  private async startPlaytest(initialLevel:string,mode:PlaytestCampaign,timing?:PlaytestTiming){
     this.onPlaytestProgress?.('准备独立试玩存档…');
     await this.assertStopped();
     const source=await fs.readFile(path.join(this.testRoot,SOURCE_EXE));
     if(sha256(source)!==this.exeHash)throw Error('试玩程序已变化，请重新准备试玩副本');
     const file=path.join(this.testRoot,RUNTIME_EXE);
     await managedPath(this.workspace,file);
-    const prepareSave=()=>preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{fresh,library:fromLibrary,verify:async bound=>{
-      const program=patchSaveDirectory(source,bound.id);
+    const prepareSave=()=>preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{mode,verify:async bound=>{
+      const program=patchSaveDirectory(source,bound.id,true);
       if(await fileHash(file)!==program.hash){
         await atomicWrite(file,program.buffer);
         if(await fileHash(file)!==program.hash)throw Error('独立试玩程序校验失败');
@@ -569,7 +569,7 @@ export class EditorService {
       await save.profiles.captureIndependentSettings();
     }).catch(()=>{});});
     child.unref();
-    return fromLibrary?'已启动独立试玩，从关卡初始状态开始。':fresh?'已在独立存档中从头试玩整个工程。':'已启动独立试玩。';
+    return mode==='single'||mode==='library'?'已启动独立试玩，从关卡初始状态开始。':mode==='fresh'?'已在独立存档中从头试玩整个工程。':'已启动独立试玩。';
   }
 
   async runLaunch(w:WorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice,entryLevel?:string){
@@ -583,7 +583,8 @@ export class EditorService {
       if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
     });
     const initial=entryLevel??(r.mode==='single'?scoped.levels[0].id:undefined);
-    return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',fresh,Boolean(entryLevel),timing);
+    const campaign=entryLevel?'library':r.mode==='single'?'single':fresh?'fresh':'resume';
+    return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',campaign,timing);
   }
   async nativeRunLaunch(p:NativeWorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice){
     const timing=new PlaytestTiming('native-'+r?.mode);
@@ -605,10 +606,10 @@ export class EditorService {
         const errors=(await this.worldValidate(scoped)).filter(i=>i.severity==='error');
         if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
       });
-      return this.startPlaytest('ed_'+scoped.id+'_native_scene',false,false,timing);
+      return this.startPlaytest('ed_'+scoped.id+'_native_scene','single',timing);
     }
     await this.nativeDeploy(p,timing,validate);
-    return this.startPlaytest('overworld',freshWorldRun(r),false,timing);
+    return this.startPlaytest('overworld',freshWorldRun(r)?'fresh':'resume',timing);
   }
 
   async worldReset(_w:WorldProject):Promise<string>{return blockPlaytest();}

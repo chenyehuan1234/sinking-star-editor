@@ -41,9 +41,22 @@ test('启动只在独立目录创建战役，复用测试进度且不改正式�
   const previous=await fs.readFile(status);
   await assert.rejects(()=>preparePlaytestSaves(f.workspace,hash,'ed_bad',{verify:async()=>{throw Error('wrong save path');}},f.saved),/wrong save path/);
   assert.deepEqual(await fs.readFile(status),previous);
-  await preparePlaytestSaves(f.workspace,hash,'ed_library_a',{library:true},f.saved);
+  await preparePlaytestSaves(f.workspace,hash,'ed_library_a',{mode:'library'},f.saved);
   const library=path.join(run.saves,'Editor_Playtest_Library','Status.sokoban_status');
   assert.equal(readCampaign(await fs.readFile(library)).current,'ed_library_a');
+  const level='ed_example_b',single=path.join(run.saves,'Editor_Playtest_Single');
+  await preparePlaytestSaves(f.workspace,hash,level,{mode:'single'},f.saved);
+  await fs.writeFile(path.join(single,level+'.history'),'older level revision');
+  await fs.writeFile(path.join(single,level+'.history.bak'),'old backup');
+  await fs.writeFile(path.join(path.dirname(library),level+'.history'),'separate library progress');
+  const repeated=await preparePlaytestSaves(f.workspace,hash,level,{mode:'single'},f.saved);
+  assert.equal(repeated.id,run.id);
+  assert.deepEqual((await fs.readdir(single)).sort(),['Status.sokoban_status','_editor-shared-playtest.json']);
+  const singleStatus=readCampaign(await fs.readFile(path.join(single,'Status.sokoban_status')));
+  assert.equal(singleStatus.current,level);
+  assert.deepEqual(singleStatus.levels,[]);
+  assert.equal(await fs.readFile(history,'utf8'),'test progress');
+  assert.equal(await fs.readFile(path.join(path.dirname(library),level+'.history'),'utf8'),'separate library progress');
   await fs.writeFile(path.join(run.saves,'settings.menu_state'),'changed only by test');
   assert.deepEqual((await fs.readdir(original)).sort(),['ThiefOceanRiverEndpoint','settings.menu_state']);
   assert.equal(await fs.readFile(settings,'utf8'),'original video and sound');
@@ -65,6 +78,15 @@ test('真实游戏程序按隔离检验结果处理，源程序字节保持不�
  const r=patchSaveDirectory(source,'0123456789ab');
  assert.deepEqual(source,original);
  assert.equal(r.buffer.length,source.length);
+ const playtest=patchSaveDirectory(source,'0123456789ab',true);
+ const hasConfirmedGate=r.sourceHash==='69ddb71fb6768a097f9bff204201f3a9ce960f1a325f5ed3a5c9160dc64a6ae8';
+ assert.equal(playtest.fastTime,hasConfirmedGate);
+ const expected=Buffer.from(r.buffer);
+ if(hasConfirmedGate){
+  expected.fill(0x90,0xa974e,0xa9750);
+  expected.fill(0x90,0x265d1e,0x265d24);
+ }
+ assert.ok(playtest.buffer.equals(expected));
  let end=0;
  for(const edit of [...r.changes].sort((a,b)=>a.offset-b.offset)){
   assert.ok(edit.offset>=end);
@@ -79,6 +101,7 @@ test('真实游戏程序按隔离检验结果处理，源程序字节保持不�
   rebuilt[2]^=1; // DOS header, outside the game initializer and PE section table.
   assert.notEqual(sha256(rebuilt),r.sourceHash);
   assert.equal(isolationSupported(rebuilt),true);
+  assert.equal(patchSaveDirectory(rebuilt,'0123456789ab',true).fastTime,false);
   const layout=locateNativeSavePath(source)!;
   const shiftedFrame=Buffer.from(source),start=layout.displacement-0x0f;
   const relocatedSlots=[0x04,0x17,0xed,0x3e,0x4a,0x69,0x97,0xcd,0xdd,0xe5,0xf5,0x78,0x8f,0xd5];
