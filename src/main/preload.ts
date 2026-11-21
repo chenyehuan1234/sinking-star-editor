@@ -48,14 +48,15 @@ if(process.argv.includes('--sstar-project-tabs')){
     prepare:(p,l,c)=>homeInvoke('prepare',p,l,c),shareSave:()=>homeInvoke('shareSave'),shareDraft:()=>homeInvoke('shareDraft'),shareClear:()=>homeInvoke('shareClear'),
     onShareDraft:f=>listen('shareDraft',f),prepareShareFrom:s=>homeInvoke('prepareShareFrom',s),
     authorSignIn:i=>homeInvoke('authorSignIn',i),authorRecovery:()=>homeInvoke('authorRecovery'),request:(r,m,j)=>homeInvoke('request',r,m,j),
-    image:r=>homeInvoke('image',r),download:(id,l)=>homeInvoke('download',id,l),downloads:()=>homeInvoke('downloads'),downloadSave:k=>homeInvoke('downloadSave',k),
+    browse:(r,f,l)=>homeInvoke('browse',r,f,l),image:(r,v,f)=>homeInvoke('image',r,v,f),download:(id,l)=>homeInvoke('download',id,l),downloads:()=>homeInvoke('downloads'),downloadSave:k=>homeInvoke('downloadSave',k),
     renameLibraryItem:(k,t)=>homeInvoke('renameLibraryItem',k,t),removeLibraryItem:k=>homeInvoke('removeLibraryItem',k),
     libraryAddFile:()=>homeInvoke('libraryAddFile'),libraryAddLevels:(k,ids)=>homeInvoke('libraryAddLevels',k,ids),
     libraryAddScene:(p,l)=>homeInvoke('libraryAddScene',p,l),openLibraryItem:k=>homeInvoke('openLibraryItem',k),
     libraryPlay:k=>homeInvoke('libraryPlay',k),onLibraryPlayProgress:f=>listen('libraryPlayProgress',f),
     importPick:()=>homeInvoke('importPick'),importInto:(p,c,f)=>homeInvoke('importInto',p,c,f),publish:o=>homeInvoke('publish',o),
     sharePreview:l=>homeInvoke('sharePreview',l),publishedPreview:(w,v,l)=>homeInvoke('publishedPreview',w,v,l),
-    shareImage:(l,i)=>homeInvoke('shareImage',l,i),replaceImage:(w,l,i)=>homeInvoke('replaceImage',w,l,i),
+    publishedThumbnail:(w,v,l,i)=>homeInvoke('publishedThumbnail',w,v,l,i),
+    shareImage:(l,i)=>homeInvoke('shareImage',l,i),replaceImage:(w,l,i,v)=>homeInvoke('replaceImage',w,l,i,v),
     onOpenScene:f=>listen('openScene',f),startScene:()=>homeInvoke('startScene')
   };
   contextBridge.exposeInMainWorld('workbenchHome',home);

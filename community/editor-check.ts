@@ -67,6 +67,42 @@ app.whenReady().then(async()=>{
   await until(()=>home('Boolean(document.querySelector(".hub-work h2"))'),'在桌面端发布并进入作品详情');
   assert.equal(await home('document.querySelector(".hub-work h2").textContent'),levels[0].title);
   await until(()=>home('Boolean(document.querySelector(".hub-detail-cover img")?.naturalWidth)'),'无自定义封面时使用场景缩略图');
+  let reads=0;
+  const network=session.defaultSession.webRequest;
+  const directoryButtons='[aria-label="社区浏览类型"] button';
+  network.onBeforeRequest({urls:[address+'/api/*']},(request,done)=>{
+    if(request.method==='GET'&&new URL(request.url).pathname.startsWith('/api/works'))reads++;
+    done({});
+  });
+  const catalogReady=()=>home('Boolean(document.querySelector(".hub-projects"))&&!document.body.textContent.includes("正在读取作品…")');
+  await clickHome('‹ 返回作品列表');
+  await until(catalogReady,'单关目录首次加载');
+  await until(()=>home('Boolean(document.querySelector(".hub-projects .hub-remote-preview img")?.naturalWidth)'),'单关目录封面首次加载');
+  await clickHome('工程',directoryButtons);
+  await until(catalogReady,'工程目录首次加载');
+  await delay(350);
+  const warmReads=reads;
+  await home(`(() => {
+    window.communityCacheFlash=false;
+    window.communityCacheObserver=new MutationObserver(()=>{
+      if(document.body.textContent.includes('正在读取作品…')||document.body.textContent.includes('正在加载作品…'))window.communityCacheFlash=true;
+    });
+    window.communityCacheObserver.observe(document.body,{childList:true,subtree:true,characterData:true});
+  })()`);
+  await clickHome('单关',directoryButtons);
+  await clickHome('查看详情');
+  await until(()=>home('Boolean(document.querySelector(".hub-detail-cover img")?.naturalWidth)'),'重新打开作品详情');
+  await clickHome('‹ 返回作品列表');
+  await clickHome('工程',directoryButtons);
+  await delay(250);
+  assert.equal(reads,warmReads,'切回已浏览的目录、详情和缩略图没有发出新请求');
+  assert.equal(await home('window.communityCacheFlash'),false);
+  await home('window.communityCacheObserver.disconnect()');
+  await clickHome('刷新社区');
+  await until(()=>reads===warmReads+1,'手动刷新向服务器发出一次目录请求');
+  network.onBeforeRequest(null);
+  await clickHome('单关',directoryButtons);
+  console.log('社区缓存验收：往返目录与详情新增 0 个请求，无加载闪烁，手动刷新发出 1 个请求');
   await clickHome('我的发布','.hub-nav button');
   assert.equal(await home('document.querySelector("#community-title").textContent'),'我的发布');
   await clickHome('管理作品');
@@ -218,11 +254,14 @@ app.whenReady().then(async()=>{
     await home('window.workbenchHome.request("/api/works/'+published.id+'","DELETE")');
     console.log(i?'工程上架、网页详情、完整与逐关下载、导为独立可编辑工程':'单关上架、网页详情和下载导入通过');
   }
-  session.defaultSession.webRequest.onBeforeRequest({urls:[address+'/api/*']},(_details,callback)=>callback({cancel:true}));
   await home('window.projectTabs.action("home")');
   await clickHome('关卡库','.hub-nav button');
   await clickHome('关卡社区','.hub-nav button');
-  await until(()=>home('Array.from(document.querySelectorAll("[role=alert]")).some(node=>node.textContent.includes("VPN"))'),'联网失败时提示 VPN');
+  await until(catalogReady,'断网前缓存目录');
+  session.defaultSession.webRequest.onBeforeRequest({urls:[address+'/api/*']},(_details,callback)=>callback({cancel:true}));
+  await clickHome('刷新社区');
+  await until(()=>home('Array.from(document.querySelectorAll("[role=status]")).some(node=>node.textContent.includes("本地缓存")&&node.textContent.includes("VPN"))'),'联网失败时保留目录和 VPN 提示');
+  assert.ok(await catalogReady());
   await delay(100);
   app.exit(0);
 }).catch(error=>{console.error(error);app.exit(1);});

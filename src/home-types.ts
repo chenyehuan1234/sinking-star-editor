@@ -11,6 +11,7 @@ export interface SceneThumbnail {image:string;fallback?:boolean}
 export type ThumbnailSource='project'|'library';
 export type HomeShareSource={kind:ThumbnailSource;key:string;level?:string};
 export type CommunitySignIn={mode:'device';username:string}|{mode:'recover';username:string;recovery:string}|{mode:'legacy';username:string;password:string};
+export type CommunityRead={data:unknown;stale:boolean};
 export type LevelImportChoice = {kind:'download'|'file';key:string};
 export interface LevelImportSource {choice:LevelImportChoice;title:string;levels:HomeLevel[];primary:string}
 export interface HomeApi {
@@ -37,7 +38,8 @@ export interface HomeApi {
   authorSignIn(input:CommunitySignIn):Promise<{username:string}>;
   authorRecovery():Promise<string|null>;
   request(route:string, method?:string, json?:unknown):Promise<unknown>;
-  image(route:string):Promise<string|null>;
+  browse(route:string,refresh?:boolean,localOnly?:boolean):Promise<CommunityRead|null>;
+  image(route:string,version?:string,refresh?:boolean):Promise<string|null>;
   download(id:string, level?:string):Promise<DownloadResult>;
   downloads():Promise<DownloadedLevel[]>;
   renameLibraryItem(key:string,title:string):Promise<void>;
@@ -53,9 +55,10 @@ export interface HomeApi {
   importInto(project:WorldProject,choice:LevelImportChoice,folderId?:string):Promise<{project:WorldProject;primary:string;count:number}>;
   publish(input:{title:string;description:string;version:string;tags?:string[];id?:string;images:boolean;cover?:boolean;previews?:string[]}):Promise<{id:string;warning?:string}>;
   publishedPreview(work:string,version:string,level:string):Promise<LevelView|null>;
+  publishedThumbnail(work:string,version:string,level:string,image?:string):Promise<string|null>;
   sharePreview(level:string):Promise<LevelView>;
   shareImage(level:string,image:string):Promise<void>;
-  replaceImage(work:string,level:string,image:string):Promise<void>;
+  replaceImage(work:string,level:string,image:string,version?:string):Promise<void>;
   onOpenScene(listener:(id:string)=>void):()=>void;
   startScene():Promise<{scene?:string;singleLevel:boolean}>;
 }
