@@ -9,6 +9,8 @@ export interface LibraryAddResult {saved:number;failed:{id:string;title:string;r
 export type DownloadResult={kind:'project';project:HomeProject}|{kind:'level';item:DownloadedLevel};
 export interface SceneThumbnail {image:string;fallback?:boolean}
 export type ThumbnailSource='project'|'library';
+export type HomeShareSource={kind:ThumbnailSource;key:string;level?:string};
+export type CommunitySignIn={mode:'device';username:string}|{mode:'recover';username:string;recovery:string}|{mode:'legacy';username:string;password:string};
 export type LevelImportChoice = {kind:'download'|'file';key:string};
 export interface LevelImportSource {choice:LevelImportChoice;title:string;levels:HomeLevel[];primary:string}
 export interface HomeApi {
@@ -27,11 +29,13 @@ export interface HomeApi {
   thumbnailSave(key:string, level:string, image:SceneThumbnail,signature:string,source?:ThumbnailSource):Promise<void>;
   useCover(image:string):Promise<void>;
   prepare(project:WorldProject, level:string|undefined, cover?:string):Promise<ShareDraft>;
+  prepareShareFrom(source:HomeShareSource):Promise<ShareDraft>;
   shareSave():Promise<string|null>;
   shareDraft():Promise<ShareDraft|null>;
   shareClear():Promise<void>;
   onShareDraft(listener:()=>void):()=>void;
-  communityUrl(value?:string):Promise<string>;
+  authorSignIn(input:CommunitySignIn):Promise<{username:string}>;
+  authorRecovery():Promise<string|null>;
   request(route:string, method?:string, json?:unknown):Promise<unknown>;
   image(route:string):Promise<string|null>;
   download(id:string, level?:string):Promise<DownloadResult>;
@@ -47,7 +51,8 @@ export interface HomeApi {
   libraryAddScene(project:WorldProject,level:string):Promise<DownloadedLevel>;
   importPick():Promise<LevelImportSource|null>;
   importInto(project:WorldProject,choice:LevelImportChoice,folderId?:string):Promise<{project:WorldProject;primary:string;count:number}>;
-  publish(input:{title:string;description:string;version:string;id?:string;images:boolean;cover?:boolean;previews?:string[]}):Promise<{id:string;warning?:string}>;
+  publish(input:{title:string;description:string;version:string;tags?:string[];id?:string;images:boolean;cover?:boolean;previews?:string[]}):Promise<{id:string;warning?:string}>;
+  publishedPreview(work:string,version:string,level:string):Promise<LevelView|null>;
   sharePreview(level:string):Promise<LevelView>;
   shareImage(level:string,image:string):Promise<void>;
   replaceImage(work:string,level:string,image:string):Promise<void>;

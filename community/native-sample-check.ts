@@ -122,7 +122,9 @@ app.whenReady().then(async()=>{
   console.log('本机网页可按关卡搜索原版工程，并展开实际分组');
 
   const identity={username:'import_'+randomBytes(6).toString('hex'),password:randomBytes(18).toString('hex')};
-  await home('window.workbenchHome.request("/api/account/signup","POST",'+sign(identity)+')');
+  const signup=await fetch(address+'/api/account/signup',{method:'POST',headers:{'content-type':'application/json'},body:sign(identity)});
+  assert.equal(signup.status,200);
+  await home('window.workbenchHome.authorSignIn('+sign({mode:'legacy',...identity})+')');
   const stage:EditorProject={format:'sinking-star-project',version:3,sourceBuild:work.manifest.sourceBuild,sourceHash:work.manifest.sourceHash,template:'mirror_1',name:'mirror_1',operations:[]};
   const bundle=encodeShare(stage,'level','0.11.0-beta.2',[{id:'mirror_1',title:importedName}]);
   const login=await fetch(address+'/api/account/login',{method:'POST',headers:{'content-type':'application/json','x-sstar-desktop':'1'},body:sign(identity)});
@@ -141,7 +143,7 @@ app.whenReady().then(async()=>{
     await sourceTabs.loadURL(address+'/');
     const webNav='[aria-label="社区导航"] button';
     await until(()=>sourceTabs.webContents.executeJavaScript('document.querySelectorAll('+sign(webNav)+').length===2'),'网页版左侧的工程与关卡库');
-    await sourceTabs.webContents.executeJavaScript('Array.from(document.querySelectorAll('+sign(webNav)+')).find(button=>button.textContent==="社区关卡库").click()');
+    await sourceTabs.webContents.executeJavaScript('Array.from(document.querySelectorAll('+sign(webNav)+')).find(button=>button.textContent==="社区单关").click()');
     await until(()=>sourceTabs.webContents.executeJavaScript('document.querySelector(".hub-projects")?.textContent.includes('+sign(importedName)+')'),'社区关卡库显示独立发布的小关');
     assert.equal(await sourceTabs.webContents.executeJavaScript('document.querySelector(".hub-projects")?.textContent.includes("Steam 原版目录")'),false);
     await screenshot(sourceTabs,'community-level-library');
@@ -279,8 +281,8 @@ app.whenReady().then(async()=>{
     await home('window.projectTabs.action("home")');
     await clickDesktop('关卡库');
     await home('Array.from(document.querySelectorAll(".hub-segment button")).find(button=>button.textContent==="已下载").click()');
-    await until(()=>home('Boolean(Array.from(document.querySelectorAll(".hub-download-row button")).find(button=>button.textContent==="编辑单关"))'),'关卡库单关编辑入口');
-    await home('Array.from(document.querySelectorAll(".hub-download-row button")).find(button=>button.textContent==="编辑单关").click()');
+    await until(()=>home('Boolean(document.querySelector(\'.hub-download-row button[title="编辑单关"]\'))'),'关卡库单关编辑入口');
+    await home('document.querySelector(\'.hub-download-row button[title="编辑单关"]\').click()');
     const fromLibrary=await singleEditor(importedName);
     started='';
     await fromLibrary.executeJavaScript('document.querySelector(".s-play").click()');

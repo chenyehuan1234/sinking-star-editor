@@ -7,7 +7,7 @@ import {atomicWrite} from './service';
 import {coverLimit,shareExpandedLimit} from '../share-types';
 
 const supported = /^(?!.*\.last-deployed\.)[^.].*\.json$/i;
-type Metadata = {roots:string[]; recent:string[]; community?:string};
+type Metadata = {roots:string[]; recent:string[]};
 export function homeTitle(title:string){
   if(typeof title!=='string'||!title.trim()||title.trim().length>100||/[\x00-\x1f]/.test(title))throw Error('名称须为 1–100 个可见字符');
   return title.trim();
@@ -22,7 +22,7 @@ export class HomeLibrary {
   settings():Promise<Metadata>{
     return this.metadata??=fs.readFile(path.join(this.folder,'library.json'),'utf8').then(text=>{
       const value=JSON.parse(text) as Metadata;
-      return {roots:(value.roots??[]).filter(n=>typeof n==='string'),recent:(value.recent??[]).filter(n=>typeof n==='string'),community:value.community};
+      return {roots:(value.roots??[]).filter(n=>typeof n==='string'),recent:(value.recent??[]).filter(n=>typeof n==='string')};
     }).catch(():Metadata=>({roots:[],recent:[]}));
   }
   private save(value:Metadata){
@@ -31,7 +31,6 @@ export class HomeLibrary {
     this.writes=next.catch(()=>{});
     return next;
   }
-  async community(value?:string){const settings=await this.settings();if(value!==undefined){settings.community=value;await this.save(settings);}return settings.community??'';}
   async addRoot(root:string){const settings=await this.settings();const location=await fs.realpath(root);if(!settings.roots.includes(location)){settings.roots.push(location);await this.save(settings);}}
   async remember(file:string){
     const settings=await this.settings();

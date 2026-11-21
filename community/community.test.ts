@@ -135,6 +135,7 @@ test('community serves guest search and downloads and enforces author ownership 
     const headers:Record<string,string>={'x-sstar-desktop':'1'};
     if(token)headers.authorization='Bearer '+token;
     if(meta)headers['x-work-meta']=Buffer.from(JSON.stringify(meta)).toString('base64');
+    if(input!==undefined&&!Buffer.isBuffer(input))headers['content-type']='application/json';
     return api(new Request('http://example.test/api/'+route,{method,headers,body:input===undefined?undefined:Buffer.isBuffer(input)?new Uint8Array(input):JSON.stringify(input)}));
   };
   try{
@@ -158,9 +159,25 @@ test('community serves guest search and downloads and enforces author ownership 
     assert.equal((await (await call('works?q='+encodeURIComponent('红色回廊'))).json()).works[0].manifest.groups.length,2);
     assert.equal((await (await call('works?q='+encodeURIComponent('地图 a 红色回廊'))).json()).works[0].id,id);
     assert.equal((await (await call('works?type=level')).json()).works.length,0);
+    assert.equal((await call('works?mine=1')).status,401);
+    assert.deepEqual((await (await call('works?mine=1','GET',undefined,token)).json()).works.map((work:{id:string})=>work.id),[id]);
+    const other=await (await call('account/signup','POST',{...identity,username:'另一位作者'})).json();
+    assert.equal((await (await call('works?mine=1','GET',undefined,other.token)).json()).works.length,0);
     const download=await call('works/'+id+'/download?level=start'),bytes=Buffer.from(await download.arrayBuffer());
     assert.equal(download.headers.get('x-design-sha256'),digest(bytes));
     assert.equal(parseShare(bytes).manifest.scope,'group');
+    assert.deepEqual(Buffer.from(await (await call('works/'+id+'/download')).arrayBuffer()),bundle);
+    const info={title:'改名后的地图',description:'更新后的简介',tags:['光学','推箱子','光学']};
+    assert.equal((await call('works/'+id,'PATCH',info,other.token)).status,403);
+    assert.equal((await call('works/'+id,'PATCH',info,token)).status,200);
+    const updated=(await (await call('works?q='+encodeURIComponent(info.title))).json()).works[0];
+    assert.equal(updated.description,info.description);
+    assert.equal(updated.version,meta.version);
+    assert.deepEqual(updated.tags,['光学','推箱子']);
+    assert.equal((await (await call('works?tag='+encodeURIComponent('光学'))).json()).works[0].id,id);
+    assert.equal((await (await call('works?q='+encodeURIComponent('推箱子'))).json()).works[0].id,id);
+    assert.equal((await call('works/'+id,'PATCH',{...info,tags:['三'.repeat(25)]},token)).status,400);
+    assert.equal((await call('works','POST',bytes,token,{...meta,version:'group'})).status,400);
     assert.deepEqual(Buffer.from(await (await call('works/'+id+'/download')).arrayBuffer()),bundle);
     const png=Buffer.from('fake');
     assert.equal((await call('works/'+id+'/cover','POST',png,token)).status,400);
@@ -190,6 +207,7 @@ test('community serves guest search and downloads and enforces author ownership 
     assert.equal((await call('account/recover','POST',reset)).status,401);
     assert.equal((await call('works/'+id,'DELETE',undefined,token)).status,403);
     assert.equal((await call('works/'+id,'DELETE',undefined,next.token)).status,200);
+    assert.equal((await (await call('works?mine=1','GET',undefined,next.token)).json()).works.length,0);
     assert.equal((await call('works/'+id+'/download')).status,404);
   }finally{await db.close();}
 });

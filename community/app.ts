@@ -2,7 +2,7 @@ import {randomBytes, scrypt, timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
 import {digest,groupedManifest,parseShare,shareLevel} from '../src/core/share';
 import {searchKey} from '../src/level-catalog';
-import {coverLimit,shareExtension,shareLimit,type ShareManifest,type SharedWork} from '../src/share-types';
+import {coverLimit,previewImagesLimit,shareExtension,shareLimit,tagLength,tagLimit,type ShareManifest,type SharedWork} from '../src/share-types';
 import type {Database, Objects, Statement} from './database';
 
 const derive=promisify(scrypt);
@@ -43,14 +43,14 @@ function checkImage(bytes:Buffer){
   if(type==='VP8L'&&bytes[20]===0x2f){const bits=bytes.readUInt32LE(21);width=1+(bits&0x3fff);height=1+((bits>>>14)&0x3fff);}
   if(width<1||height<1||width>640||height>360)throw inputError('图片尺寸上限为 640 × 360');
 }
-const workSelect=`SELECT w.id,w.account,w.created,w.updated,w.active,r.id AS release,r.title,r.description,r.version,r.manifest,r.bytes,r.cover,r.previews,a.username
+const workSelect=`SELECT w.id,w.account,w.created,w.updated,w.active,r.id AS release,r.title,r.description,r.version,r.manifest,r.bytes,r.cover,r.previews,r.tags,a.username
   FROM works w JOIN releases r ON r.id=w.latest JOIN accounts a ON a.id=w.account`;
-type WorkRecord={id:string;account:string;created:string;updated:string;active:number;release:string;title:string;description:string;version:string;manifest:string;bytes:number;cover:string|null;previews:string;username:string};
-type WorkRow=Omit<WorkRecord,'manifest'|'previews'>&{manifest:ShareManifest;previews:Record<string,string>};
-const readWork=(row:WorkRecord):WorkRow=>({...row,manifest:JSON.parse(row.manifest),previews:JSON.parse(row.previews)});
+type WorkRecord={id:string;account:string;created:string;updated:string;active:number;release:string;title:string;description:string;version:string;manifest:string;bytes:number;cover:string|null;previews:string;tags:string;username:string};
+type WorkRow=Omit<WorkRecord,'manifest'|'previews'|'tags'>&{manifest:ShareManifest;previews:Record<string,string>;tags:string[]};
+const readWork=(row:WorkRecord):WorkRow=>({...row,manifest:JSON.parse(row.manifest),previews:JSON.parse(row.previews),tags:JSON.parse(row.tags)});
 function publicWork(row:WorkRow,account?:string):SharedWork {
   return {id:row.id,title:row.title,description:row.description,author:row.username,owner:row.account===account,version:row.version,
-    updated:new Date(row.updated).toISOString(),created:new Date(row.created).toISOString(),manifest:row.manifest,cover:Boolean(row.cover),previews:Object.keys(row.previews),size:row.bytes};
+    updated:new Date(row.updated).toISOString(),created:new Date(row.created).toISOString(),manifest:row.manifest,cover:Boolean(row.cover),previews:Object.keys(row.previews),tags:row.tags,size:row.bytes};
 }
 async function takeQuota(db:Database,key:string,amount:number,limit:number){
   const updated=await db.query(`INSERT INTO limits (key,value) SELECT ?,? WHERE ?<=?
@@ -59,20 +59,31 @@ async function takeQuota(db:Database,key:string,amount:number,limit:number){
   if(!updated.length)throw inputError('社区额度暂时不足，请稍后再试',429);
 }
 
-export function searchFields(title:string,description:string,username:string,manifest:ShareManifest){
+function cleanTags(value:unknown){
+  if(value===undefined)return [];
+  if(!Array.isArray(value)||value.length>tagLimit)throw inputError('最多添加 '+tagLimit+' 个标签');
+  const tags=new Map<string,string>();
+  for(const item of value){
+    const tag=clean(item,tagLength,'标签');
+    const key=searchKey(tag);
+    if(!tags.has(key))tags.set(key,tag);
+  }
+  return [...tags.values()];
+}
+export function searchFields(title:string,description:string,username:string,manifest:ShareManifest,tags:string[]=[]){
   const groups=new Map(manifest.groups?.map(group=>[group.id,group.title]));
   return [
-    searchKey([title,description,username,manifest.title].join(' ')),
+    searchKey([title,description,username,manifest.title,...tags].join(' ')),
     JSON.stringify(manifest.levels.map(level=>searchKey([level.title,level.id,groups.get(level.groupId??'')??'未分组'].join(' ')))),
   ] as const;
 }
 const matchWords=(text:string)=>`NOT EXISTS (SELECT 1 FROM json_each(filters.words) word WHERE instr(${text},word.value)=0)`;
-const searchWorks='WITH filters(words, category) AS (VALUES(?,?)) '+workSelect+` CROSS JOIN filters
-    WHERE w.active=1 AND (${matchWords('r.search_root')} OR EXISTS (
+const searchWorks='WITH filters(words, category, account, tag) AS (VALUES(?,?,?,?)) '+workSelect+` CROSS JOIN filters
+    WHERE w.active=1 AND (filters.account IS NULL OR w.account=filters.account) AND (${matchWords('r.search_root')} OR EXISTS (
       SELECT 1 FROM json_each(r.search_levels) stage WHERE ${matchWords("r.search_root || ' ' || stage.value")}))
+    AND (filters.tag='' OR EXISTS (SELECT 1 FROM json_each(r.tags) tags WHERE tags.value=filters.tag COLLATE NOCASE))
     AND (filters.category='' OR (filters.category='level' AND r.scope='level') OR (filters.category='project' AND r.scope<>'level')
-      OR (filters.category='projects' AND r.scope='project') OR (filters.category='library' AND r.scope IN ('level','group')))
-    ORDER BY w.updated DESC,w.id DESC LIMIT 21 OFFSET ?`;
+      OR (filters.category='projects' AND r.scope IN ('project','group')) OR (filters.category='library' AND r.scope='level'))`;
 
 export function community(database:Database,objects:Objects){
   const month=()=>new Date().toISOString().slice(0,7);
@@ -148,17 +159,19 @@ export function community(database:Database,objects:Objects){
     let metadata;
     try{metadata=JSON.parse(Buffer.from(request.headers.get('x-work-meta')??'','base64').toString());}catch{throw inputError('缺少作品信息');}
     const title=clean(metadata?.title,100,'作品名称'),description=clean(metadata?.description,800,'简介',true),version=clean(metadata?.version,40,'版本');
+    const tags=metadata?.tags===undefined?existing?.tags??[]:cleanTags(metadata.tags);
     const bytes=await body(request,shareLimit);
     let manifest;
     try{const parsed=parseShare(bytes);manifest=groupedManifest(parsed.manifest,parsed.design);}catch(e){throw inputError((e as Error).message);}
+    if(manifest.scope==='group')throw inputError('单关依赖其他关卡。请发布完整工程，或选择可独立游玩的单关。');
     const id=existing?.id??random(),release=random(),key=`design/${id}/${release}`;
-    const [root,stages]=searchFields(title,description,author.username,manifest);
+    const [root,stages]=searchFields(title,description,author.username,manifest,tags);
     const statements:Statement[]=[];
     if(!existing)statements.push({sql:'INSERT INTO works (id,account) VALUES (?,?)',args:[id,author.id]});
     statements.push({
-      sql:`INSERT INTO releases (id,work,previous,version,title,description,manifest,search_root,search_levels,scope,bytes)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      args:[release,id,existing?.release??null,version,title,description,JSON.stringify(manifest),root,stages,manifest.scope,bytes.length],
+      sql:`INSERT INTO releases (id,work,previous,version,title,description,manifest,search_root,search_levels,scope,bytes,tags)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      args:[release,id,existing?.release??null,version,title,description,JSON.stringify(manifest),root,stages,manifest.scope,bytes.length,JSON.stringify(tags)],
     });
     await writeObject(key,bytes,()=>database.batch(statements),
       async()=>Boolean((await database.query('SELECT id FROM releases WHERE id=?',[release])).length));
@@ -174,22 +187,20 @@ export function community(database:Database,objects:Objects){
     }
     if(request.method!=='POST'||owner!==row.account)throw inputError('只有作者可以修改预览图',403);
     if(level&&!row.manifest.levels.some(l=>l.id===level))throw inputError('找不到此关卡',404);
-    if(level&&!old&&Object.keys(row.previews).length>=12)throw inputError('每个版本最多公开 12 张关卡预览');
     const bytes=await body(request,coverLimit);checkImage(bytes);
     const key=`image/${row.id}/${row.release}/${random()}`;
     const previous=old?await objects.size(old)??0:0;
     const previewPath=level?'$.'+JSON.stringify(level):'';
     const update=level?'previews=json_set(previews,?,?)':'cover=?';
-    const unchanged=level?`json_extract(previews,?) IS ? AND
-      (? IS NOT NULL OR (SELECT count(*) FROM json_each(previews))<12)`:'cover IS ?';
+    const unchanged=level?'json_extract(previews,?) IS ?':'cover IS ?';
     await writeObject(key,bytes,async()=>{
       const changed=await database.query(`UPDATE releases SET ${update},image_bytes=image_bytes+?
-        WHERE id=? AND ${unchanged} AND EXISTS (
+        WHERE id=? AND ${unchanged} AND image_bytes+?<=? AND EXISTS (
           SELECT 1 FROM works WHERE id=? AND latest=? AND active=1
         ) RETURNING id`,
         [...level?[previewPath,key]:[key],bytes.length-previous,row.release,
-          ...level?[previewPath,old??null,old??null]:[row.cover],row.id,row.release]);
-      if(!changed.length)throw inputError('作品版本或预览图已修改，请刷新后再试',409);
+          ...level?[previewPath,old??null]:[row.cover],bytes.length-previous,previewImagesLimit,row.id,row.release]);
+      if(!changed.length)throw inputError('预览图超过作品的容量限制，或作品已修改，请刷新后再试',409);
     },async()=>{
       const [release]=await database.query<{cover:string|null;previews:string}>('SELECT cover,previews FROM releases WHERE id=?',[row.release]);
       return Boolean(release&&(release.cover===key||Object.values(JSON.parse(release.previews)).includes(key)));
@@ -210,10 +221,14 @@ export function community(database:Database,objects:Objects){
       if(!id){
         if(method==='POST'){if(!current)throw inputError('请先登录作者账号',401);return await publish(request,current);}
         if(method!=='GET')throw inputError('请求方式无效',405);
+        const mine=url.searchParams.get('mine')==='1';
+        if(mine&&!current)throw inputError('请登录后查看自己的作品',401);
         const q=clean(url.searchParams.get('q')??'',100,'检索词',true),category=url.searchParams.get('type')??'',page=Number(url.searchParams.get('page')??0);
+        const tag=clean(url.searchParams.get('tag')??'',tagLength,'标签',true),sort=url.searchParams.get('sort');
         if(!Number.isInteger(page)||page<0||page>500)throw inputError('页码无效');
         const words=searchKey(q).split(/\s+/).filter(Boolean);
-        const rows=await database.query<WorkRecord>(searchWorks,[JSON.stringify(words),category,page*20]);
+        const order=sort==='oldest'?'w.created ASC,w.id ASC':sort==='updated'?'w.updated DESC,w.id DESC':'w.created DESC,w.id DESC';
+        const rows=await database.query<WorkRecord>(searchWorks+' ORDER BY '+order+' LIMIT 21 OFFSET ?',[JSON.stringify(words),category,mine?current!.id:null,tag,page*20]);
         return json({works:rows.slice(0,20).map(row=>publicWork(readWork(row),current?.id)),more:rows.length>20});
       }
       if(!/^[a-f0-9]{32}$/.test(id))throw inputError('找不到此作品',404);
@@ -222,6 +237,18 @@ export function community(database:Database,objects:Objects){
       if(!action){
         if(method==='GET')return json(publicWork(row,current?.id));
         if(current?.id!==row.account)throw inputError('只有作者可以修改作品',403);
+        if(method==='PATCH'&&request.headers.get('content-type')?.split(';',1)[0]==='application/json'){
+          const input=await jsonBody(request);
+          const title=clean(input?.title,100,'作品名称'),description=clean(input?.description,800,'简介',true);
+          const tags=input?.tags===undefined?row.tags:cleanTags(input.tags);
+          const [root,stages]=searchFields(title,description,current.username,row.manifest,tags);
+          const changed=await database.query(`UPDATE releases SET title=?,description=?,search_root=?,search_levels=?,tags=?
+            WHERE id=? AND title=? AND description=? AND tags=? AND EXISTS (
+              SELECT 1 FROM works WHERE id=? AND latest=? AND active=1
+            ) RETURNING id`,[title,description,root,stages,JSON.stringify(tags),row.release,row.title,row.description,JSON.stringify(row.tags),row.id,row.release]);
+          if(!changed.length)throw inputError('作品已修改，请刷新后再试',409);
+          return json({ok:true});
+        }
         if(method==='PATCH')return await publish(request,current,row);
         if(method==='DELETE'){await database.query('UPDATE works SET active=0 WHERE id=?',[id]);return json({ok:true});}
       }

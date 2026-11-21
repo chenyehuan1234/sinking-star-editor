@@ -1,8 +1,9 @@
-import {app,BrowserWindow,WebContentsView} from 'electron';
+import {app,BrowserWindow,session,WebContentsView} from 'electron';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
+import {version as editorVersion} from '../package.json';
 import '../src/main/main';
 
 const output=process.env.SSTAR_COMMUNITY_QA!;
@@ -22,7 +23,11 @@ async function capture(window:BrowserWindow,name:string){
 
 app.whenReady().then(async()=>{
   const window=await until(()=>BrowserWindow.getAllWindows()[0],'主窗口');
-  const home=(code:string)=>window.webContents.executeJavaScript(code,true);
+  const home=async(code:string)=>{
+    const answer=await window.webContents.executeJavaScript(`(async()=>{try{return {value:await (${code})};}catch(error){return {error:String(error)};}})()`,true);
+    if(answer.error)throw Error(answer.error+' while running '+code);
+    return answer.value;
+  };
   await until(()=>home('Boolean(document.querySelector("#my-projects-title"))'),'我的工程');
   assert.deepEqual((await home('window.projectTabs.state()')).tabs,[]);
   const list=await until(async()=>{const rows=await home('window.workbenchHome.list()');return rows.length&&rows;},'读取离线工程目录');
@@ -37,6 +42,71 @@ app.whenReady().then(async()=>{
   await until(()=>home('Boolean(document.querySelector(".hub-level-item img"))'),'原生场景缩略图');
   await capture(window,'desktop-home');
   const levels=await home('window.workbenchHome.levels('+JSON.stringify(source.key)+')');
+  const clickHome=async(label:string,selector='button')=>{
+    const button=`Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(button=>!button.disabled&&(button.getAttribute('aria-label')??button.textContent.trim())===${JSON.stringify(label)})`;
+    await until(()=>home(`Boolean(${button})`),label);
+    await home(`${button}.click()`);
+  };
+  await home(`Array.from(document.querySelectorAll('.hub-level-item .hub-publish')).find(button=>button.getAttribute('aria-label')===${JSON.stringify('发布 '+levels[0].title)}).click()`);
+  await until(()=>home('Boolean(document.querySelector("#community-title"))'),'从工程逐关发布');
+  assert.equal((await home('window.workbenchHome.shareDraft()')).manifest.scope,'level');
+  assert.equal(await home('document.querySelector("[aria-label=\\"社区地址\\"]")===null'),true);
+  const username='device_'+randomBytes(5).toString('hex');
+  await clickHome('登录');
+  await home(`(() => {
+    const dialog=document.querySelector('dialog[aria-label="作者登录"]');
+    if(dialog.querySelector('input[type="password"]'))throw Error('首次登录只应要求用户名');
+    dialog.querySelector('input[name="username"]').value=${JSON.stringify(username)};
+    dialog.querySelector('form').requestSubmit();
+  })()`);
+  await until(()=>home(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()===${JSON.stringify(username)})`),'用户名登录');
+  assert.ok(await home(`Array.from(document.querySelectorAll('.hub-image-choice input[type="checkbox"]')).every(input=>input.getBoundingClientRect().width<=18&&input.getBoundingClientRect().height<=18)`));
+  assert.ok(await home(`(() => { const tray=document.querySelector('.hub-image-tray');return !tray||tray.scrollWidth<=tray.clientWidth; })()`));
+  await capture(window,'desktop-publish-preview');
+  await clickHome('确认发布');
+  await until(()=>home('Boolean(document.querySelector(".hub-work h2"))'),'在桌面端发布并进入作品详情');
+  assert.equal(await home('document.querySelector(".hub-work h2").textContent'),levels[0].title);
+  await until(()=>home('Boolean(document.querySelector(".hub-detail-cover img")?.naturalWidth)'),'无自定义封面时使用场景缩略图');
+  await clickHome('我的发布','.hub-nav button');
+  assert.equal(await home('document.querySelector("#community-title").textContent'),'我的发布');
+  await clickHome('管理作品');
+  await clickHome('修改作品信息');
+  await home(`(() => {
+    const dialog=document.querySelector('dialog[aria-label="修改作品信息"]');
+    dialog.querySelector('input[name="title"]').value='桌面发布更新';
+    dialog.querySelector('textarea').value='编辑简介无需重新上传';
+    dialog.querySelector('input[name="tags"]').value='光学，机关';
+    dialog.querySelector('form').requestSubmit();
+  })()`);
+  await until(()=>home('document.querySelector(".hub-work h2")?.textContent==="桌面发布更新"'),'管理已发布作品');
+  await until(()=>home('Boolean(document.querySelector(".hub-work .hub-tags")?.textContent.includes("光学"))'),'作品标签更新');
+  await capture(window,'desktop-published-work');
+  await home('window.workbenchHome.request("/api/account/logout","POST")');
+  await clickHome('下载关卡');
+  await clickHome('查看本机关卡库');
+  await until(()=>home('Boolean(document.querySelector(".hub-download-row .hub-publish"))'),'游客下载到本机关卡库');
+  const publishLocal=await home('document.querySelector(".hub-download-row .hub-publish").getAttribute("aria-label")');
+  await clickHome(publishLocal,'.hub-download-row .hub-publish');
+  await until(()=>home('Boolean(document.querySelector("[aria-label=\\"发布作品\\"]"))'),'关卡库发布入口');
+  assert.equal((await home('window.workbenchHome.shareDraft()')).manifest.scope,'level');
+  await home('document.querySelector("[aria-label=\\"关闭发布面板\\"]").click()');
+  await clickHome('发布作品');
+  await until(()=>home('Boolean(document.querySelector("dialog[aria-label=\\"选择发布内容\\"] select option[value=\\"'+source.key+'\\"]"))'),'社区选择发布内容');
+  await home(`(() => {
+    const dialog=document.querySelector('dialog[aria-label="选择发布内容"]');
+    const select=dialog.querySelectorAll('select')[1];
+    select.value=${JSON.stringify(source.key)};select.dispatchEvent(new Event('change',{bubbles:true}));
+  })()`);
+  await until(()=>home('Boolean(document.querySelector("[aria-label=\\"发布范围\\"]"))'),'工程发布范围');
+  await clickHome('继续','dialog button');
+  await until(async()=>(await home('window.workbenchHome.shareDraft()'))?.manifest.scope==='project','桌面社区选择完整工程');
+  await home('document.querySelector("[aria-label=\\"关闭发布面板\\"]").click()');
+  assert.equal(await home('location.protocol'),'file:','桌面社区仍在本地界面');
+  assert.equal(BrowserWindow.getAllWindows().length,1,'桌面发布与下载无需另开网页');
+  assert.equal((await home('window.workbenchHome.authorSignIn('+JSON.stringify({mode:'device',username})+')')).username,username);
+  assert.match(await home('window.workbenchHome.authorRecovery()'),/^[a-f0-9]{24}$/);
+  console.log('桌面逐关发布、用户名登录、缩略图封面、管理作品、游客下载和完整工程选择通过');
+
   await home('window.workbenchHome.open('+JSON.stringify(source.key)+','+JSON.stringify(levels[0].id)+')');
   const editor=await until(()=>window.contentView.children.find((child):child is WebContentsView=>child instanceof WebContentsView)?.webContents,'编辑器');
   const run=(code:string)=>editor.executeJavaScript(code,true);
@@ -50,21 +120,57 @@ app.whenReady().then(async()=>{
   await until(()=>run(`Array.from(document.querySelectorAll('canvas')).some(canvas=>canvas.width>100&&canvas.getBoundingClientRect().height>100)&&!document.querySelector('.s-status-right')?.textContent.includes('处理中')`),'编辑器画布可见');
 
   const account={username:'qa_'+randomBytes(5).toString('hex'),password:randomBytes(16).toString('hex')};
-  await home('window.workbenchHome.request("/api/account/signup","POST",'+JSON.stringify(account)+')');
+  const signup=await fetch(address+'/api/account/signup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(account)});
+  assert.equal(signup.status,200);
+  await home('window.workbenchHome.authorSignIn('+JSON.stringify({mode:'legacy',...account})+')');
   const names=['验收单关','验收工程'];
   for(let i=0;i<names.length;i++){
     await run('document.querySelector("[aria-label=\\\"导出关卡或工程\\\"]").click()');
     const title=i?'分享整个工程':'分享当前关';
     await until(()=>run('Array.from(document.querySelectorAll("button")).some(button=>button.textContent?.includes('+JSON.stringify(title)+'))'),'分享入口');
     await run('Array.from(document.querySelectorAll("button")).find(button=>button.textContent?.includes('+JSON.stringify(title)+')).click()');
-    const draft=await until(()=>home('window.workbenchHome.shareDraft()'),'待发布包');
+    let draft=await until(()=>home('window.workbenchHome.shareDraft()'),'待发布包');
     assert.equal(draft.manifest.scope,i?'project':'level');
+    if(!draft.cover){
+      await clickHome('生成预览');
+      draft=await until(async()=>{
+        const value=await home('window.workbenchHome.shareDraft()');
+        return value?.cover&&value;
+      },'生成作品封面');
+    }
     assert.match(draft.cover??'',/^data:image\/webp;base64,/,JSON.stringify(await run(`({status:document.querySelector('.s-status')?.textContent,scene:document.querySelector('.s-scene-breadcrumb')?.textContent,canvases:Array.from(document.querySelectorAll('canvas')).map(canvas=>[canvas.width,canvas.height])})`)));
-    assert.match(draft.manifest.editorVersion,/^0\.11\./);
-    const published=await home('window.workbenchHome.publish('+JSON.stringify({title:names[i],version:'1.0',description:'浏览、下载与导入验收',images:true})+')');
+    assert.equal(draft.manifest.editorVersion,editorVersion);
+    let published:{id:string;warning?:string};
+    if(i){
+      // Use the actual publishing form so it must generate all missing stage previews.
+      await home(`(() => {
+        const input=document.querySelector('[aria-label="发布作品"] form input[required]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(names[i])});
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+      })()`);
+      if(await home('Array.from(document.querySelectorAll("button")).some(button=>button.textContent==="登录后发布")')){
+        await clickHome('登录后发布');
+        await home(`(() => {
+          const dialog=document.querySelector('dialog[aria-label="作者登录"]');
+          dialog.querySelector('input[name="username"]').value=${JSON.stringify(account.username)};
+          dialog.querySelector('form').requestSubmit();
+        })()`);
+      }
+      await clickHome('确认发布');
+      const found=await until(async()=>{
+        const result=await home('window.workbenchHome.request("/api/works?q="+encodeURIComponent('+JSON.stringify(names[i])+'))');
+        return result.works.find((work:{author:string;previews:string[]})=>work.author===account.username&&work.previews.length===levels.length);
+      },'工程全部单关的默认缩略图');
+      published={id:found.id};
+      await until(()=>home('document.querySelector(".hub-work h2")?.textContent==="验收工程"'),'工程作品详情');
+      await home('document.querySelector(".hub-work .hub-group-toggle").click()');
+      await home('document.querySelector(".hub-work .hub-group-levels").scrollIntoView({block:"center"})');
+      await until(()=>home(`Array.from(document.querySelectorAll('.hub-work .hub-level-row img')).filter(image=>image.naturalWidth>0).length===${levels.length}`),'展开工程后逐关显示不同缩略图');
+      await capture(window,'desktop-project-level-thumbnails');
+    }else published=await home('window.workbenchHome.publish('+JSON.stringify({title:names[i],version:'1.0',description:'浏览、下载与导入验收',images:true})+')');
     const found=await home('window.workbenchHome.request("/api/works?q="+encodeURIComponent('+JSON.stringify(names[i])+'))');
     assert.equal(found.works[0].id,published.id);
-    assert.equal(found.works[0].cover,true,published.warning);
+    assert.equal(found.works[0].cover,true,published.warning??'作品默认封面');
     const web=new BrowserWindow({width:1150,height:780,show:false,webPreferences:{contextIsolation:true,sandbox:true}});
     await web.loadURL(address+'/#work/'+published.id);
     await until(()=>web.webContents.executeJavaScript('Boolean(document.querySelector(".hub-work h2")&&document.querySelector(".hub-detail-cover img")?.naturalWidth)'),'网页版详情和实际封面');
@@ -86,6 +192,10 @@ app.whenReady().then(async()=>{
     web.destroy();
     const download=await home('window.workbenchHome.download('+JSON.stringify(published.id)+')');
     if(i){
+      const newest=await home('window.workbenchHome.request("/api/works?sort=newest")');
+      const oldest=await home('window.workbenchHome.request("/api/works?sort=oldest")');
+      assert.ok(newest.works.length>=2);
+      assert.deepEqual(oldest.works.map((work:{id:string})=>work.id),newest.works.map((work:{id:string})=>work.id).reverse());
       assert.equal(download.kind,'project');
       const imported=download.project;
       assert.ok(imported.key!==source.key&&imported.count===draft.manifest.levels.length);
@@ -102,10 +212,17 @@ app.whenReady().then(async()=>{
     }else{
       assert.equal(download.kind,'level');
       assert.equal(download.item.manifest.levels.length,1);
+      const fallback=await home('window.workbenchHome.publishedPreview('+JSON.stringify(published.id)+',"1.0",'+JSON.stringify(levels[0].id)+')');
+      assert.ok(fallback.entities.length||fallback.terrain?.length,'已发布关卡无图片时可读取场景生成缩略图');
     }
     await home('window.workbenchHome.request("/api/works/'+published.id+'","DELETE")');
     console.log(i?'工程上架、网页详情、完整与逐关下载、导为独立可编辑工程':'单关上架、网页详情和下载导入通过');
   }
-  await delay(800);
+  session.defaultSession.webRequest.onBeforeRequest({urls:[address+'/api/*']},(_details,callback)=>callback({cancel:true}));
+  await home('window.projectTabs.action("home")');
+  await clickHome('关卡库','.hub-nav button');
+  await clickHome('关卡社区','.hub-nav button');
+  await until(()=>home('Array.from(document.querySelectorAll("[role=alert]")).some(node=>node.textContent.includes("VPN"))'),'联网失败时提示 VPN');
+  await delay(100);
   app.exit(0);
 }).catch(error=>{console.error(error);app.exit(1);});

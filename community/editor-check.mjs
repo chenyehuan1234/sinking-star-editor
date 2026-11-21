@@ -14,6 +14,8 @@ await fs.writeFile(path.join(profile,'game-path.json'),JSON.stringify({gamePath:
 const fixture=JSON.parse(await fs.readFile(sample,'utf8'));
 fixture.name='首页与分享验收';
 fixture.levels=fixture.levels.slice(0,2);
+fixture.levelGroups=[{id:'share-check',title:'发布验收'}];
+for(const level of fixture.levels)level.folderId=fixture.levelGroups[0].id;
 fixture.map.entries=fixture.map.entries.filter(entry=>fixture.levels.some(level=>level.id===entry.levelId)).map(entry=>({...entry,unlocks:undefined}));
 await fs.writeFile(path.join(workspace,'projects','fixture.sstar-world.json'),JSON.stringify(fixture));
 await fs.cp('dist/main',path.join(dist,'main'),{recursive:true});

@@ -46,14 +46,16 @@ if(process.argv.includes('--sstar-project-tabs')){
     renameProject:(k,t)=>homeInvoke('renameProject',k,t),removeProject:k=>homeInvoke('removeProject',k),feedback:k=>homeInvoke('feedback',k),
     preview:(k,l,o)=>homeInvoke('preview',k,l,o),thumbnailSave:(k,l,i,s,o)=>homeInvoke('thumbnailSave',k,l,i,s,o),useCover:i=>homeInvoke('useCover',i),
     prepare:(p,l,c)=>homeInvoke('prepare',p,l,c),shareSave:()=>homeInvoke('shareSave'),shareDraft:()=>homeInvoke('shareDraft'),shareClear:()=>homeInvoke('shareClear'),
-    onShareDraft:f=>listen('shareDraft',f),communityUrl:v=>homeInvoke('communityUrl',v),request:(r,m,j)=>homeInvoke('request',r,m,j),
+    onShareDraft:f=>listen('shareDraft',f),prepareShareFrom:s=>homeInvoke('prepareShareFrom',s),
+    authorSignIn:i=>homeInvoke('authorSignIn',i),authorRecovery:()=>homeInvoke('authorRecovery'),request:(r,m,j)=>homeInvoke('request',r,m,j),
     image:r=>homeInvoke('image',r),download:(id,l)=>homeInvoke('download',id,l),downloads:()=>homeInvoke('downloads'),downloadSave:k=>homeInvoke('downloadSave',k),
     renameLibraryItem:(k,t)=>homeInvoke('renameLibraryItem',k,t),removeLibraryItem:k=>homeInvoke('removeLibraryItem',k),
     libraryAddFile:()=>homeInvoke('libraryAddFile'),libraryAddLevels:(k,ids)=>homeInvoke('libraryAddLevels',k,ids),
     libraryAddScene:(p,l)=>homeInvoke('libraryAddScene',p,l),openLibraryItem:k=>homeInvoke('openLibraryItem',k),
     libraryPlay:k=>homeInvoke('libraryPlay',k),onLibraryPlayProgress:f=>listen('libraryPlayProgress',f),
     importPick:()=>homeInvoke('importPick'),importInto:(p,c,f)=>homeInvoke('importInto',p,c,f),publish:o=>homeInvoke('publish',o),
-    sharePreview:l=>homeInvoke('sharePreview',l),shareImage:(l,i)=>homeInvoke('shareImage',l,i),replaceImage:(w,l,i)=>homeInvoke('replaceImage',w,l,i),
+    sharePreview:l=>homeInvoke('sharePreview',l),publishedPreview:(w,v,l)=>homeInvoke('publishedPreview',w,v,l),
+    shareImage:(l,i)=>homeInvoke('shareImage',l,i),replaceImage:(w,l,i)=>homeInvoke('replaceImage',w,l,i),
     onOpenScene:f=>listen('openScene',f),startScene:()=>homeInvoke('startScene')
   };
   contextBridge.exposeInMainWorld('workbenchHome',home);

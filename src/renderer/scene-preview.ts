@@ -12,22 +12,27 @@ export function withDeadline<T>(task:Promise<T>,ms:number,message:string):Promis
   });
 }
 
-function terrainPreview(level:LevelView):SceneThumbnail{
-  const canvas=document.createElement('canvas');canvas.width=384;canvas.height=216;
+function terrainPreview(level:LevelView,compact=false):SceneThumbnail{
+  const canvas=document.createElement('canvas');canvas.width=compact?192:384;canvas.height=compact?108:216;
   const ctx=canvas.getContext('2d')!;
-  ctx.fillStyle='#26333a';ctx.fillRect(0,0,384,216);
+  const {width,height}=canvas;
+  ctx.fillStyle='#26333a';ctx.fillRect(0,0,width,height);
   const terrain=level.terrain??[],objects=level.entities.filter(entity=>entity.position&&gameplayObject(entity)).flatMap(entity=>entity.position?[entity.position]:[]);
   const cells=terrain.filter((_,index)=>index%Math.max(1,Math.ceil(terrain.length/10000))===0);
   let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
   for(const [x,y] of [...cells.map(cell=>[cell.x,cell.y]),...objects]){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);}
-  if(!Number.isFinite(x0))throw Error('找不到可绘制的地形或物件');
-  const scale=Math.min(350/(x1-x0+2),174/(y1-y0+2)),xy=(x:number,y:number)=>[192+(x-(x0+x1)/2)*scale,108-(y-(y0+y1)/2)*scale];
+  if(!Number.isFinite(x0)&&!compact)throw Error('找不到可绘制的地形或物件');
+  const scale=Math.min(width*.91/(x1-x0+2),height*.81/(y1-y0+2)),xy=(x:number,y:number)=>[width*.5+(x-(x0+x1)/2)*scale,height*.5-(y-(y0+y1)/2)*scale];
   for(const cell of cells.sort((a,b)=>a.z-b.z)){
-    const [x,y]=xy(cell.x,cell.y);ctx.fillStyle='#92aaa2';ctx.fillRect(x-scale/2,y-scale/2,Math.max(1,scale-.45),Math.max(1,scale-.45));
+    const [x,y]=xy(cell.x,cell.y);
+    ctx.fillStyle=Object.values(cell.colors??{}).find(value=>typeof value==='string')??'#92aaa2';
+    ctx.fillRect(x-scale/2,y-scale/2,Math.max(1,scale-.45),Math.max(1,scale-.45));
   }
   for(const [x,y] of objects){const [px,py]=xy(x,y);ctx.fillStyle='#fad08d';ctx.beginPath();ctx.arc(px,py,Math.max(1.2,Math.min(4,scale*.2)),0,Math.PI*2);ctx.fill();}
-  return {image:canvas.toDataURL('image/webp',.78),fallback:true};
+  return {image:canvas.toDataURL('image/webp',compact ? .62 : .78),fallback:true};
 }
+
+export function renderCompactThumbnail(level:LevelView){return terrainPreview(level,true).image;}
 
 let queue=Promise.resolve();
 export function renderScenePreview(level:LevelView,saved:HomeCamera|null=null,live=()=>true):Promise<SceneThumbnail>{

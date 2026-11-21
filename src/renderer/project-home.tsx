@@ -1,5 +1,5 @@
 import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import type {DownloadedLevel,HomeDirectory,HomeProject,LibraryAddResult} from '../home-types';
+import type {DownloadedLevel,HomeDirectory,HomeProject,HomeShareSource,LibraryAddResult} from '../home-types';
 import type {ShareDraft} from '../share-types';
 import type {PreparationProgress as PlayProgress} from '../shared';
 import {matchDirectory,searchKey} from '../level-catalog';
@@ -9,13 +9,14 @@ import {HubSidebar} from './hub-sidebar';
 import {HubModal} from './hub-modal';
 import {PreparationProgress} from './preparation-progress';
 import {ProjectCover} from './project-cover';
-import {renderScenePreview,withDeadline} from './scene-preview';
+import {ShareSourcePicker} from './share-source-picker';
+import {renderCompactThumbnail,renderScenePreview,withDeadline} from './scene-preview';
 import {Icon} from './studio-ui';
 import './workbench-home.css';
 
-type Page='local'|'library'|'community';
+type Page='local'|'library'|'community'|'published';
 type ManageItem={scope:'project'|'library';key:string;name:string;operation:'rename'|'remove';missing?:boolean};
-const pages=[['local','folder','我的工程'],['library','cube','关卡库'],['community','world','关卡社区']] as const;
+const pages=[['local','folder','我的工程'],['library','cube','关卡库'],['community','world','关卡社区'],['published','export','我的发布']] as const;
 
 export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:'new'|'new-level'|'open'|'native')=>void}){
   const api=window.workbenchHome!;
@@ -28,6 +29,8 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
   const [picking,setPicking]=useState<{key:string;ids:string[]}|null>(null);
   const [collected,setCollected]=useState<{key:string;result:LibraryAddResult}|null>(null);
   const [menu,setMenu]=useState(false),[draft,setDraft]=useState<ShareDraft|null>(null);
+  const [choosingShare,setChoosingShare]=useState(false);
+  const [submittingShare,setSubmittingShare]=useState(false);
   const [selected,setSelected]=useState<HomeProject|null>(null),[revision,setRevision]=useState(0),[busy,setBusy]=useState(false);
   const [manage,setManage]=useState<ManageItem|null>(null),[newName,setNewName]=useState(''),[manageError,setManageError]=useState('');
   const scroller=useRef<HTMLDivElement>(null),previousScroll=useRef<number|null>(null),generation=useRef(0);
@@ -82,9 +85,17 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
       finally{setPlayProgress(null);}
     });
   }
-  async function generateSharePreview(id:string){
+  async function generateSharePreview(id:string,compact=false){
     const data=await withDeadline(api.sharePreview(id),22000,'读取场景超时');
-    return (await renderScenePreview(data)).image;
+    return compact?renderCompactThumbnail(data):(await renderScenePreview(data)).image;
+  }
+  async function prepareShare(source:HomeShareSource){
+    const value=await api.prepareShareFrom(source);
+    setDraft(value);setChoosingShare(false);
+    if(page!=='published')setPage('community');
+  }
+  function publishButton(source:HomeShareSource,name:string){
+    return <button type="button" className="hub-icon hub-publish" title="发布" aria-label={'发布 '+name} disabled={busy} onClick={()=>void action(()=>prepareShare(source))}><Icon name="export"/></button>;
   }
   function manageItem(scope:ManageItem['scope'],item:HomeProject|DownloadedLevel,operation:ManageItem['operation']){
     setManage({scope,key:item.key,name:item.name,operation,missing:'missing' in item&&item.missing});
@@ -118,9 +129,9 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
   const matches=downloads.filter(item=>(item.origin??'community')===libraryFilter&&searchKey([item.name,item.author,item.version,...item.manifest.levels.map(level=>level.title)].join(' ')).includes(searchKey(downloadQuery)));
   return <div className="hub-shell hub-desktop" hidden={!active} ref={scroller}>
     <HubSidebar label="工作台导航" feedback={kind=>void action(()=>api.feedback(kind))}>
-      {pages.map(([id,icon,label])=><button key={id} aria-current={page===id?'page':undefined} onClick={()=>{setError('');setPage(id);}}><Icon name={icon}/>{label}</button>)}
+      {pages.map(([id,icon,label])=><button key={id} aria-current={page===id?'page':undefined} disabled={submittingShare} onClick={()=>{setError('');setPage(id);}}><Icon name={icon}/>{label}</button>)}
     </HubSidebar>
-    {page==='community'?<CommunityPanel bridge={api} draft={draft} generatePreview={generateSharePreview} onDraftClear={()=>{setDraft(null);void api.shareClear();}} onImported={item=>{setSelected(item);setPage('local');}} onDownloads={()=>{setLibraryFilter('community');setPage('library');}}/>
+    {page==='community'||page==='published'?<CommunityPanel bridge={api} mine={page==='published'} draft={draft} generatePreview={generateSharePreview} onChooseSource={()=>setChoosingShare(true)} onPublishBusy={setSubmittingShare} onDraftClear={()=>{setDraft(null);void api.shareClear();}} onImported={item=>{setSelected(item);setPage('local');}} onDownloads={()=>{setLibraryFilter('community');setPage('library');}}/>
     :page==='library'?<section className="hub-main" aria-labelledby="level-library-title">
       <header className="hub-header"><div><h1 id="level-library-title">关卡库</h1><p>这里保存可反复导入工程的单关和关卡组。</p></div><div className="hub-actions">
         <button className="hub-button" onClick={()=>setPage('community')}><Icon name="world"/>浏览社区</button>
@@ -134,13 +145,16 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
         <div className="hub-library-intro">
           <ProjectCover id={item.key} level="primary" revision={0} source="library" alt={item.name}/>
           <div><strong>{item.name}</strong><small>{item.origin==='local'?'Build '+item.version:item.author+' · 版本 '+item.version} · {item.manifest.levels.length} 关</small>
-          {item.manifest.levels.length>1&&<small>{item.manifest.levels.map(level=>level.title).join('、')}</small>}</div>
+          </div>
         </div><div className="hub-actions">
-          <button className="hub-primary" title="直接在原游戏中打开这关" disabled={busy} onClick={()=>playFromLibrary(item.key)}><Icon name="play"/>试玩</button>
-          <button className="hub-button" title="在编辑器中修改一份独立副本" disabled={busy} onClick={()=>void action(()=>api.openLibraryItem(item.key))}>{item.manifest.scope==='level'?'编辑单关':'编辑副本'}</button>
-          <button className="hub-icon" title="另存分享包" aria-label="另存分享包" disabled={busy} onClick={()=>void action(async()=>{await api.downloadSave(item.key);})}><Icon name="export"/></button>
+          <button className="hub-icon" title="试玩" aria-label={'试玩 '+item.name} disabled={busy} onClick={()=>playFromLibrary(item.key)}><Icon name="play"/></button>
+          <button className="hub-icon" title={item.manifest.scope==='level'?'编辑单关':'编辑副本'} aria-label={(item.manifest.scope==='level'?'编辑单关 ':'编辑副本 ')+item.name} disabled={busy} onClick={()=>void action(()=>api.openLibraryItem(item.key))}><Icon name="template"/></button>
+          {item.manifest.scope==='level'&&publishButton({kind:'library',key:item.key},item.name)}
+          <button className="hub-icon" title="另存分享包" aria-label="另存分享包" disabled={busy} onClick={()=>void action(async()=>{await api.downloadSave(item.key);})}><Icon name="save"/></button>
           {managementButtons('library',item)}
-        </div></article>)}
+        </div>{item.manifest.levels.length>1&&<details className="hub-library-levels"><summary>展开 {item.manifest.levels.length} 关</summary>
+          <ul>{item.manifest.levels.map(level=><li key={level.id}><span>{level.title}</span>{!level.requires?.length&&publishButton({kind:'library',key:item.key,level:level.id},level.title)}</li>)}</ul>
+        </details>}</article>)}
       {!matches.length&&<div className="hub-empty"><Icon name="cube" size={30}/><h2>{downloadQuery?'找不到匹配的关卡':'这里还没有关卡'}</h2></div>}
     </section>
     :<section className="hub-main" aria-labelledby="my-projects-title">
@@ -169,7 +183,8 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
             {entry.missing?<span className="hub-cover-grid hub-cover"><Icon name="warning" size={22}/></span>:<ProjectCover id={entry.key} level={entry.cover} revision={entry.modified+revision} alt={entry.name}/>}
             <button className="hub-row-toggle" aria-expanded={open} disabled={entry.missing} onClick={()=>expand(entry,!open)}><span className="hub-project-text"><strong>{entry.name}</strong><small>{entry.missing?'工程文件已移动或删除':`${entry.directoryPending?directories[entry.key]?.levels.length||'…':entry.count} 关 · ${new Date(entry.modified).toLocaleDateString('zh-CN')}`}{query&&!match.rootMatch&&` · ${match.count} 个匹配`}</small></span><Icon name={open?'down':'chevron'} size={16}/></button>
             <div className="hub-actions hub-project-actions">
-              {!entry.missing&&<button className="hub-button" onClick={()=>void action(()=>api.open(entry.key))}>{entry.singleLevel?'打开单关':'打开工程'} <Icon name="chevron" size={14}/></button>}
+              {!entry.missing&&<button className="hub-icon" title={entry.singleLevel?'打开单关':'打开工程'} aria-label={(entry.singleLevel?'打开单关 ':'打开工程 ')+entry.name} onClick={()=>void action(()=>api.open(entry.key))}><Icon name="folder"/></button>}
+              {!entry.missing&&publishButton({kind:'project',key:entry.key},entry.name)}
               {managementButtons('project',entry)}
             </div>
           </div>
@@ -190,11 +205,13 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
                 <ProjectCover id={entry.key} level={level.id} revision={entry.modified+revision} alt={level.title}/>
                 {picked?<label className="hub-level-pick"><input type="checkbox" checked={picked.includes(level.id)} disabled={busy} onChange={e=>pickLevel(entry.key,level.id,e.target.checked)}/><span title={level.title}>{level.title}</span></label>
                   :<button type="button" className="hub-level-open" onClick={()=>void action(()=>api.open(entry.key,level.id))}>{level.title}<Icon name="chevron" size={14}/></button>}
+                {!picked&&!entry.singleLevel&&publishButton({kind:'project',key:entry.key,level:level.id},level.title)}
               </div>}/>:<p className="hub-muted">{entry.directoryPending?'正在读取原版目录…':'暂无小关。'}</p>}
           </section>}
         </article>;
       })}</div>
     </section>}
+    {active&&choosingShare&&<ShareSourcePicker api={api} onClose={()=>setChoosingShare(false)} onPrepare={prepareShare}/>}
     {active&&manage&&<HubModal title={manage.operation==='rename'?'重命名':'删除'} onClose={()=>{if(!busy)setManage(null);}}>
       <form className="hub-manage-form" onSubmit={event=>{event.preventDefault();void submitManagement();}}>
         {manage.operation==='rename'

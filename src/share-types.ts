@@ -9,6 +9,7 @@ export interface SharedWork {
   id: string; title: string; description: string; author: string; owner: boolean;
   version: string; updated: string; created: string; manifest: ShareManifest;
   cover: boolean; previews: string[]; size: number;
+  tags?:string[];
   localSample?:boolean;
 }
 export interface ShareDraft {
@@ -18,3 +19,7 @@ export const shareExtension = '.sstar-share.gz';
 export const shareLimit = 5 * 1024 * 1024;
 export const shareExpandedLimit = 64 * 1024 * 1024;
 export const coverLimit = 180 * 1024;
+export const previewImagesLimit = 16 * 1024 * 1024;
+export const tagLimit = 6;
+export const tagLength = 24;
+export type CommunitySort='newest'|'oldest'|'updated';

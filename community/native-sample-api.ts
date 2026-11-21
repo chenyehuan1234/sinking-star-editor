@@ -29,12 +29,14 @@ export function nativeSample(folder:string){
       const bytes=await fs.readFile(path.join(folder,'images',level+'.webp')).catch(()=>null);
       return bytes?new Response(new Uint8Array(bytes),{headers:{'content-type':'image/webp','cache-control':'no-store','x-content-type-options':'nosniff'}}):Response.json({error:'暂无本机预览图'},{status:404});
     }
-    if(url.pathname!=='/api/works'||Number(url.searchParams.get('page')??0)!==0||['level','library'].includes(url.searchParams.get('type')??''))return next();
+    if(url.pathname!=='/api/works'||url.searchParams.get('mine')==='1'||url.searchParams.get('tag')||Number(url.searchParams.get('page')??0)!==0||['level','library'].includes(url.searchParams.get('type')??''))return next();
     const query=url.searchParams.get('q')??'',match=matchDirectory(work.manifest.levels,work.manifest.groups,query,[work.title,work.author,work.description]);
     if(!match.rootMatch&&!match.count)return next();
     const response=await next();
     if(!response.ok)return response;
     const result=await response.json() as {works:SharedWork[];more:boolean};
-    return Response.json({...result,works:[work,...result.works]},{headers:{'cache-control':'no-store'}});
+    const sort=url.searchParams.get('sort'),field=sort==='updated'?'updated':'created',direction=sort==='oldest'?1:-1;
+    const works=[work,...result.works].sort((left,right)=>direction*(left[field].localeCompare(right[field])||left.id.localeCompare(right.id)));
+    return Response.json({...result,works},{headers:{'cache-control':'no-store'}});
   };
 }
