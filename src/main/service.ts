@@ -7,8 +7,8 @@ import {gameplayProject,reservedEntityIds} from '../editor-organization';
 import {decodeGateKey,gateValues} from '../gate-config';
 import {nativeQuaternion} from '../editor-math';
 import {rotationValues} from '../core/mechanisms';
-import {testRevision} from './test-profiles';
-import {SOURCE_EXE,RUNTIME_EXE,isolationSupported,isolationUnavailable,patchSaveDirectory,preparePlaytestSaves,verifyRuntimeSavePath} from './save-isolation';
+import {TestProfiles,testRevision} from './test-profiles';
+import {SOURCE_EXE,RUNTIME_EXE,cleanupTemporarySaves,isolationSupported,isolationUnavailable,patchSaveDirectory,preparePlaytestSaves,verifyRuntimeSavePath} from './save-isolation';
 import {gameplayWorld} from '../editor-organization';
 import type {PlaytestChoice,PlaytestPlan,TestContext} from '../v08-types';
 import {queueCacheTrim} from './storage';
@@ -137,6 +137,10 @@ export class EditorService {
   async exclusive<T>(fn:()=>Promise<T>):Promise<T>{if(this.busy)throw new Error('另一项文件操作正在进行，请稍候');this.busy=true;try{return await fn();}finally{this.busy=false;}}
   async connect(gamePath:string):Promise<Catalog>{
     const root=await fs.realpath(gamePath);
+    if((await new TestProfiles(this.workspace,true).list()).length){
+      const idle=await this.assertStopped().then(()=>true,()=>false);
+      if(idle)await cleanupTemporarySaves(this.workspace).catch(()=>{});
+    }
     await fs.access(path.join(root,'sinking_star.exe'));
     const source=path.join(root,'data/levels.package'),buffer=await fs.readFile(source),pkg=new GamePackage(buffer),st=await fs.stat(source);
     if(directoriesOverlap(await fs.realpath(this.campaigns.saves).catch(()=>this.campaigns.saves),await fs.realpath(this.workspace).catch(()=>this.workspace)))throw Error('工作区不能包含正式存档目录，也不能位于正式存档目录内');
@@ -442,7 +446,7 @@ export class EditorService {
     return issues;
   }
   async worldBuild(w:WorldProject){await this.checkWorld(w);await this.verifySourceHash();const b=this.compiler!.build(w),output=this.pkg.rebuild(b.changes),name=`world-${w.id}-${Date.now()}`,out=path.join(this.workspace,'exports',name+'.package');await atomicWrite(out,output);await atomicWrite(path.join(this.workspace,'exports',name+'.sstar-world.json'),JSON.stringify(w,null,2));return{path:out,hash:sha256(output)};}
-  async worldDeploy(w:WorldProject,quickEntry?:string,timing?:PlaytestTiming,validate?:()=>Promise<void>){
+  async worldDeploy(w:WorldProject,quickEntry?:string,timing?:PlaytestTiming,validate?:()=>Promise<void>,remember=true){
     await this.checkWorld(w);
     await (timing?timing.measure('sourceCheck',()=>this.checkDeploymentSource()):this.checkDeploymentSource());
     const key=timing?await this.deploymentKey({kind:'world',world:w,quickEntry}):undefined;
@@ -466,7 +470,7 @@ export class EditorService {
         }
       }
       await this.writeDeployment(state,output,key,resources,generated,{id:w.id,revision:built.revision,quickEntry});
-      await atomicWrite(path.join(this.workspace,'projects',`${w.id}.last-deployed.sstar-world.json`),JSON.stringify(w,null,2));
+      if(remember)await atomicWrite(path.join(this.workspace,'projects',`${w.id}.last-deployed.sstar-world.json`),JSON.stringify(w,null,2));
     };
     await (timing?timing.measure('buildAndDeploy',build):build());
     return `已整体部署 ${w.levels.length} 个小关卡和 ${w.map.entries.length} 个入口。所有入口可直接进入。`;
@@ -531,14 +535,15 @@ export class EditorService {
   private async isolatedRunPlan(context:TestContext):Promise<PlaytestPlan>{
     return {context,compatible:[],incompatible:[],supported:this.isolationReady,preparation:await this.preparationEstimate(),reason:this.isolationReady?'试玩前自动核对独立存档目录':isolationUnavailable};
   }
-  private async startPlaytest(initialLevel:string,mode:PlaytestCampaign,timing?:PlaytestTiming){
+  private async startPlaytest(initialLevel:string,mode:PlaytestCampaign,timing?:PlaytestTiming,temporary=false){
     this.onPlaytestProgress?.('准备独立试玩存档…');
     await this.assertStopped();
+    await cleanupTemporarySaves(this.workspace);
     const source=await fs.readFile(path.join(this.testRoot,SOURCE_EXE));
     if(sha256(source)!==this.exeHash)throw Error('试玩程序已变化，请重新准备试玩副本');
     const file=path.join(this.testRoot,RUNTIME_EXE);
     await managedPath(this.workspace,file);
-    const prepareSave=()=>preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{mode,verify:async bound=>{
+    const prepareSave=()=>preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{mode,temporary,verify:async bound=>{
       const program=patchSaveDirectory(source,bound.id,true);
       if(await fileHash(file)!==program.hash){
         await atomicWrite(file,program.buffer);
@@ -549,7 +554,12 @@ export class EditorService {
       const verify=()=>verifyRuntimeSavePath(file,this.testRoot,bound.alias,bound.saves);
       await (timing?timing.measure('savePathProbe',verify):verify());
     }});
-    const save=await (timing?timing.measure('savePreparation',prepareSave):prepareSave());
+    const cleanup=async()=>{
+      if(!temporary)return;
+      await this.assertStopped();
+      await cleanupTemporarySaves(this.workspace);
+    };
+    const save=await (timing?timing.measure('savePreparation',prepareSave):prepareSave()).catch(async error=>{await cleanup().catch(()=>{});throw error;});
     await this.assertStopped();
     this.onPlaytestProgress?.('启动独立试玩…');
     const launch=async()=>{
@@ -557,7 +567,7 @@ export class EditorService {
       await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
       return child;
     };
-    const child=await (timing?timing.measure('spawn',launch):launch());
+    const child=await (timing?timing.measure('spawn',launch):launch()).catch(async error=>{await cleanup().catch(()=>{});throw error;});
     if(timing&&child.pid){
       this.lastLaunchTiming=timing;
       void timing.window(child.pid).then(async ms=>{
@@ -566,13 +576,15 @@ export class EditorService {
     }
     child.once('exit',()=>{void this.exclusive(async()=>{
       await this.assertStopped();
-      await save.profiles.captureIndependentSettings();
+      if(temporary)await cleanupTemporarySaves(this.workspace);
+      else await save.profiles.captureIndependentSettings();
     }).catch(()=>{});});
     child.unref();
+    if(temporary)return '已启动临时试玩。退出游戏后清理本次进度。';
     return mode==='single'||mode==='library'?'已启动独立试玩，从关卡初始状态开始。':mode==='fresh'?'已在独立存档中从头试玩整个工程。':'已启动独立试玩。';
   }
 
-  async runLaunch(w:WorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice,entryLevel?:string){
+  async runLaunch(w:WorldProject,r:RunRequest,choice?:PlaytestChoice,entryLevel?:string){
     const timing=new PlaytestTiming(entryLevel?'library':r?.mode),fresh=freshWorldRun(r);
     if(!this.isolationReady)throw Error(isolationUnavailable);
     const scoped=scopedWorld(w,r);
@@ -581,12 +593,12 @@ export class EditorService {
       this.onPlaytestProgress?.('检查试玩范围与原生依赖…');
       const errors=(await this.runValidate(w,r)).filter(i=>i.severity==='error');
       if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
-    });
+    },choice?.temporary!==true);
     const initial=entryLevel??(r.mode==='single'?scoped.levels[0].id:undefined);
     const campaign=entryLevel?'library':r.mode==='single'?'single':fresh?'fresh':'resume';
-    return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',campaign,timing);
+    return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',campaign,timing,choice?.temporary===true);
   }
-  async nativeRunLaunch(p:NativeWorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice){
+  async nativeRunLaunch(p:NativeWorldProject,r:RunRequest,choice?:PlaytestChoice){
     const timing=new PlaytestTiming('native-'+r?.mode);
     if(!this.isolationReady)throw Error(isolationUnavailable);
     await this.assertStopped();
@@ -605,11 +617,11 @@ export class EditorService {
         await validate();
         const errors=(await this.worldValidate(scoped)).filter(i=>i.severity==='error');
         if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
-      });
-      return this.startPlaytest('ed_'+scoped.id+'_native_scene','single',timing);
+      },choice?.temporary!==true);
+      return this.startPlaytest('ed_'+scoped.id+'_native_scene','single',timing,choice?.temporary===true);
     }
     await this.nativeDeploy(p,timing,validate);
-    return this.startPlaytest('overworld',freshWorldRun(r)?'fresh':'resume',timing);
+    return this.startPlaytest('overworld',freshWorldRun(r)?'fresh':'resume',timing,choice?.temporary===true);
   }
 
   async worldReset(_w:WorldProject):Promise<string>{return blockPlaytest();}

@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';
-import {patchSaveDirectory,bindIsolatedSaves,isolatedFolder,isolationSupported,preparePlaytestSaves,reportedSavePath} from '../src/main/save-isolation';
+import {patchSaveDirectory,bindIsolatedSaves,cleanupTemporarySaves,isolatedFolder,isolationSupported,preparePlaytestSaves,reportedSavePath} from '../src/main/save-isolation';
 import {locateNativeSavePath} from '../src/main/native-save-path';
 import {TestProfiles} from '../src/main/test-profiles';
 import {sha256} from '../src/core/package';
@@ -67,6 +67,31 @@ test('启动只在独立目录创建战役，复用测试进度且不改正式�
   await assert.rejects(()=>preparePlaytestSaves(f.workspace,hash,'overworld',{},f.saved),/存在链接/);
   assert.equal(await fs.readFile(progress,'utf8'),'official progress');
  }finally{await f.close();}
+});
+test('临时试玩每次使用新进度，退出清除已登记的会话和链接',async()=>{
+ const fixtureRun=await fixture();
+ try{
+  const {workspace,saved}=fixtureRun,original=path.join(saved,'Order of the Sinking Star');
+  await fs.mkdir(original);await fs.writeFile(path.join(original,'official.history'),'official');
+  const regular=await preparePlaytestSaves(workspace,hash,'overworld',{},saved);
+  const temporary=await preparePlaytestSaves(workspace,hash,'ed_temporary',{temporary:true},saved);
+  assert.notEqual(regular.id,temporary.id);
+  assert.equal((await new TestProfiles(workspace).list()).length,1);
+  assert.equal((await new TestProfiles(workspace,true).list()).length,1);
+  assert.equal(await fs.realpath(temporary.alias),await fs.realpath(temporary.saves));
+  const file=path.join(temporary.saves,'Editor_Playtest','Status.sokoban_status');
+  assert.equal(readCampaign(await fs.readFile(file)).current,'ed_temporary');
+  await fs.writeFile(path.join(path.dirname(file),'overworld.history'),'discarded');
+  assert.equal(await cleanupTemporarySaves(workspace,saved),1);
+  await assert.rejects(()=>fs.lstat(temporary.alias),{code:'ENOENT'});
+  assert.equal((await new TestProfiles(workspace,true).list()).length,0);
+  assert.equal(await fs.readFile(path.join(original,'official.history'),'utf8'),'official');
+  assert.equal(await fs.realpath(regular.alias),await fs.realpath(regular.saves));
+  const next=await preparePlaytestSaves(workspace,hash,'ed_temporary',{temporary:true},saved);
+  assert.notEqual(next.id,temporary.id);
+  assert.deepEqual(readCampaign(await fs.readFile(path.join(next.saves,'Editor_Playtest','Status.sokoban_status'))).levels,[]);
+  await cleanupTemporarySaves(workspace,saved);
+ }finally{await fixtureRun.close();}
 });
 test('真实游戏程序按隔离检验结果处理，源程序字节保持不变',{skip:!game},async()=>{
  const source=await fs.readFile(path.join(game!,'sinking_star.exe')),original=Buffer.from(source);

@@ -2,7 +2,7 @@ import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import type {CommunityRead,HomeApi,HomeProject} from '../home-types';
 import {shareExpandedLimit,shareExtension,shareLimit,tagLength,tagLimit,type CommunitySort,type CommunityImage,type ShareDraft,type ShareManifest,type SharedWork} from '../share-types';
 import {Icon} from './studio-ui';
-import {GroupedLevels} from './grouped-levels';
+import {GroupedLevels,type LevelSection} from './grouped-levels';
 import {HubSidebar} from './hub-sidebar';
 import {HubModal} from './hub-modal';
 import {matchDirectory} from '../level-catalog';
@@ -11,7 +11,7 @@ import {ImageViewer} from './image-viewer';
 import type {LevelView} from '../shared';
 import {CommunityConnectionError,communityDeadline,communityTimeout} from '../community-network';
 
-type Bridge=Pick<HomeApi,'request'|'browse'|'image'|'download'|'publish'|'shareSave'|'authorSignIn'|'authorRecovery'|'shareImage'|'replaceImage'|'publishedPreview'>;
+type Bridge=Pick<HomeApi,'request'|'browse'|'image'|'download'|'publish'|'shareSave'|'authorSignIn'|'authorRecovery'|'shareImage'|'replaceImage'|'publishedPreview'|'thumbnailSource'>;
 type CommunityList={works:SharedWork[];more:boolean};
 type CommunityNotice={text:string;target?:'projects'|'library'|{id:string}};
 const recentPages=new Map<string,CommunityRead>();
@@ -42,6 +42,20 @@ function workCover(item:SharedWork){
   const primary=item.manifest.primaryId??item.manifest.levels[0]?.id;
   const level=primary&&item.previews.includes(primary)?primary:item.previews[0];
   return level?workUrl(item.id)+'/previews/'+encodeURIComponent(level):'';
+}
+const suggestedTags=['入门','普通','困难','专家','推箱子','光学','机关','探索'];
+function TagEditor({value,onChange}:{value:string;onChange:(value:string)=>void}){
+  const tags=value.split(/[,，、]/).map(tag=>tag.trim()).filter(Boolean);
+  function toggle(tag:string){
+    const next=tags.includes(tag)?tags.filter(item=>item!==tag):[...new Set([...tags,tag])];
+    onChange(next.join('，'));
+  }
+  return <div className="hub-tag-editor">
+    <div className="hub-tags" aria-label="可选标签">
+      {suggestedTags.map(tag=><button type="button" key={tag} aria-pressed={tags.includes(tag)} disabled={tags.length>=tagLimit&&!tags.includes(tag)} onClick={()=>toggle(tag)}>{tag}</button>)}
+    </div>
+    <input name="tags" aria-label="作品标签" value={value} onChange={e=>onChange(e.target.value)} maxLength={(tagLength+1)*tagLimit} placeholder="自定义标签，用逗号分隔"/>
+  </div>;
 }
 export function Cover({src,alt='',className='',onError,zoomable=false,loadFull}:{src:string;alt?:string;className?:string;onError?:()=>void;zoomable?:boolean;loadFull?:()=>Promise<string|null>}){
   const [large,setLarge]=useState(false),image=src&&<img src={src} alt={alt} loading="lazy" onError={onError}/>;
@@ -105,14 +119,18 @@ function webJson(route:string,init:RequestInit){
 function webRequest(route:string,method='GET',input?:unknown){
   return webJson(route,{method,headers:input===undefined?undefined:{'content-type':'application/json'},body:input===undefined?undefined:JSON.stringify(input)});
 }
-export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePreview,onDraftClear,onImported,onDownloaded,onProjects,onDownloads,onChooseSource,onPublishBusy,connectionOffline,onConnectionChange,renderLive}:{bridge?:Bridge;mine?:boolean;visible?:boolean;draft?:ShareDraft|null;generatePreview?:(id:string,compact:boolean,draftId:string)=>Promise<string|CommunityImage>;onDraftClear?:(id:string)=>void;onImported?:(item:HomeProject)=>void;onDownloaded?:()=>void;onProjects?:()=>void;onDownloads?:()=>void;onChooseSource?:()=>void;onPublishBusy?:(busy:boolean)=>void;connectionOffline?:boolean;onConnectionChange?:(online:boolean)=>void;renderLive?:(props:{id:string;title:string;load:()=>Promise<LevelView|null>;close:()=>void;fallback:React.ReactNode})=>React.ReactNode}){
+export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePreview,onDraftClear,onImported,onDownloaded,onProjects,onDownloads,onChooseSource,onPublishBusy,connectionOffline,onConnectionChange,renderLive,onTemporaryPlay,playBusy,playback,renderGroupThumbnail}:{bridge?:Bridge;mine?:boolean;visible?:boolean;draft?:ShareDraft|null;generatePreview?:(id:string,compact:boolean,draftId:string)=>Promise<string|CommunityImage>;onDraftClear?:(id:string)=>void;onImported?:(item:HomeProject)=>void;onDownloaded?:()=>void;onProjects?:()=>void;onDownloads?:()=>void;onChooseSource?:()=>void;onPublishBusy?:(busy:boolean)=>void;connectionOffline?:boolean;onConnectionChange?:(online:boolean)=>void;onTemporaryPlay?:(id:string,level?:string)=>void;playBusy?:boolean;playback?:React.ReactNode;renderGroupThumbnail?:(level:LevelView)=>string;renderLive?:(props:{id:string;title:string;load:()=>Promise<LevelView|null>;close:()=>void;fallback:React.ReactNode})=>React.ReactNode}){
   const request=bridge?.request??webRequest;
   const [query,setQuery]=useState(''),[type,setType]=useState<Directory>('projects'),[page,setPage]=useState(0),[generation,refresh]=useState(0);
   const [tag,setTag]=useState(''),[sort,setSort]=useState<CommunitySort>('newest'),[editingInfo,setEditingInfo]=useState(false);
-  const [tagInput,setTagInput]=useState(''),[previewProgress,setPreviewProgress]=useState('');
+  const [tagInput,setTagInput]=useState(''),[editingTags,setEditingTags]=useState(''),[previewProgress,setPreviewProgress]=useState('');
   const getHash=()=>!bridge?/^#work\/([a-f0-9]{32})$/.exec(location.hash)?.[1]??'':'';
   const [three,setThree]=useState<{item:SharedWork;level:string;route:string}|null>(null);
   const [workId,setWorkId]=useState(getHash),[expanded,setExpanded]=useState<Record<string,boolean>>({});
+  const [openGroups,setOpenGroups]=useState<Record<string,string[]>>({});
+  const [thumbnailStatus,setThumbnailStatus]=useState<Record<string,string>>({});
+  const thumbnailJobs=useRef(new Map<string,{cancelled:boolean;work:string}>());
+  const thumbnailQueue=useRef(Promise.resolve());
   const [username,setUsername]=useState(''),[auth,setAuth]=useState<''|'login'|'signup'|'recover'|'device'|'device-recover'|'legacy'|'account'>(''),[recovery,setRecovery]=useState('');
   const [tasks,setTasks]=useState<ReadonlySet<string>>(()=>new Set()),[error,setError]=useState(''),[notice,setNotice]=useState<CommunityNotice|null>(null);
   const running=useRef(new Set<string>());
@@ -137,9 +155,12 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
   const currentView=useRef({visible,route,draftId:draft?.id});
   useLayoutEffect(()=>{currentView.current={visible,route,draftId:draft?.id};},[visible,route,draft?.id]);
   const ownList=mine&&!workId;
-  useEffect(()=>{setThree(null);},[route,visible,mine]);
+  useEffect(()=>{
+    setThree(null);
+    return()=>{for(const job of thumbnailJobs.current.values())job.cancelled=true;thumbnailJobs.current.clear();};
+  },[route,visible,mine]);
   const readKey=JSON.stringify([bridge&&!ownList?'':username,route]);
-  const read=readResult?.key===readKey&&readResult.revision===pagesRevision?readResult.value:recentPages.get(readKey);
+  const read=readResult?.key===readKey?readResult.value:recentPages.get(readKey);
   const catalog=!workId?read?.data as CommunityList|undefined:undefined;
   const works=catalog?.works??[],more=Boolean(catalog?.more),loaded=Boolean(catalog);
   const detail=workId?read?.data as SharedWork|undefined:undefined;
@@ -200,7 +221,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
   useEffect(()=>{if(draft){
     const {manifest}=draft;
     setPublishing(true);setTitle(update?.title??(manifest.scope==='project'?manifest.title:manifest.levels.find(level=>level.id===manifest.primaryId)?.title??manifest.levels[0]?.title??manifest.title));
-    setReviewPublication(false);setPreviewLevel('world');setGenerated({});setImages(true);setSelectedImages(['world',...Object.keys(draft.previews)]);
+    setReviewPublication(false);setPreviewLevel('world');setGenerated({});setImages(true);setSelectedImages(['world',...manifest.scope==='level'?Object.keys(draft.previews):[]]);
   }},[draft]);
   useEffect(()=>()=>{if(imagePreview)URL.revokeObjectURL(imagePreview);},[imagePreview]);
 
@@ -287,6 +308,67 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
     return <RemoteCover bridge={bridge} route={route} alt={level?item.manifest.levels.find(row=>row.id===level)?.title:item.title}
       version={item.version} className={className} imageRevision={imageRevision} fullPreview={item.fullImagePreview}/>;
   }
+  function playAction(item:SharedWork,level?:string){
+    if(!onTemporaryPlay||item.localSample)return null;
+    const name=item.manifest.levels.find(stage=>stage.id===level)?.title??item.title;
+    return <button className="hub-icon" type="button" title="临时试玩" aria-label={'临时试玩 '+name} disabled={playBusy} onClick={()=>onTemporaryPlay(item.id,level)}><Icon name="play"/></button>;
+  }
+  const groupKey=(item:SharedWork,group:LevelSection)=>JSON.stringify([item.id,item.version,group.id]);
+  function toggleGroupThumbnails(item:SharedWork,group:LevelSection,open:boolean){
+    if(!bridge||!renderGroupThumbnail||!(item.owner||username===item.author)||!visible||item.localSample)return;
+    const key=groupKey(item,group);
+    const existing=thumbnailJobs.current.get(key);
+    if(!open){
+      if(existing)existing.cancelled=true;
+      thumbnailJobs.current.delete(key);
+      return;
+    }
+    if(existing||group.levels.every(level=>item.previews.includes(level.id)))return;
+    const job={cancelled:false,work:item.id};
+    thumbnailJobs.current.set(key,job);
+    const status=(message:string)=>{if(!job.cancelled)setThumbnailStatus(old=>({...old,[key]:message}));};
+    status('等待补图…');
+    thumbnailQueue.current=thumbnailQueue.current.then(async()=>{
+      if(job.cancelled)return;
+      let uploaded=0,skipped=0;
+      try{
+        const current=await bridge.request(workUrl(item.id)) as SharedWork;
+        if(!current.owner||current.version!==item.version||current.manifest.sha256!==item.manifest.sha256)throw Error('作品已更新，请刷新后重试');
+        const uploadedIds=new Set(current.previews);
+        const missing=group.levels.filter(level=>!uploadedIds.has(level.id));
+        for(const level of missing){
+          if(job.cancelled)return;
+          status(`正在补图 ${uploaded+skipped+1} / ${missing.length}`);
+          let image:string;
+          try{
+            const scene=await bridge.thumbnailSource(item.id,item.version,item.manifest.sha256,level.id);
+            if(job.cancelled)return;
+            image=renderGroupThumbnail(scene);
+          }catch(error){
+            if(/Steam|社区|网络|超时/.test(errorText(error)))throw error;
+            skipped++;
+            continue;
+          }
+          await bridge.replaceImage(item.id,level.id,image,item.version);
+          uploaded++;
+          const update=(row:SharedWork)=>row.id===item.id&&row.version===item.version&&!row.previews.includes(level.id)
+            ?{...row,previews:[...row.previews,level.id]}:row;
+          setReadResult(previous=>{
+            if(previous?.key!==readKey)return previous;
+            const data=route.startsWith('/api/works?')
+              ?{...previous.value.data as CommunityList,works:(previous.value.data as CommunityList).works.map(update)}
+              :update(previous.value.data as SharedWork);
+            return {...previous,value:{...previous.value,data}};
+          });
+        }
+        status(skipped?`已补传 ${uploaded} 张，${skipped} 张生成失败。重新展开此组可重试。`:'');
+      }catch(error){status(errorText(error)+'。重新展开此组可重试。');}
+      finally{
+        if(thumbnailJobs.current.get(key)===job)thumbnailJobs.current.delete(key);
+        if(uploaded&&currentView.current.visible&&currentView.current.route===route)refreshAfterChange();
+      }
+    }).catch(()=>{});
+  }
   function previewAction(item:SharedWork,level=primaryLevel(item)){
     if(!renderLive||!bridge||item.localSample||!level)return null;
     const title=item.manifest.levels.find(stage=>stage.id===level)?.title??item.title;
@@ -302,9 +384,13 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
   const draftImages:Record<string,string>=draft?{...draft.previews,...draft.cover?{world:draft.cover}:{},...generated}:{};
   const directory=(item:SharedWork,inSearch=false)=>{
     const match=matchDirectory(item.manifest.levels,item.manifest.groups,inSearch?query:'',[item.title,item.manifest.title,item.author,item.description,...item.tags??[]]);
-    return <GroupedLevels sections={match.sections} query={inSearch?query:''} reveal={inSearch&&!match.rootMatch} renderLevel={level=><div className="hub-level-row">
+    return <GroupedLevels sections={match.sections} query={inSearch?query:''} reveal={inSearch&&!match.rootMatch}
+      openKeys={openGroups[item.id]??[]} onOpenKeys={keys=>setOpenGroups(old=>({...old,[item.id]:keys}))}
+      onSectionToggle={(group,open)=>toggleGroupThumbnails(item,group,open)}
+      sectionStatus={group=>thumbnailStatus[groupKey(item,group)]&&<small role="status">{thumbnailStatus[groupKey(item,group)]}</small>}
+      renderLevel={level=><div className="hub-level-row">
       {thumbnail(item,level.id)}
-      <div><strong>{level.title}</strong>{level.requires?.length?<small>还需 {level.requires.map(id=>item.manifest.levels.find(l=>l.id===id)?.title??id).join('、')}</small>:null}</div><div className="hub-actions">{previewAction(item,level.id)}{downloadAction(item,level.id)}</div>
+      <div><strong>{level.title}</strong>{level.requires?.length?<small>还需 {level.requires.map(id=>item.manifest.levels.find(l=>l.id===id)?.title??id).join('、')}</small>:null}</div><div className="hub-actions">{previewAction(item,level.id)}{downloadAction(item,level.id)}{inSearch&&playAction(item,level.id)}</div>
     </div>}/>;
   };
   const activeDirectory=workId&&work?.id===workId?(work.manifest.scope==='level'?'library':'projects'):type;
@@ -385,8 +471,9 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
               await bridge.shareImage('world',thumbnail,draft.id);
             }catch{noThumbnail=true;}
           }
-          const previews=new Set(images?selectedImages.filter(id=>id!=='world'):[]);
-          const missing=draft?.manifest.levels.filter(level=>!draftImages[level.id])??[];
+          const previews=new Set(images?selectedImages.filter(id=>id!=='world'&&(draft.manifest.scope==='level'||Object.hasOwn(generated,id))):[]);
+          // Complete projects publish their cover first. Opening a group runs its own image queue.
+          const missing=draft.manifest.scope==='level'?draft.manifest.levels.filter(level=>!draftImages[level.id]):[];
           if(images&&generatePreview){
             for(const [index,level] of missing.entries()){
               setPreviewProgress(`正在生成关卡缩略图 ${index+1} / ${missing.length}`);
@@ -419,12 +506,12 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
         {!bridge&&<label>社区分享包<input type="file" required accept=".gz" onChange={e=>{const next=e.target.files?.[0],ticket=++uploadFileEpoch.current;setFile(null);setMetadata(null);if(next)void readPreview(next).then(v=>{if(ticket!==uploadFileEpoch.current)return;setFile(next);setMetadata(v);if(!title)setTitle(v.levels.length===1?v.levels[0]?.title??v.title:v.title);}).catch(err=>{if(ticket===uploadFileEpoch.current)setError(errorText(err));});}}/></label>}
         {currentManifest&&<div className="hub-preview-note"><b>{label(currentManifest.scope)} · {currentManifest.levels.length} 关</b><span>Build {currentManifest.sourceBuild} · {size(draft?.size??file?.size??0)}</span><span>{currentManifest.levels.slice(0,8).map(l=>l.title).join('、')}{currentManifest.levels.length>8?' …':''}</span></div>}
         <label>作品名称<input required maxLength={100} value={title} onChange={e=>setTitle(e.target.value)}/></label><label>简介<textarea maxLength={800} value={description} onChange={e=>setDescription(e.target.value)}/></label>
-        <label>标签<input value={tagInput} maxLength={(tagLength+1)*tagLimit} placeholder="用逗号分隔，例如 光学、推箱子" onChange={e=>setTagInput(e.target.value)}/></label>
+        <TagEditor value={tagInput} onChange={setTagInput}/>
         <label>作品版本<input required maxLength={40} value={version} onChange={e=>setVersion(e.target.value)}/></label>
         {draft&&<fieldset className="hub-image-choice"><legend>生成并选择预览</legend>
           <div className="hub-actions"><select aria-label="要生成的预览" value={previewLevel} onChange={e=>setPreviewLevel(e.target.value)}><option value="world">作品封面</option>{draft.manifest.levels.map(level=><option key={level.id} value={level.id}>{level.title}</option>)}</select><button type="button" className="hub-button" disabled={draftBusy} onClick={()=>void run(generateImage,'draft')}>生成预览</button></div>
           <label className="hub-image-enabled"><input type="checkbox" checked={images} onChange={e=>setImages(e.target.checked)}/>公开选中的图片</label>
-          {Object.keys(draftImages).length>0&&<div className="hub-image-tray">{Object.entries(draftImages).map(([id,src])=><label key={id} className="hub-preview-choice">
+          {Object.keys(draftImages).length>0&&<div className="hub-image-tray">{Object.entries(draftImages).filter(([id])=>id==='world'||draft.manifest.scope==='level'||Object.hasOwn(generated,id)).map(([id,src])=><label key={id} className="hub-preview-choice">
             <Cover src={src}/>
             <span className="hub-preview-toggle"><input type="checkbox" aria-label={id==='world'?'选择作品封面':'选择 '+draft.manifest.levels.find(l=>l.id===id)?.title} checked={selectedImages.includes(id)} disabled={!images||draftBusy} onChange={e=>selectImage(id,e.target.checked)}/><span>{id==='world'?'作品封面':draft.manifest.levels.find(l=>l.id===id)?.title}</span></span>
           </label>)}</div>}
@@ -436,6 +523,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
         <div className="hub-actions"><button className="hub-primary" disabled={draftBusy||!currentManifest}>{bridge&&!username?'登录后发布':'确认发布'}</button>{bridge&&draft&&<button type="button" className="hub-button" disabled={draftBusy} onClick={()=>void run(async()=>{if(await bridge.shareSave(draft.id))setNotice({text:'分享包已保存。'});},'draft')}>保存分享包</button>}</div>
       </form>
     </section>}
+    {playback}
     {activePreview()}
     {workId&&<><div className="hub-actions"><button className="hub-button" onClick={()=>mine?show(''):selectDirectory(activeDirectory)}>{mine?'‹ 返回我的发布':'‹ 返回作品列表'}</button>{directoryTabs}</div>{work?.id===workId?<article className="hub-work hub-card">
       <div className="hub-detail-intro">{thumbnail(work,undefined,'hub-detail-cover')}
@@ -443,7 +531,7 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
       <p className="hub-description">{work.description||'作者未填写简介。'}</p>
       {tagsFor(work)}
       <p className="hub-muted">{label(work.manifest.scope)} · {work.manifest.levels.length} 关 · 游戏 Build {work.manifest.sourceBuild}{!work.localSample&&(' · 编辑器 '+work.manifest.editorVersion+' · '+size(work.size))}</p>
-      {!work.localSample&&<div className="hub-actions">{previewAction(work)}{downloadAction(work)}{work.owner&&<>{bridge&&<button className="hub-icon" title="修改作品信息" aria-label="修改作品信息" onClick={()=>{setError('');setEditingInfo(true);}}><Icon name="rename"/></button>}<button className="hub-icon" title="发布新版本" aria-label="发布新版本" disabled={draftBusy||Boolean(draft)} onClick={()=>startPublish(work)}><Icon name="export"/></button><button className="hub-icon hub-remove" title="下架" aria-label="下架" disabled={busy} onClick={()=>{if(confirm('下架此作品？'))void run(async()=>{await request(workUrl(work.id),'DELETE');if(currentView.current.visible&&currentView.current.route===route)show('');setNotice({text:'作品已下架。'});refreshAfterChange();});}}><Icon name="trash"/></button></>}{!work.owner&&<button className="hub-icon" title="举报" aria-label="举报" onClick={()=>setReport(v=>!v)}><Icon name="warning"/></button>}</div>}</div></div>
+      {!work.localSample&&<div className="hub-actions">{previewAction(work)}{downloadAction(work)}{work.owner&&<>{bridge&&<button className="hub-icon" title="修改作品信息" aria-label="修改作品信息" onClick={()=>{setError('');setEditingTags(work.tags?.join('，')??'');setEditingInfo(true);}}><Icon name="rename"/></button>}<button className="hub-icon" title="发布新版本" aria-label="发布新版本" disabled={draftBusy||Boolean(draft)} onClick={()=>startPublish(work)}><Icon name="export"/></button><button className="hub-icon hub-remove" title="下架" aria-label="下架" disabled={busy} onClick={()=>{if(confirm('下架此作品？'))void run(async()=>{await request(workUrl(work.id),'DELETE');if(currentView.current.visible&&currentView.current.route===route)show('');setNotice({text:'作品已下架。'});refreshAfterChange();});}}><Icon name="trash"/></button></>}{!work.owner&&<button className="hub-icon" title="举报" aria-label="举报" onClick={()=>setReport(v=>!v)}><Icon name="warning"/></button>}</div>}</div></div>
       {visible&&work.owner&&editingInfo&&<HubModal title="修改作品信息" onClose={()=>setEditingInfo(false)}>
         <form className="hub-manage-form" onSubmit={event=>{
           event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget));
@@ -451,11 +539,12 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
         }}>
           <label>作品名称<input name="title" autoFocus required maxLength={100} defaultValue={work.title}/></label>
           <label>简介<textarea name="description" maxLength={800} defaultValue={work.description}/></label>
-          <label>标签<input name="tags" maxLength={(tagLength+1)*tagLimit} placeholder="用逗号分隔" defaultValue={work.tags?.join('，')}/></label>
+          <TagEditor value={editingTags} onChange={setEditingTags}/>
           {error&&<p className="hub-message hub-error" role="alert">{error}</p>}
           <div className="hub-actions"><button type="button" className="hub-button" onClick={()=>setEditingInfo(false)}>关闭</button><button className="hub-primary" disabled={busy}>保存修改</button></div>
         </form>
       </HubModal>}
+      {bridge&&work.owner&&work.manifest.scope==='project'&&work.manifest.levels.length>work.previews.length&&<small className="hub-muted">展开关卡组后补传这一组缺少的缩略图。</small>}
       {work.owner&&<form className="hub-form" onSubmit={e=>{e.preventDefault();const image=new FormData(e.currentTarget).get('image');if(image instanceof File&&image.size)void run(async()=>{await upload(image,work.id,replacement,work.version,work.fullImagePreview===true);changeImages(n=>n+1);refreshAfterChange();setNotice({text:'预览图已更新。'});});}}>
         <label>补传或更换预览<select value={replacement} onChange={e=>setReplacement(e.target.value)}><option value="world">作品封面</option>{work.manifest.levels.map(level=><option key={level.id} value={level.id}>{level.title}</option>)}</select></label>
         <label>图片文件<input name="image" type="file" accept="image/png,image/jpeg,image/webp" required/></label><button className="hub-button" disabled={busy}>上传预览</button></form>}
@@ -474,10 +563,20 @@ export function CommunityPanel({bridge,mine=false,visible=true,draft,generatePre
         return <article className="hub-project" key={item.id}><div className="hub-project-row hub-project-with-cover">
           {thumbnail(item)}
           <div className="hub-work-summary">
-            <button type="button" className="hub-row-toggle" aria-expanded={grouped?open:undefined} onClick={()=>grouped?setExpanded(old=>({...old,[item.id]:!open})):show(item.id)}><span className="hub-project-text"><strong>{item.title}</strong><small>{item.author} · {label(item.manifest.scope)}{grouped&&` · ${item.manifest.levels.length} 关`} · {date(sort==='updated'?item.updated:item.created)}{query&&!match.rootMatch&&' · '+match.count+' 个匹配'}</small></span>{grouped&&<Icon name={open?'down':'chevron'} size={16}/>}</button>
+            <button type="button" className="hub-row-toggle" aria-expanded={grouped?open:undefined} onClick={()=>{
+              if(!grouped){show(item.id);return;}
+              if(open){
+                for(const [key,job] of thumbnailJobs.current)if(job.work===item.id){job.cancelled=true;thumbnailJobs.current.delete(key);}
+                setOpenGroups(old=>({...old,[item.id]:[]}));
+              }
+              setExpanded(old=>({...old,[item.id]:!open}));
+            }}><span className="hub-project-text"><strong>{item.title}</strong><small>{item.author} · {label(item.manifest.scope)}{grouped&&` · ${item.manifest.levels.length} 关`} · {date(sort==='updated'?item.updated:item.created)}{query&&!match.rootMatch&&' · '+match.count+' 个匹配'}</small></span>{grouped&&<Icon name={open?'down':'chevron'} size={16}/>}</button>
             {tagsFor(item)}
           </div>
-          <button className="hub-icon" title={mine?'管理作品':'查看详情'} aria-label={mine?'管理作品':'查看详情'} onClick={()=>show(item.id)}><Icon name={mine?'settings':'chevron'}/></button></div>
+          <div className="hub-actions hub-community-row-actions">
+            {!grouped&&previewAction(item)}{!grouped&&downloadAction(item)}{playAction(item)}
+            <button className="hub-icon" title={mine?'管理作品':'查看详情'} aria-label={mine?'管理作品':'查看详情'} onClick={()=>show(item.id)}><Icon name={mine?'settings':'chevron'}/></button>
+          </div></div>
           {open&&<div className="hub-levels">{directory(item,true)}</div>}
         </article>;
       })}</div>

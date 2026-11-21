@@ -46,3 +46,14 @@
 .hub-work-summary{display:grid;gap:5px;min-width:0}.hub-tags{display:flex;flex-wrap:wrap;gap:5px;min-width:0}.hub-tags button{max-width:100%;padding:2px 7px;border:1px solid var(--hub-line);border-radius:5px;background:var(--hub-surface);color:var(--hub-muted);font:inherit;font-size:12px;overflow-wrap:anywhere;cursor:pointer}.hub-tags button:hover{color:var(--hub-text);border-color:var(--hub-accent)}.hub-sort{display:flex;align-items:center;gap:5px;color:var(--hub-muted);white-space:nowrap}.hub-sort select{padding:6px 8px}.hub-filters:has(.hub-sort){flex-wrap:wrap}
 @media(max-width:780px){.hub-nav-footer{margin:0}.hub-nav-footer nav button{padding-inline:7px}.hub-project-actions{justify-content:flex-end}}
 @media(max-width:600px){.hub-project-with-cover>.hub-project-actions{grid-column:2}.hub-nav-footer nav{gap:0}.hub-nav-footer nav svg{display:none}}
+
+.hub-local-projects .hub-group-levels{grid-template-columns:minmax(0,1fr)}
+.hub-level-actions{flex:none;justify-content:flex-end}
+.hub-level-actions .hub-icon{width:32px;min-height:32px}
+.hub-community-row-actions{justify-content:flex-end}
+
+.hub-tag-editor{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.hub-tag-editor .hub-tags{gap:4px}
+.hub-tag-editor .hub-tags button{font-size:12px;padding:2px 7px}
+.hub-tag-editor .hub-tags button[aria-pressed=true]{color:var(--hub-ink);background:var(--hub-accent);border-color:var(--hub-accent)}
+.hub-shell .hub-tag-editor input{width:180px;max-width:100%;min-height:26px;padding:3px 7px;font-size:12px}

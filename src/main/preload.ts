@@ -52,9 +52,9 @@ if(process.argv.includes('--sstar-project-tabs')){
     renameLibraryItem:(k,t)=>homeInvoke('renameLibraryItem',k,t),removeLibraryItem:k=>homeInvoke('removeLibraryItem',k),
     libraryAddFile:()=>homeInvoke('libraryAddFile'),libraryAddLevels:(k,ids)=>homeInvoke('libraryAddLevels',k,ids),
     libraryAddScene:(p,l)=>homeInvoke('libraryAddScene',p,l),openLibraryItem:k=>homeInvoke('openLibraryItem',k),
-    libraryPlay:k=>homeInvoke('libraryPlay',k),onLibraryPlayProgress:f=>listen('libraryPlayProgress',f),
+    libraryPlay:k=>homeInvoke('libraryPlay',k),temporaryPlay:s=>homeInvoke('temporaryPlay',s),onLibraryPlayProgress:f=>listen('libraryPlayProgress',f),
     importPick:()=>homeInvoke('importPick'),importInto:(p,c,f)=>homeInvoke('importInto',p,c,f),publish:o=>homeInvoke('publish',o),
-    sharePreview:(l,d)=>homeInvoke('sharePreview',l,d),publishedPreview:(w,v,l,h,source)=>homeInvoke('publishedPreview',w,v,l,h,source),
+    sharePreview:(l,d)=>homeInvoke('sharePreview',l,d),thumbnailSource:(w,v,c,l)=>homeInvoke('thumbnailSource',w,v,c,l),publishedPreview:(w,v,l,h,source)=>homeInvoke('publishedPreview',w,v,l,h,source),
     publishedThumbnail:(w,v,l,i)=>homeInvoke('publishedThumbnail',w,v,l,i),
     shareImage:(l,i,d)=>homeInvoke('shareImage',l,i,d),replaceImage:(w,l,i,v,f)=>homeInvoke('replaceImage',w,l,i,v,f),
     onOpenScene:f=>listen('openScene',f),startScene:()=>homeInvoke('startScene')

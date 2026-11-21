@@ -91,20 +91,21 @@ async function validateSaveTree(file:string){
 }
 
 type BoundPlaytest = Awaited<ReturnType<typeof bindIsolatedSaves>> & {id:string};
-export async function preparePlaytestSaves(workspace:string,sourceHash:string,current:string,options:{mode?:PlaytestCampaign;verify?:(save:BoundPlaytest)=>Promise<void>},folderRoot?:string){
+export async function preparePlaytestSaves(workspace:string,sourceHash:string,current:string,options:{mode?:PlaytestCampaign;temporary?:boolean;verify?:(save:BoundPlaytest)=>Promise<void>},folderRoot?:string){
  const root=await fs.realpath(workspace),savedGames=folderRoot??await savedGamesDirectory();
  const original=path.join(savedGames,formalFolder),formal=await fs.realpath(original).catch(error=>{if(error.code==='ENOENT')return original;throw error;});
  if(directoriesOverlap(root,formal))throw Error('工作区与正式存档目录重叠，试玩已停止');
- const profiles=new TestProfiles(root);
+ const profiles=new TestProfiles(root,options.temporary===true);
  await fs.mkdir(profiles.root,{recursive:true});
  if(await fs.realpath(profiles.root)!==profiles.root)throw Error('测试存档根目录不能是链接');
  const context:TestContext={projectId:sha256(root.toLowerCase()).slice(0,12),sourceHash,revision:'workspace-playtest',scope:{mode:'world',levelIds:[]}};
- const selection=await profiles.select(context),profile=selection.compatible[0]??await profiles.create(context,'编辑器试玩');
- const bound=await bindIsolatedSaves(root,profile.id,savedGames);
+ const profile=options.temporary?await profiles.create(context,'临时试玩'):(await profiles.select(context)).compatible[0]??await profiles.create(context,'编辑器试玩');
+ const bound=await bindIsolatedSaves(root,profile.id,savedGames,options.temporary);
+
  await options.verify?.({id:profile.id,...bound});
  await profiles.prepareSettings(profile.id,original);
  const campaigns=new CampaignManager(root,bound.saves);
- await campaigns.startSharedPlaytest(current,options.mode);
+ await campaigns.startSharedPlaytest(current,options.temporary&&options.mode==='resume'?'fresh':options.mode);
  await profiles.used(profile.id);
  return {id:profile.id,...bound,profiles};
 }

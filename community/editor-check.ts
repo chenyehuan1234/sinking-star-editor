@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
 import {version as editorVersion} from '../package.json';
+import {EditorService} from '../src/main/service';
 import '../src/main/main';
 
 const output=process.env.SSTAR_COMMUNITY_QA!;
@@ -47,6 +48,35 @@ app.whenReady().then(async()=>{
     await until(()=>home(`Boolean(${button})`),label);
     await home(`${button}.click()`);
   };
+  const temporaryRuns:{mode:string;level?:string}[]=[];
+  async function withoutGameLaunch(action:()=>Promise<void>){
+    const originalRun=EditorService.prototype.runLaunch,originalStopped=EditorService.prototype.assertStopped;
+    EditorService.prototype.assertStopped=async()=>{};
+    EditorService.prototype.runLaunch=async (world,scope,choice,level)=>{
+      assert.equal(choice?.temporary,true);
+      if(level)assert.ok(world.levels.some(item=>item.id===level));
+      temporaryRuns.push({mode:scope.mode,level});
+      return '已启动临时试玩。退出游戏后清理本次进度。';
+    };
+    try{await action();}
+    finally{EditorService.prototype.runLaunch=originalRun;EditorService.prototype.assertStopped=originalStopped;}
+  }
+  assert.equal(await home('getComputedStyle(document.querySelector(".hub-local-projects .hub-group-levels")).gridTemplateColumns.trim().split(" ").length'),1);
+  assert.ok(await home(`Boolean(document.querySelector('.hub-level-actions button[title="3D 预览"]'))`));
+  await clickHome('3D 预览 '+source.name+' · 大地图');
+  await until(()=>home('Boolean(document.querySelector("dialog[open] .hub-live-stage:not([hidden]) canvas"))'),'本地工程大地图预览');
+  await clickHome('关闭','dialog[open] button');
+  await clickHome('3D 预览 '+levels[0].title,'.hub-level-actions button');
+  await until(()=>home('Boolean(document.querySelector("dialog[open] .hub-live-stage:not([hidden]) canvas"))'),'本地工程小关预览');
+  await clickHome('关闭','dialog[open] button');
+  await withoutGameLaunch(async()=>{
+    await clickHome('临时试玩 '+source.name+' · 大地图');
+    await until(()=>temporaryRuns.length===1,'本地大地图临时试玩');
+    await clickHome('临时试玩 '+levels[0].title,'.hub-level-actions button');
+    await until(()=>temporaryRuns.length===2,'本地小关临时试玩');
+  });
+  assert.equal(temporaryRuns[0].level,undefined);
+  assert.ok(temporaryRuns[1].level);
   const network=session.defaultSession.webRequest;
   const communityButtons='.hub-main:not([hidden]) button';
   function stall(method:string,matches:(pathname:string)=>boolean){
@@ -74,6 +104,8 @@ app.whenReady().then(async()=>{
   await until(()=>home(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()===${JSON.stringify(username)})`),'用户名登录');
   assert.ok(await home(`Array.from(document.querySelectorAll('.hub-image-choice input[type="checkbox"]')).every(input=>input.getBoundingClientRect().width<=18&&input.getBoundingClientRect().height<=18)`));
   assert.ok(await home(`(() => { const tray=document.querySelector('.hub-image-tray');return !tray||tray.scrollWidth<=tray.clientWidth; })()`));
+  await clickHome('困难','[aria-label="可选标签"] button');
+  assert.equal(await home('document.querySelector(".hub-tag-editor input").value'),'困难');
   await capture(window,'desktop-publish-preview');
   const pendingPublish=stall('POST',pathname=>pathname==='/api/works');
   await clickHome('确认发布');
@@ -93,7 +125,15 @@ app.whenReady().then(async()=>{
   await clickHome('确认发布');
   await until(()=>home('Boolean(document.querySelector(".hub-work h2"))'),'在桌面端发布并进入作品详情');
   assert.equal(await home('document.querySelector(".hub-work h2").textContent'),levels[0].title);
-  await until(()=>home('Boolean(document.querySelector(".hub-detail-cover img")?.naturalWidth)'),'无自定义封面时使用场景缩略图');
+  await until(()=>home('Boolean(document.querySelector(".hub-detail-cover img")?.naturalWidth)'),'无自定义封面时使用场景缩略图').catch(async error=>{
+    console.error(await home(`(() => {
+      const work=document.querySelector('.hub-work'), cover=work?.querySelector('.hub-detail-cover');
+      return {headline:work?.querySelector('h2')?.textContent,status:work?.textContent.slice(0,400),
+        cover:cover?.tagName,width:cover?.getBoundingClientRect().width,image:cover?.querySelector('img')?.naturalWidth,
+        fallback:work?.querySelector('.hub-thumb-state')?.textContent, visible:work?.getClientRects().length};
+    })()`));
+    throw error;
+  });
   let sceneReads=0,fullImageReads=0;
   network.onBeforeRequest({urls:[address+'/api/*']},(request,done)=>{
     const url=new URL(request.url);
@@ -173,6 +213,12 @@ app.whenReady().then(async()=>{
   await clickHome('‹ 返回作品列表');
   await until(catalogReady,'单关目录首次加载');
   await until(()=>home('Boolean(document.querySelector(".hub-projects .hub-remote-preview img")?.naturalWidth)'),'单关目录封面首次加载');
+  assert.ok(await home(`Boolean(document.querySelector('.hub-community-row-actions button[title="3D 预览"]')&&document.querySelector('.hub-community-row-actions button[title="下载关卡"]'))`));
+  await withoutGameLaunch(async()=>{
+    await home(`document.querySelector('.hub-community-row-actions button[title="临时试玩"]').click()`);
+    await until(()=>temporaryRuns.length===3,'社区列表临时试玩');
+  });
+  assert.ok(temporaryRuns[2].level);
   await clickHome('工程',directoryButtons);
   await until(catalogReady,'工程目录首次加载');
   await delay(350);
@@ -310,7 +356,7 @@ app.whenReady().then(async()=>{
     assert.equal(draft.manifest.editorVersion,editorVersion);
     let published:{id:string;warning?:string};
     if(i){
-      // Use the actual publishing form so it must generate all missing stage previews.
+      // Browse lazily repairs only explicitly opened groups.
       await home(`(() => {
         const input=document.querySelector('[aria-label="发布作品"] form input[required]');
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(names[i])});
@@ -327,13 +373,22 @@ app.whenReady().then(async()=>{
       await clickHome('确认发布');
       const found=await until(async()=>{
         const result=await home('window.workbenchHome.request("/api/works?q="+encodeURIComponent('+JSON.stringify(names[i])+'))');
-        return result.works.find((work:{author:string;previews:string[]})=>work.author===account.username&&work.previews.length===levels.length);
-      },'工程全部单关的默认缩略图');
+        return result.works.find((work:{author:string;previews:string[]})=>work.author===account.username&&work.previews.length===0);
+      },'发布工程时尚未上传任何组的逐关图');
       published={id:found.id};
       await until(()=>home('document.querySelector(".hub-work h2")?.textContent==="验收工程"'),'工程作品详情');
       await home('document.querySelector(".hub-work .hub-group-toggle").click()');
       await home('document.querySelector(".hub-work .hub-group-levels").scrollIntoView({block:"center"})');
-      await until(()=>home(`Array.from(document.querySelectorAll('.hub-work .hub-level-row img')).filter(image=>image.naturalWidth>0).length===${levels.length}`),'展开工程后逐关显示不同缩略图');
+      const details=()=>home('window.workbenchHome.request("/api/works/"+'+JSON.stringify(found.id)+')');
+      await until(async()=>((await details()).previews as string[]).includes(levels[0].id),'打开第一组后上传缺图');
+      assert.deepEqual((await details()).previews,[levels[0].id],'未打开的组没有上传');
+      await until(()=>home(`(() => {
+        const row=document.querySelector('.hub-work .hub-level-row');
+        row?.scrollIntoView({block:'center'});
+        return Boolean(row?.querySelector('img')?.naturalWidth);
+      })()`),'第一组缩略图即时显示');
+      await home('document.querySelectorAll(".hub-work .hub-group-toggle")[1].click()');
+      await until(async()=>((await details()).previews as string[]).length===levels.length,'打开第二组后上传其缩略图');
       await capture(window,'desktop-project-level-thumbnails');
     }else published=await home('window.workbenchHome.publish('+JSON.stringify({title:names[i],version:'1.0',description:'浏览、下载与导入验收',images:true})+')');
     const found=await home('window.workbenchHome.request("/api/works?q="+encodeURIComponent('+JSON.stringify(names[i])+'))');

@@ -195,6 +195,7 @@ test('community serves guest search and downloads and enforces author ownership 
     assert.equal((await call(cover+'?size=full','POST',Buffer.concat([length,image,oversize]),token)).status,400);
     assert.equal((await call(cover+'?size=full','POST',images,other.token)).status,403);
     assert.equal((await call(cover+'?size=full','POST',images,token)).status,200);
+    assert.equal((await call(cover+'?version=stale','POST',image,token)).status,409);
     assert.deepEqual(Buffer.from(await (await call(cover)).arrayBuffer()),image);
     assert.deepEqual(Buffer.from(await (await call(cover+'?size=full')).arrayBuffer()),large);
     assert.equal((await call(cover,'POST',image,token)).status,200);

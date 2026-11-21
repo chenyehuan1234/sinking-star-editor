@@ -1,5 +1,5 @@
 import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import type {DownloadedLevel,HomeDirectory,HomeProject,HomeShareSource,LibraryAddResult} from '../home-types';
+import type {HomeDirectory,HomePlaySource,HomeProject,HomeShareSource,LibraryAddResult,ThumbnailSource,DownloadedLevel} from '../home-types';
 import type {ShareDraft} from '../share-types';
 import type {PreparationProgress as PlayProgress} from '../shared';
 import {matchDirectory,searchKey} from '../level-catalog';
@@ -28,8 +28,9 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
   const [opened,setOpened]=useState<string[]>([]),[searchOpened,setSearchOpened]=useState<Record<string,boolean>>({});
   const [groups,setGroups]=useState<Record<string,string[]>>({}),[query,setQuery]=useState(''),[downloadQuery,setDownloadQuery]=useState('');
   const [libraryFilter,setLibraryFilter]=useState<'local'|'community'>('local');
-  const [libraryPreview,setLibraryPreview]=useState<{item:DownloadedLevel;level:string;title:string}|null>(null);
-  const [playStatus,setPlayStatus]=useState(''),[playProgress,setPlayProgress]=useState<PlayProgress|null>(null);
+  const [preview,setPreview]=useState<{key:string;level:string;title:string;source:ThumbnailSource}|null>(null);
+  const [playStatus,setPlayStatus]=useState(''),[playError,setPlayError]=useState(false),[playProgress,setPlayProgress]=useState<PlayProgress|null>(null);
+  const [playBusy,setPlayBusy]=useState(false),launching=useRef(false);
   const [picking,setPicking]=useState<{key:string;ids:string[]}|null>(null);
   const [collected,setCollected]=useState<{key:string;result:LibraryAddResult}|null>(null);
   const [menu,setMenu]=useState(false),[draft,setDraft]=useState<ShareDraft|null>(null);
@@ -40,7 +41,7 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
   const [manage,setManage]=useState<ManageItem|null>(null),[newName,setNewName]=useState(''),[manageError,setManageError]=useState('');
   const scroller=useRef<HTMLDivElement>(null),previousScroll=useRef<number|null>(null),generation=useRef(0);
   const communityPageOpen=page==='community'||page==='published';
-  function setPage(next:Page){setLibraryPreview(null);navigate(old=>({page:next,communityPage:next==='community'||next==='published'?next:old.communityPage}));}
+  function setPage(next:Page){setPreview(null);navigate(old=>({page:next,communityPage:next==='community'||next==='published'?next:old.communityPage}));}
   async function load(){
     const ticket=++generation.current;
     setLoading(true);
@@ -84,13 +85,20 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
       setPicking(result.failed.length?{key,ids:result.failed.map(item=>item.id)}:null);
     });
   }
-  function playFromLibrary(key:string){
-    void action(async()=>{
-      setPlayStatus('正在检查关卡…');
-      try{setPlayStatus(await api.libraryPlay(key));}
-      catch(error){setPlayStatus('');throw error;}
-      finally{setPlayProgress(null);}
-    });
+  async function launchPlay(run:()=>Promise<string>){
+    if(launching.current)return;
+    launching.current=true;setPlayBusy(true);setPlayError(false);setPlayStatus('正在检查试玩内容…');
+    try{setPlayStatus(await run());}
+    catch(error){setPlayError(true);setPlayStatus(String(error).replace(/^Error: Error invoking remote method '[^']+': Error: /,''));}
+    finally{launching.current=false;setPlayBusy(false);setPlayProgress(null);}
+  }
+  const playFromLibrary=(key:string)=>void launchPlay(()=>api.libraryPlay(key));
+  const temporaryPlay=(source:HomePlaySource)=>void launchPlay(()=>api.temporaryPlay(source));
+  const playback=playStatus&&<><p className={'hub-message'+(playError?' hub-error':'')} role={playError?'alert':'status'}>{playStatus}</p>
+    <PreparationProgress progress={playProgress}/></>;
+  function projectPlayButton(key:string,title:string,level?:string){
+    return <button className="hub-icon" type="button" title="临时试玩" aria-label={'临时试玩 '+title} disabled={playBusy}
+      onClick={()=>temporaryPlay({kind:'project',key,level})}><Icon name="play"/></button>;
   }
   async function generateSharePreview(id:string,compact:boolean,draftId:string){
     const data=await withDeadline(api.sharePreview(id,draftId),22000,'读取场景超时');
@@ -133,8 +141,8 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
     }catch(error){setManageError(String(error).replace(/^Error: Error invoking remote method '[^']+': Error: /,''));}
     finally{setBusy(false);}
   }
-  function libraryPreviewButton(item:DownloadedLevel,level:string,title:string){
-    return <button className="hub-icon" type="button" title="3D 预览" aria-label={'3D 预览 '+title} aria-haspopup="dialog" onClick={()=>setLibraryPreview({item,level,title})}><Icon name="cube"/></button>;
+  function previewButton(key:string,level:string,title:string,source:ThumbnailSource){
+    return <button className="hub-icon" type="button" title="3D 预览" aria-label={'3D 预览 '+title} aria-haspopup="dialog" onClick={()=>setPreview({key,level,title,source})}><Icon name="cube"/></button>;
   }
   const filtered=useMemo(()=>entries.map(entry=>({entry,match:matchDirectory(directories[entry.key]?.levels??[],directories[entry.key]?.groups,query,[entry.name])})).filter(({match})=>match.rootMatch||match.count),[entries,directories,query]);
   const matches=downloads.filter(item=>(item.origin??'community')===libraryFilter&&searchKey([item.name,item.author,item.version,...item.manifest.levels.map(level=>level.title)].join(' ')).includes(searchKey(downloadQuery)));
@@ -144,12 +152,13 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
       {submittingShare&&!communityPageOpen&&<small className="hub-nav-note" role="status">社区正在处理发布草稿…</small>}
       {communityOnline===false&&!communityPageOpen&&<small className="hub-community-offline" role="status">社区连接失败，可以连接 VPN 后刷新。</small>}
     </HubSidebar>
-    {active&&page==='library'&&libraryPreview&&<LiveLevelPreview title={libraryPreview.title}
-      load={async()=>(await api.preview(libraryPreview.item.key,libraryPreview.level,'library'))?.level??null}
-      close={()=>setLibraryPreview(null)}
-      fallback={libraryPreview.level==='primary'&&<ProjectCover id={libraryPreview.item.key} level="primary" revision={0} source="library" alt={libraryPreview.title}/>}/>}
+    {active&&!communityPageOpen&&preview&&<LiveLevelPreview title={preview.title}
+      load={async()=>(await api.preview(preview.key,preview.level,preview.source))?.level??null}
+      close={()=>setPreview(null)}
+      fallback={(preview.source==='project'||preview.level==='primary')&&<ProjectCover id={preview.key} level={preview.level} revision={revision} source={preview.source} alt={preview.title}/>}/>}
     {communityPage&&<CommunityPanel bridge={api} visible={active&&communityPageOpen} mine={communityPage==='published'} draft={draft} generatePreview={generateSharePreview}
-      renderLive={({id,...props})=><LiveLevelPreview key={id} {...props}/>}
+      renderLive={({id,...props})=><LiveLevelPreview key={id} {...props}/>} playBusy={playBusy} playback={playback} renderGroupThumbnail={renderCompactThumbnail}
+      onTemporaryPlay={(id,level)=>temporaryPlay({kind:'community',id,level})}
       onChooseSource={()=>setChoosingShare(true)} onPublishBusy={setSubmittingShare} connectionOffline={communityOnline===false} onConnectionChange={setCommunityOnline}
       onDraftClear={id=>{setDraft(old=>old?.id===id?null:old);void api.shareClear(id);}} onImported={item=>{setSelected(item);if(page==='local')void load();}}
       onDownloaded={()=>void api.downloads().then(setDownloads).catch(e=>setError(String(e)))} onProjects={()=>setPage('local')} onDownloads={()=>{setLibraryFilter('community');setPage('library');}}/>}
@@ -159,8 +168,7 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
         <button className="hub-primary" disabled={busy} onClick={()=>void action(async()=>{if(await api.libraryAddFile()){setDownloads(await api.downloads());setLibraryFilter('local');}})}><Icon name="plus"/>从文件添加</button>
       </div></header>
       {error&&<p className="hub-message hub-error" role="alert">{error}</p>}
-      {playStatus&&<p className="hub-message" role="status">{playStatus}</p>}
-      <PreparationProgress progress={playProgress}/>
+      {playback}
       <div className="hub-filters"><div className="hub-segment" aria-label="关卡来源">{([['local','我的关卡'],['community','已下载']] as const).map(([id,label])=><button key={id} aria-pressed={libraryFilter===id} onClick={()=>setLibraryFilter(id)}>{label}</button>)}</div><label className="hub-search"><Icon name="search"/><input value={downloadQuery} onChange={e=>setDownloadQuery(e.target.value)} aria-label="搜索关卡库" placeholder="搜索关卡、作者或版本"/></label></div>
       {matches.map(item=><article key={item.key} className="hub-download-row hub-card">
         <div className="hub-library-intro">
@@ -168,18 +176,18 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
           <div><strong>{item.name}</strong><small>{item.origin==='local'?'Build '+item.version:item.author+' · 版本 '+item.version} · {item.manifest.levels.length} 关</small>
           </div>
         </div><div className="hub-actions">
-          {libraryPreviewButton(item,'primary',item.name)}
-          <button className="hub-icon" title="试玩" aria-label={'试玩 '+item.name} disabled={busy} onClick={()=>playFromLibrary(item.key)}><Icon name="play"/></button>
+          {previewButton(item.key,'primary',item.name,'library')}
+          <button className="hub-icon" title="试玩" aria-label={'试玩 '+item.name} disabled={busy||playBusy} onClick={()=>playFromLibrary(item.key)}><Icon name="play"/></button>
           <button className="hub-icon" title={item.manifest.scope==='level'?'编辑单关':'编辑副本'} aria-label={(item.manifest.scope==='level'?'编辑单关 ':'编辑副本 ')+item.name} disabled={busy} onClick={()=>void action(()=>api.openLibraryItem(item.key))}><Icon name="template"/></button>
           {item.manifest.scope==='level'&&publishButton({kind:'library',key:item.key},item.name)}
           <button className="hub-icon" title="另存分享包" aria-label="另存分享包" disabled={busy} onClick={()=>void action(async()=>{await api.downloadSave(item.key);})}><Icon name="save"/></button>
           {managementButtons('library',item)}
         </div>{item.manifest.levels.length>1&&<details className="hub-library-levels"><summary>展开 {item.manifest.levels.length} 关</summary>
-          <ul>{item.manifest.levels.map(level=><li key={level.id}><span>{level.title}</span><div className="hub-actions">{libraryPreviewButton(item,level.id,level.title)}{!level.requires?.length&&publishButton({kind:'library',key:item.key,level:level.id},level.title)}</div></li>)}</ul>
+          <ul>{item.manifest.levels.map(level=><li key={level.id}><span>{level.title}</span><div className="hub-actions">{previewButton(item.key,level.id,level.title,'library')}{!level.requires?.length&&publishButton({kind:'library',key:item.key,level:level.id},level.title)}</div></li>)}</ul>
         </details>}</article>)}
       {!matches.length&&<div className="hub-empty"><Icon name="cube" size={30}/><h2>{downloadQuery?'找不到匹配的关卡':'这里还没有关卡'}</h2></div>}
     </section>
-    :<section className="hub-main" aria-labelledby="my-projects-title">
+    :<section className="hub-main hub-local-projects" aria-labelledby="my-projects-title">
       <header className="hub-header"><div><h1 id="my-projects-title">我的工程</h1><p>{entries.filter(entry=>!entry.missing).length} 个本地工程</p></div><div className="hub-actions">
         <button className="hub-button" onClick={()=>onAction('open')}><Icon name="folder"/>打开</button>
         <button className="hub-button" disabled={busy} onClick={()=>void action(async()=>{const item=await api.importFile();if(item){setSelected(item);await load();}})}><Icon name="import"/>导入</button>
@@ -192,6 +200,7 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
         </div>}</div>
       </div></header>
       {error&&<p className="hub-message hub-error" role="alert">{error}</p>}
+      {playback}
       {selected&&<div className="hub-card hub-row"><strong>已导入 {selected.name}</strong><button className="hub-button" onClick={()=>void action(()=>api.openImported(selected.key))}>打开工程 <Icon name="chevron"/></button><button className="hub-icon" aria-label="关闭导入提示" onClick={()=>setSelected(null)}><Icon name="close"/></button></div>}
       <div className="hub-filters"><label className="hub-search"><Icon name="search"/><input aria-label="搜索工程、分组或关卡" placeholder="搜索工程、分组或关卡" value={query} onChange={e=>changeQuery(e.target.value)}/></label>{query&&<button className="hub-icon" aria-label="清除搜索" onClick={()=>changeQuery('')}><Icon name="close"/></button>}</div>
       {loading&&!entries.length&&<p className="hub-message" role="status">正在读取工程…</p>}
@@ -205,6 +214,8 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
             {entry.missing?<span className="hub-cover-grid hub-cover"><Icon name="warning" size={22}/></span>:<ProjectCover id={entry.key} level={entry.cover} revision={entry.modified+revision} alt={entry.name}/>}
             <button className="hub-row-toggle" aria-expanded={open} disabled={entry.missing} onClick={()=>expand(entry,!open)}><span className="hub-project-text"><strong>{entry.name}</strong><small>{entry.missing?'工程文件已移动或删除':`${entry.directoryPending?directories[entry.key]?.levels.length||'…':entry.count} 关 · ${new Date(entry.modified).toLocaleDateString('zh-CN')}`}{query&&!match.rootMatch&&` · ${match.count} 个匹配`}</small></span><Icon name={open?'down':'chevron'} size={16}/></button>
             <div className="hub-actions hub-project-actions">
+              {!entry.missing&&previewButton(entry.key,entry.singleLevel?entry.cover:'world',entry.singleLevel?entry.name:entry.name+' · 大地图','project')}
+              {!entry.missing&&projectPlayButton(entry.key,entry.singleLevel?entry.name:entry.name+' · 大地图')}
               {!entry.missing&&<button className="hub-icon" title={entry.singleLevel?'打开单关':'打开工程'} aria-label={(entry.singleLevel?'打开单关 ':'打开工程 ')+entry.name} onClick={()=>void action(()=>api.open(entry.key))}><Icon name="folder"/></button>}
               {!entry.missing&&publishButton({kind:'project',key:entry.key},entry.name)}
               {managementButtons('project',entry)}
@@ -227,7 +238,11 @@ export function ProjectHome({active,onAction}:{active:boolean;onAction:(command:
                 <ProjectCover id={entry.key} level={level.id} revision={entry.modified+revision} alt={level.title}/>
                 {picked?<label className="hub-level-pick"><input type="checkbox" checked={picked.includes(level.id)} disabled={busy} onChange={e=>pickLevel(entry.key,level.id,e.target.checked)}/><span title={level.title}>{level.title}</span></label>
                   :<button type="button" className="hub-level-open" onClick={()=>void action(()=>api.open(entry.key,level.id))}>{level.title}<Icon name="chevron" size={14}/></button>}
-                {!picked&&!entry.singleLevel&&publishButton({kind:'project',key:entry.key,level:level.id},level.title)}
+                {!picked&&<div className="hub-actions hub-level-actions">
+                  {previewButton(entry.key,level.id,level.title,'project')}
+                  {projectPlayButton(entry.key,level.title,level.id)}
+                  {!entry.singleLevel&&publishButton({kind:'project',key:entry.key,level:level.id},level.title)}
+                </div>}
               </div>}/>:<p className="hub-muted">{entry.directoryPending?'正在读取原版目录…':'暂无小关。'}</p>}
           </section>}
         </article>;

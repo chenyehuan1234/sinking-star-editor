@@ -10,6 +10,7 @@ export type DownloadResult={kind:'project';project:HomeProject}|{kind:'level';it
 export interface SceneThumbnail {image:string;fallback?:boolean}
 export type ThumbnailSource='project'|'library';
 export type HomeShareSource={kind:ThumbnailSource;key:string;level?:string};
+export type HomePlaySource={kind:'project';key:string;level?:string}|{kind:'community';id:string;level?:string};
 export type CommunitySignIn={mode:'device';username:string}|{mode:'recover';username:string;recovery:string}|{mode:'legacy';username:string;password:string};
 export type CommunityRead={data:unknown;stale:boolean;checked?:true};
 export type LevelImportChoice = {kind:'download'|'file';key:string};
@@ -48,6 +49,7 @@ export interface HomeApi {
   downloadSave(key:string):Promise<string|null>;
   openLibraryItem(key:string):Promise<void>;
   libraryPlay(key:string):Promise<string>;
+  temporaryPlay(source:HomePlaySource):Promise<string>;
   onLibraryPlayProgress(listener:(message:string,progress?:PreparationProgress)=>void):()=>void;
   libraryAddFile():Promise<DownloadedLevel|null>;
   libraryAddLevels(key:string,ids:string[]):Promise<LibraryAddResult>;
@@ -58,6 +60,7 @@ export interface HomeApi {
   publishedPreview(work:string,version:string,level:string,content?:string,source?:CommunityPreviewSource):Promise<LevelView|null>;
   publishedThumbnail(work:string,version:string,level:string,image?:string):Promise<string|null>;
   sharePreview(level:string,draftId?:string):Promise<LevelView>;
+  thumbnailSource(work:string,version:string,content:string,level:string):Promise<LevelView>;
   shareImage(level:string,image:string|CommunityImage,draftId?:string):Promise<void>;
   replaceImage(work:string,level:string,image:string|CommunityImage,version?:string,fullImagePreview?:boolean):Promise<void>;
   onOpenScene(listener:(id:string)=>void):()=>void;

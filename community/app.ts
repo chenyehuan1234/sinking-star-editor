@@ -181,7 +181,7 @@ export function community(database:Database,objects:Objects){
   async function thumbnail(row:WorkRow,level:string|undefined,request:Request,owner?:string){
     const old=level?(Object.hasOwn(row.previews,level)?row.previews[level]:null):row.cover;
     const slot=level?'level:'+level:'cover',oldFull=row.full_images[slot]??null;
-    const full=new URL(request.url).searchParams.get('size')==='full';
+    const query=new URL(request.url).searchParams,full=query.get('size')==='full';
     if(request.method==='GET'){
       const key=full?oldFull??old:old;
       if(!key)throw inputError('该作品没有预览图',404);
@@ -190,6 +190,7 @@ export function community(database:Database,objects:Objects){
       return new Response(new Uint8Array(bytes),{headers:{'content-type':'image/webp','cache-control':'public,max-age=120','x-content-type-options':'nosniff'}});
     }
     if(request.method!=='POST'||owner!==row.account)throw inputError('只有作者可以修改预览图',403);
+    if(query.has('version')&&query.get('version')!==row.version)throw inputError('作品版本已更新，请刷新后再补图',409);
     if(level&&!row.manifest.levels.some(l=>l.id===level))throw inputError('找不到此关卡',404);
     const bodyBytes=await body(request,full?4+coverLimit+fullImageLimit:coverLimit);
     let bytes=bodyBytes,large:Buffer|undefined;

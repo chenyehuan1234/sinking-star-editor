@@ -6,8 +6,8 @@ import {HomeLibrary,imageBytes} from './home-library';
 import {digest,designLevels,encodeShare,independentDesign,parseShare,previewScene,retargetDesignId,shareLevel,singleWorld,type ShareDesign} from '../core/share';
 import {nativeScene,nativeWorkbench} from '../native-project';
 import {coverLimit,fullImageLimit,scenePreviewLimit,shareExtension,shareLimit,type CommunityImage,type CommunityPreviewSource,type ShareDraft,type SharedWork} from '../share-types';
-import type {CommunitySignIn,HomeShareSource,LevelImportChoice,LibraryAddResult,SceneThumbnail,ThumbnailSource} from '../home-types';
-import type {WorldProject} from '../shared';
+import type {CommunitySignIn,HomePlaySource,HomeShareSource,LevelImportChoice,LibraryAddResult,SceneThumbnail,ThumbnailSource} from '../home-types';
+import type {RunRequest,WorldProject} from '../shared';
 import {atomicWrite,type EditorService} from './service';
 import {directoriesOverlap} from './game-installation';
 import {version as editorVersion} from '../../package.json';
@@ -57,6 +57,7 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
   const details=new CommunityCache(path.join(cacheRoot,'details'),{freshMs:5*minute,keepMs:7*day,diskBytes:12*mib,entries:160});
   const images=new CommunityCache(path.join(cacheRoot,'images'),{freshMs:day,keepMs:30*day,diskBytes:96*mib,entries:1024});
   const sceneDesigns=new CommunityCache(path.join(cacheRoot,'scenes'),{freshMs:90*day,keepMs:90*day,diskBytes:50*mib,entries:2048});
+  const communityDesigns=new CommunityCache(path.join(cacheRoot,'designs'),{freshMs:7*day,keepMs:30*day,diskBytes:24*mib,entries:32});
   const credentialFile=path.join(app.getPath('userData'),'home','community-author-'+digest(Buffer.from(community?.origin??address)).slice(0,24)+'.bin');
   const author=new CommunityAuthor(credentialFile,async(action,fields,token,signal)=>{
     const reply=await send('/api/account/'+action,'POST',fields===undefined?undefined:JSON.stringify(fields),'application/json',undefined,token,{limit:64*1024,signal});
@@ -134,6 +135,26 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
   }
   async function invalidateWork(id:string){
     await Promise.all([catalogs.invalidate(),details.invalidate('/api/works/'+id)]);
+  }
+  async function fetchCommunityShare(id:string,level?:string,signal?:AbortSignal){
+    const route='/api/works/'+id+'/download'+(level?'?level='+encodeURIComponent(level):'');
+    const reply=await request(route,'GET',undefined,undefined,undefined,{limit:shareLimit,signal});
+    if(reply.headers.get('x-design-sha256')!==digest(reply.bytes))throw Error('下载校验值不匹配');
+    return reply.bytes;
+  }
+  async function readCommunityWork(id:string,signal?:AbortSignal){
+    const response=await request('/api/works/'+id,'GET',undefined,undefined,undefined,{signal});
+    return JSON.parse(response.bytes.toString()) as SharedWork;
+  }
+  async function loadCommunityDesign(id:string,content:string){
+    if(!/^[a-f0-9]{32}$/.test(id)||!/^[a-f0-9]{64}$/.test(content))throw Error('作品标识无效');
+    const entry=await communityDesigns.get(id+':'+content,async()=>{
+      const bytes=await fetchCommunityShare(id);
+      if(parseShare(bytes).manifest.sha256!==content)throw Error('作品内容已更新，请刷新后重试');
+      return bytes;
+    },{canUseStale:offlineCacheAllowed});
+    if(!entry.bytes)throw Error('无法读取作品设计');
+    return entry.bytes;
   }
   async function installShare(bytes:Buffer){
     const {manifest,design}=parseShare(bytes);
@@ -304,9 +325,7 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
         const cached=(await downloads.list()).find(row=>row.work===id&&row.source===source&&row.level===level&&row.version===work.version);
         if(cached&&await downloads.bytes(cached.key).catch(()=>null))return {work,source,isLevel,cached};
       }
-      const res=await request(`/api/works/${id}/download${level?'?level='+encodeURIComponent(level):''}`,'GET',undefined,undefined,undefined,{limit:shareLimit,signal});
-      if(res.headers.get('x-design-sha256')!==digest(res.bytes))throw Error('下载校验值不匹配');
-      return {work,source,isLevel,bytes:res.bytes};
+      return {work,source,isLevel,bytes:await fetchCommunityShare(id,level,signal)};
     });
     if(cached)return {kind:'level',item:cached};
     return isLevel?{kind:'level',item:await downloads.save(bytes,work,source,level)}:{kind:'project',project:await installShare(bytes)};
@@ -366,14 +385,48 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     if(!await backgroundGame())throw Error('请先连接 Steam 原游戏再试玩');
     const snapshot=design.format==='sinking-star-project'?singleWorld(design,primary.title,primary.id):design;
     retargetDesignId(snapshot,snapshot.id,key.slice(0,12));
+    return launchHomePlay(host,engine=>engine.adaptWorld(snapshot).then(world=>engine.runLaunch(world,{mode:'world',levelIds:[]},undefined,primary.id)));
+  });
+  function launchHomePlay(host:ReturnType<ProjectWindows['homeOwner']>,launch:(engine:EditorService)=>Promise<string>){
     const engine=service();
     return engine.exclusive(async()=>{
       const original=engine.onPlaytestProgress;
       engine.onPlaytestProgress=(message,progress)=>{
         if(!host.window.isDestroyed())host.window.webContents.send('home:libraryPlayProgress',message,progress);
       };
-      try{return await engine.runLaunch(await engine.adaptWorld(snapshot),{mode:'world',levelIds:[]},undefined,primary.id);}
+      try{return await launch(engine);}
       finally{engine.onPlaytestProgress=original;}
+    });
+  }
+  function playDesign(engine:EditorService,design:ShareDesign,level?:string,primary?:string,title?:string){
+    const choice={temporary:true};
+    if(design.format==='sinking-star-native-world'){
+      const run:RunRequest=level?{mode:'single',levelIds:[level]}:{mode:'world',levelIds:[],start:'fresh'};
+      return engine.adaptNativeWorld(design).then(world=>engine.nativeRunLaunch(world,run,choice));
+    }
+    const world=design.format==='sinking-star-project'?singleWorld(design,title,primary):design;
+    return engine.adaptWorld(world).then(adapted=>engine.runLaunch(adapted,{mode:'world',levelIds:[],start:'fresh'},choice,primary));
+  }
+  handle('temporaryPlay',async(host,source:HomePlaySource)=>{
+    if(!source||!['project','community'].includes(source.kind))throw Error('试玩来源无效');
+    if(!await backgroundGame())throw Error('请先连接 Steam 原游戏再试玩');
+    return launchHomePlay(host,async engine=>{
+      await engine.assertStopped();
+      if(source.kind==='project'){
+        const {document}=await library.inspect(source.key);
+        if(document.format!=='sinking-star-world'||!source.level){
+          return playDesign(engine,document,source.level,document.format==='sinking-star-project'?document.name:undefined);
+        }
+        const world=await engine.adaptWorld(document);
+        const {design,manifest}=parseShare((await engine.prepareShare(world,source.level,editorVersion)).bytes);
+        return playDesign(engine,design,undefined,manifest.primaryId??manifest.levels[0].id,manifest.levels[0].title);
+      }
+      if(!host.window.isDestroyed())host.window.webContents.send('home:libraryPlayProgress','正在读取社区作品…');
+      const item=await readCommunityWork(source.id);
+      if(source.level&&!item.manifest.levels.some(level=>level.id===source.level))throw Error('找不到要试玩的关卡');
+      const {design,manifest}=parseShare(await (source.level&&item.manifest.scope!=='level'?fetchCommunityShare(item.id,source.level):loadCommunityDesign(item.id,item.manifest.sha256)));
+      const selected=(source.level||manifest.scope!=='project')?manifest.primaryId??manifest.levels[0].id:undefined;
+      return playDesign(engine,design,undefined,selected,manifest.levels[0]?.title);
     });
   });
   const hostId=(host:ReturnType<ProjectWindows['homeOwner']>)=>host.window.webContents.id;
@@ -459,6 +512,18 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     if(design.format!=='sinking-star-project')throw Error('预览文件不是单关');
     return engine.preview(await engine.adaptProject(design));
   });
+  let thumbnailDesign:{key:string;data:ReturnType<typeof parseShare>}|undefined;
+  handle('thumbnailSource',async(_host,id:string,version:string,content:string,level:string)=>{
+    if(!/^[-\w.]{1,100}$/.test(level)||typeof version!=='string'||version.length>40)throw Error('缩略图来源无效');
+    if(!await backgroundGame())throw Error('请先连接 Steam 原游戏');
+    const key=id+':'+content;
+    if(thumbnailDesign?.key!==key)thumbnailDesign={key,data:parseShare(await loadCommunityDesign(id,content))};
+    const {design,manifest}=thumbnailDesign.data;
+    const scene=previewScene(design,manifest,level);
+    if(!scene)throw Error('找不到要补图的关卡');
+    const engine=service();
+    return engine.preview(await engine.adaptProject(scene));
+  });
   handle('sharePreview',async(host,level:string,id?:string)=>{
     const draft=shareDraft(host,id);
     if(!await backgroundGame())throw Error('请先连接 Steam 原游戏，再生成场景预览。');
@@ -475,11 +540,15 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
   function readImage(image:string|CommunityImage){
     return {thumbnail:imageBytes(typeof image==='string'?image:image.thumbnail),full:typeof image!=='string'&&image.full?imageBytes(image.full,fullImageLimit):undefined};
   }
-  async function uploadImage(route:string,image:string|CommunityImage,fullPreview:boolean,signal?:AbortSignal){
+  async function uploadImage(route:string,image:string|CommunityImage,fullPreview:boolean,signal?:AbortSignal,version?:string){
     const {thumbnail,full}=readImage(image);
-    if(!full||!fullPreview)return request(route,'POST',thumbnail,'image/webp',undefined,{limit:64*1024,signal});
+    const query=new URLSearchParams();
+    if(version)query.set('version',version);
+    const endpoint=()=>query.size?route+'?'+query:route;
+    if(!full||!fullPreview)return request(endpoint(),'POST',thumbnail,'image/webp',undefined,{limit:64*1024,signal});
+    query.set('size','full');
     const size=Buffer.alloc(4);size.writeUInt32BE(thumbnail.length);
-    return request(route+'?size=full','POST',Buffer.concat([size,thumbnail,full]),'application/octet-stream',undefined,{limit:64*1024,signal});
+    return request(endpoint(),'POST',Buffer.concat([size,thumbnail,full]),'application/octet-stream',undefined,{limit:64*1024,signal});
   }
   handle('shareImage',(host,level:string,image:string|CommunityImage,id?:string)=>{
     const draft=shareDraft(host,id);
@@ -495,7 +564,7 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
   handle('replaceImage',async(_host,id:string,level:string,image:string|CommunityImage,version?:string,fullPreview=false)=>{
     const ending=level==='world'?'cover':'previews/'+level;
     const route='/api/works/'+id+'/'+ending;
-    await uploadImage(route,image,fullPreview===true);
+    await uploadImage(route,image,fullPreview===true,undefined,version);
     await images.invalidate(communityImageKey(route,version));
     await images.invalidate(communityImageKey(route+'?size=full',version));
     await invalidateWork(id);
@@ -516,23 +585,22 @@ export function registerHome(windows:ProjectWindows,library:HomeLibrary,service:
     const metadata=JSON.stringify({title,description,version,tags});
     if(Buffer.byteLength(metadata)>4096)throw Error('作品说明过长');
     let work:(SharedWork&{warning?:string})|undefined;
-    try{await communityDeadline(communityTimeout,async signal=>{
-      const result=await request(route,id?'PATCH':'POST',draft.bytes,'application/gzip',Buffer.from(metadata).toString('base64'),{limit:64*1024,signal});
-      signal.throwIfAborted();
+    try{
+      const result=await request(route,id?'PATCH':'POST',draft.bytes,'application/gzip',Buffer.from(metadata).toString('base64'),{limit:64*1024});
       work=JSON.parse(result.bytes.toString()) as SharedWork;
-      if(!images)return;
-      const workId=work.id;
-      const upload=(suffix:string,level:string,thumbnail:string)=>uploadImage(`/api/works/${workId}/${suffix}`,{thumbnail,full:draft.fullImages?.[level]},work?.fullImagePreview===true,signal);
-      if(draft.cover&&input.cover!==false)await upload('cover','world',draft.cover);
-      const selection=Array.isArray(input.previews)?new Set<string>(input.previews):null;
-      const selected=draft.manifest.levels.filter(level=>draft.previews[level.id]&&(!selection||selection.has(level.id)));
-      for(let start=0;start<selected.length;start+=4){
-        signal.throwIfAborted();
-        const results=await Promise.allSettled(selected.slice(start,start+4).map(level=>upload('previews/'+level.id,level.id,draft.previews[level.id])));
-        const failure=results.find(result=>result.status==='rejected');
-        if(failure)throw failure.reason;
+      if(images){
+        const workId=work.id;
+        const upload=(suffix:string,level:string,thumbnail:string)=>uploadImage(`/api/works/${workId}/${suffix}`,{thumbnail,full:draft.fullImages?.[level]},work?.fullImagePreview===true,undefined,version);
+        if(draft.cover&&input.cover!==false)await upload('cover','world',draft.cover);
+        const selection=Array.isArray(input.previews)?new Set<string>(input.previews):null;
+        const selected=draft.manifest.levels.filter(level=>draft.previews[level.id]&&(!selection||selection.has(level.id)));
+        for(let start=0;start<selected.length;start+=4){
+          const results=await Promise.allSettled(selected.slice(start,start+4).map(level=>upload('previews/'+level.id,level.id,draft.previews[level.id])));
+          const failure=results.find(result=>result.status==='rejected');
+          if(failure)throw failure.reason;
+        }
       }
-    });}catch(error){
+    }catch(error){
       if(!work){
         if(error instanceof CommunityConnectionError)throw new CommunityConnectionError(error.message+' 重新发布前，请先刷新「我的发布」确认作品状态。',{cause:error});
         throw error;

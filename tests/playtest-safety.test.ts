@@ -42,6 +42,7 @@ test('工作台直接校验并隔离启动指定范围，无需选择存档',asy
   const world=newWorld('a'.repeat(64),'test');
   for(const id of ['a','b'])world.levels.push({id,title:id,project:createBlank(world.sourceHash,world.sourceBuild)});
   const events:string[]=[];
+  const temporaryFlags:boolean[]=[];
   service.assertStopped=async()=>{events.push('stopped');};
   service.runValidate=async()=>{events.push('validate');return [];};
   service.worldDeploy=async (scoped,_entry,_timing,validate)=>{
@@ -50,7 +51,7 @@ test('工作台直接校验并隔离启动指定范围，无需选择存档',asy
     events.push(scoped.levels.map(level=>level.id).join(','));
     return 'deployed';
   };
-  Object.assign(service,{isolationReady:true,startPlaytest:async (level:string,mode:string)=>{events.push(level,mode);return 'started';}});
+  Object.assign(service,{isolationReady:true,startPlaytest:async (level:string,mode:string,_timing:unknown,temporary:boolean)=>{events.push(level,mode);temporaryFlags.push(temporary);return 'started';}});
   assert.equal(await service.runLaunch(world,{mode:'single',levelIds:['b']}),'started');
   assert.deepEqual(events.slice(0,3),['stopped','validate','b']);
   assert.match(events[3],/^ed_[a-f0-9]{12}_b$/);
@@ -58,6 +59,8 @@ test('工作台直接校验并隔离启动指定范围，无需选择存档',asy
   events.length=0;
   assert.equal(await service.runLaunch(world,{mode:'world',levelIds:[],start:'fresh'}),'started');
   assert.deepEqual(events,['stopped','validate','a,b','overworld','fresh']);
+  assert.equal(await service.runLaunch(world,{mode:'world',levelIds:[],start:'fresh'},{temporary:true}),'started');
+  assert.deepEqual(temporaryFlags,[false,false,true]);
   await assert.rejects(()=>service.runLaunch(world,{mode:'single',levelIds:['a'],start:'fresh'}),/从头试玩只适用于整个工程/);
   service.runValidate=async()=>[{severity:'error',message:'missing exit'}];
   events.length=0;
