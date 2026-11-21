@@ -47,6 +47,15 @@ export function UnifiedCameraPanel(p:Props){
  {(['position_id','look_at_id'] as const).map((field,i)=><label className="s-field" key={field}>{i?'观察目标引用':'位置锚点引用'}<select aria-label={i?'镜头观察目标':'镜头位置锚点'} value={(i?camera.lookAtId:camera.positionId)??0} onChange={e=>patch({[field]:Number(e.target.value)})}><option value="0">无固定引用</option>{p.level?.entities.filter(e=>['Marker','Camera_Control'].includes(e.type)||e.id===(i?camera.lookAtId:camera.positionId)).map(e=><option key={e.id} value={e.id}>{cameras.find(c=>c.id===e.id)?.name??typeLabel(e.type)+' #'+e.id}</option>)}</select></label>)}
  <p className="s-muted">关联卷轴：{givers.length}</p>{givers.map(g=><button className="s-text-button" key={g.id} onClick={()=>p.onInspect(g.id)}>查看视角卷轴 #{g.id}</button>)}<details><summary>引用此镜头 · {incoming.length}</summary>{incoming.map((r,i)=><p className="s-muted" key={i}>#{r.sourceId} · {r.field}</p>)}</details>
  </CameraInspector></section>}
+ {p.level?.camera?.layers?.length?<details className="s-camera-native-layers">
+  <summary>原版分层 · {p.level.camera.layers.length} 层</summary>
+  {p.level.camera.layers.map(layer=><p key={layer.kind}>
+    <strong>{{ground:'地面',underground:'地下',sky:'天空'}[layer.kind]}</strong>
+    {' · 基准 Z '}{layer.baseZ??'原版默认'}
+    {layer.kind!=='ground'&&' · 分界 Z '}{layer.kind!=='ground'&&(layer.boundaryZ??'原版默认')}
+    {' · '}{cameras.find(camera=>camera.id===layer.cameraId)?.name??'镜头归属待确认'}
+  </p>)}
+ </details>:null}
  <CameraPanelSection id="regions" title="特殊控制区域" count={regions.length} open={ui.open.regions} onOpen={v=>fold('regions',v)}>{ui.open.regions&&<CameraRegionsPanel level={p.level} config={p.config} selected={region?.id??0} onSelect={p.onSelect} onPatch={p.onPatch} onAction={p.onAction} onTool={p.onTool} active={p.regionsActive} onActive={p.onRegionsActive} probing={p.probing} onProbing={p.onProbing} probe={p.probe} busy={p.busy} layer={p.layer}/>}</CameraPanelSection>
  <CameraPanelSection id="help" title="使用说明" open={ui.open.help} onOpen={v=>fold('help',v)}><p className="s-muted">镜头清单选择相机，“编辑取景”使用主画布调整。分屏黄框的入口编辑所选屏，其他屏共用取景；“布局分屏”调整网格范围。</p><p className="s-muted">额外视角与地图总览都可以由卷轴解锁。用途不代表自动获得；卷轴属性提供对应关联入口。同层放置多台主镜头不会自动形成房间角度切换。</p><p className="s-muted">特殊控制区域用于观察高度、分屏限制和总览覆盖，不是额外摄影机。进入任意区域自动切到指定角度的机制不在本次新增。</p><p className="s-muted">六轴编辑、方向立方体、取点及撤销保留；原生规则分屏的运行限制仍需隔离试玩核对。F1 查看完整指南。</p></CameraPanelSection>
  </div></div>;

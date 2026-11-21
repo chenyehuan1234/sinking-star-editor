@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useRef,useState}from'react';import{commandDefinitions,helpBindingConflicts,defaultBindings,defaultMouse,commandScopes,bindingsOverlap,keyChord,prettyChord,validateBindings,validateMouse,migrateNumpadNudge,type Bindings,type CommandId,type MousePreferences,type CommandScope}from'../input-config';
+import React,{useEffect,useMemo,useRef,useState}from'react';import{commandDefinitions,helpBindingConflicts,defaultBindings,defaultMouse,viewPanDirection,commandScopes,bindingsOverlap,keyChord,prettyChord,validateBindings,validateMouse,migrateNumpadNudge,type Bindings,type CommandId,type MousePreferences,type CommandScope}from'../input-config';
 export{commandDefinitions,prettyChord};export type{CommandId};
 const read=<T,>(key:string,fallback:T):T=>{try{return JSON.parse(localStorage.getItem('sstar07:'+key)??'null')??fallback;}catch{return fallback;}};
 export function preference<T>(key:string,fallback:T){return read(key,fallback);}
@@ -18,7 +18,31 @@ export function getBindings(){
 export function getMouse(){if(mouseCache)return mouseCache;try{return mouseCache=validateMouse(read('mouse',defaultMouse()));}catch{return mouseCache=defaultMouse();}}
 window.addEventListener('storage',e=>{if(e.key==='sstar07:bindings'||e.key==='sstar07:mouse'||e.key===null){bindingCache=undefined;mouseCache=undefined;window.dispatchEvent(new Event('sstar07:preferences'));}});
 let listening=false;const handlers=new Set<{priority:number;scope?:()=>CommandScope;run:(id:CommandId,e:KeyboardEvent)=>boolean}>();
-function ensureListener(){if(listening)return;listening=true;window.addEventListener('keydown',e=>{if(e.isComposing||e.defaultPrevented||e.repeat)return;const chord=keyChord(e),bindings=getBindings(),scope=[...handlers].sort((a,b)=>b.priority-a.priority).find(h=>h.scope)?.scope?.()??'idle',ids=commandDefinitions.filter(([id])=>bindings[id].includes(chord)&&commandScopes(id).includes(scope)).map(([id])=>id);if(!ids.length)return;const input=e.target instanceof HTMLElement&&(e.target.matches('input,select,textarea')||e.target.isContentEditable);for(const id of ids){if(input&&!['save','saveAs','cancel','help','helpSearch','palette'].includes(id))continue;for(const h of[...handlers].sort((a,b)=>b.priority-a.priority))if(h.run(id,e)){e.preventDefault();return;}}});}
+function ensureListener(){
+ if(listening)return;
+ listening=true;
+ const heldPan=new Map<string,{scope:CommandScope;id:CommandId}>();
+ const clear=()=>heldPan.clear();
+ window.addEventListener('keyup',e=>heldPan.delete(e.code));
+ for(const event of ['blur','focusin','pointerdown','sstar:cancel-gesture'])window.addEventListener(event,clear,true);
+ window.addEventListener('keydown',e=>{
+  if(e.isComposing||e.defaultPrevented||e.repeat&&!heldPan.has(e.code))return;
+  const ordered=[...handlers].sort((a,b)=>b.priority-a.priority);
+  const scope=ordered.find(h=>h.scope)?.scope?.()??'idle',chord=keyChord(e),bindings=getBindings();
+  const target=e.target instanceof HTMLElement?e.target:null;
+  for(const [id] of commandDefinitions){
+   if(!bindings[id].includes(chord)||!commandScopes(id).includes(scope))continue;
+   const held=heldPan.get(e.code);
+   if(e.repeat&&(!held||held.scope!==scope||held.id!==id))continue;
+   if((target?.matches('input,select,textarea')||target?.isContentEditable)&&!['save','saveAs','cancel','help','helpSearch','palette'].includes(id))continue;
+   if(viewPanDirection(id)&&target?.closest('[role="dialog"],[role="listbox"],[role="menu"],[role="tablist"],[role="separator"]'))continue;
+   for(const h of ordered)if(h.run(id,e)){
+    if(viewPanDirection(id)&&!e.repeat)heldPan.set(e.code,{scope,id});
+    e.preventDefault();return;
+   }
+  }
+ });
+}
 export function useCommands(run:(id:CommandId,e:KeyboardEvent)=>boolean,priority=0,scope?:()=>CommandScope){const scopeRef=useRef(scope);scopeRef.current=scope;const ref=useRef(run);ref.current=run;useEffect(()=>{ensureListener();const h={priority,...(scope?{scope:()=>scopeRef.current!()} :{}),run:(id:CommandId,e:KeyboardEvent)=>ref.current(id,e)};handlers.add(h);return()=>{handlers.delete(h);};},[priority]);}
 export function useInputPreferences(){const[revision,redraw]=useState(0);useEffect(()=>{const change=()=>redraw(n=>n+1);window.addEventListener('sstar07:preferences',change);return()=>window.removeEventListener('sstar07:preferences',change);},[]);return useMemo(()=>({bindings:getBindings(),mouse:getMouse()}),[revision]);}
 export const shortcut=(id:CommandId)=>getBindings()[id].map(prettyChord).join(' / ')||'未设置';

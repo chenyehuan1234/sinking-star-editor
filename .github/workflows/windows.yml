@@ -23,6 +23,8 @@ jobs:
       - run: npm ci --prefix community
       - run: npm run community:check
       - run: npm run community:build
+      - name: Check Cloudflare deployment bundle
+        run: npm exec --prefix community -- wrangler deploy --dry-run --config community/wrangler.jsonc --outdir dist/community/worker
       - run: npm run package -- --publish never
       - run: npm run verify:release
       - uses: actions/upload-artifact@v4

@@ -11,7 +11,9 @@ npm run community:check
 npm run community:start
 ```
 
-打开 http://127.0.0.1:4176 。桌面端在「关卡社区 → 社区地址」填写同一个地址。测试账号与作品保存在 `.community-local`。用 `SSTAR_COMMUNITY_DATA`、`SSTAR_COMMUNITY_PORT` 可建立独立测试实例。
+打开 http://127.0.0.1:4176 。桌面端在「关卡社区 → 社区地址」填写同一个地址。测试目录使用 SQLite，目录和压缩包保存在 `.community-local`。用 `SSTAR_COMMUNITY_DATA`、`SSTAR_COMMUNITY_PORT` 可建立独立测试实例。
+
+从旧版本切换前先停止旧的本机社区。新版本首次启动时会把同一目录内的旧 PostgreSQL 测试目录复制到 SQLite，保留原数据库与文件。这个迁移只在本机执行。
 
 工程内用「导出与分享」选择当前关或整个工程。确认公开范围与图片后发布，也可以先保存 `.sstar-share.gz`，再从网页上传。
 
@@ -27,22 +29,42 @@ npm run community:start
 
 桌面与网页样本可用 `node community/native-sample-check.mjs` 验证。它生成代表性场景的缩略图和界面截图，图片由本机预览服务提供。
 
-## 腾讯云国际站预览
+## Cloudflare
 
-1. 登录腾讯云国际站，选择免费工作区和境外加速区域。
-2. 为预览配置可从国际站 Cloud Functions 访问的 PostgreSQL。把连接地址作为 `DATABASE_URL` 设置在 Makers 的预览环境变量里，启用数据库服务提供的 TLS。预览和正式环境使用各自的数据库与项目。
-3. 创建 Direct Upload 类型的 Makers 项目。使用国际站会话部署。
+网页和社区接口使用 Workers，账号、作品目录和举报使用 D1，gzip 关卡包和 WebP 图片使用私有 R2 存储桶。桌面仍通过「社区地址」连接同一个站点。
+
+### 本地验证部署
+
+在仓库根目录用 Node.js 22.13 或更高版本运行以下命令。
 
 ```powershell
-npx edgeone login --site global
-npx edgeone whoami
-npm run community:build
-npx edgeone makers deploy ./dist/community --site global --area overseas --env preview --name sinking-star-community-preview
+npm exec --prefix community -- wrangler d1 migrations apply CATALOG --local --config community/wrangler.jsonc
+npm run community:dev
 ```
 
-4. 在国际站控制台打开预览链接。确认 `/api/works` 返回目录，再用测试作品走通注册、上架、逐关下载、完整下载、导入、更新和下架。用接近 5 MiB 的分享包验证上传和下载。
-5. 有域名后再绑定。公开前从无代理的大陆电信、移动、联通及两个海外地区测首屏、搜索、登录、上传和下载，记录成功率与耗时。
+默认端口 8787。从另一个终端运行 `npm run community:worker-check`，使用隔离测试账号验证新建、搜索、下载、更新和下架。Wrangler 的本地数据库和文件与 `.community-local` 分开。
 
-Blob 保存 gzip 包和 WebP 预览图。应用接近存储额度时暂停新发布，下载按月计量。运营人员可在 PostgreSQL 的 `reports` 表查阅举报，并通过 `works.active` 下架作品。按期备份数据库和 Blob，升级套餐前核对控制台实际额度。
+### 云端预览
 
-[国际站部署命令](https://pages.edgeone.ai/document/edgeone-cli) · [预览域名规则](https://pages.edgeone.ai/document/domain-overview) · [免费额度](https://pages.edgeone.ai/document/billing-plan-comparison)
+登录 Cloudflare，授权 Wrangler 管理 Workers 和 D1。R2 首次启用时需要账号所有者完成其订阅流程。使用预览专用的 D1 数据库和 R2 存储桶。
+
+```powershell
+npm exec --prefix community -- wrangler login
+npm exec --prefix community -- wrangler d1 create sinking-star-community-preview
+npm exec --prefix community -- wrangler r2 bucket create sinking-star-community-preview
+Copy-Item community/wrangler.jsonc community/wrangler.local.jsonc
+```
+
+在 `wrangler.local.jsonc` 中填写实际 `database_id`。资源名与上述命令一致时，保留默认存储桶名和数据库名。部署目录由构建命令生成。
+
+```powershell
+npm run community:build
+npm exec --prefix community -- wrangler d1 migrations apply CATALOG --remote --config community/wrangler.local.jsonc
+npm exec --prefix community -- wrangler deploy --config community/wrangler.local.jsonc
+```
+
+用部署返回的 HTTPS 地址访问网页，检查 `/api/works` 并运行 `npm run community:worker-check -- <社区地址>`。另用代表性的大工程检查上传与逐关导出耗时。Workers 的 CPU 限额随套餐变化。正式环境采用独立的数据库和存储桶。
+
+运营人员可在 D1 的 `reports` 表查看举报，在 `works.active` 标记下架。按期备份 D1 和 R2，核对实际存储额度。
+
+[Wrangler 部署](https://developers.cloudflare.com/workers/wrangler/commands/) · [D1 迁移](https://developers.cloudflare.com/d1/reference/migrations/) · [R2 启用步骤](https://developers.cloudflare.com/r2/get-started/) · [Workers 限额](https://developers.cloudflare.com/workers/platform/limits/)

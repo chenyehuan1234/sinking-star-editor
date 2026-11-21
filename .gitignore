@@ -7,6 +7,9 @@ workspace/
 .env.*
 !.env.example
 .edgeone/
+.wrangler/
+.dev.vars*
+community/wrangler.local.jsonc
 .community-local/
 *.pem
 *.pfx
@@ -167,3 +170,8 @@ scripts/*
 !scripts/region-transfer-check-renderer.tsx
 !scripts/project-tabs-check.mjs
 !scripts/project-tabs-check.ts
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*

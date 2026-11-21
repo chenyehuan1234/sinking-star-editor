@@ -7,6 +7,9 @@ for(const name of['green_metamirror','skipping_near_beams_v2','annoying_orange_v
  const keys=['grid.corner.x','grid.corner.y','grid.corner.z','grid.squares_x','grid.squares_y','squares_z','grid.wrapping'],topology=keys.map(k=>codec!.get(settings,k));
  applyCamera(codec!,file,JSON.parse(JSON.stringify(config)),pkg!);const updated=cameraView(codec!,file);assert.deepEqual(updated.origin,[-3,-4]);assert.deepEqual(updated.screenSize,[10,8]);assert.equal(updated.controls.find(c=>c.id===primary.id)!.upDistance,24);assert.deepEqual(keys.map(k=>codec!.get(file.records.find(r=>r.id===settings.id)!,k)),topology);
  for(const r of parseEntities(source).records)if(r.id!==primary.id&&r.type!=='Settings')assert.deepEqual(file.records.find(v=>v.id===r.id)!.diff,r.diff,'原生记录 #'+r.id);
+ assert.deepEqual(updated.layers,view.layers);
+ if(name==='green_metamirror')assert.deepEqual(view.layers?.map(layer=>layer.kind),['underground','ground','sky']);
+ if(name==='skipping_near_beams_v2')assert.deepEqual(view.layers?.find(layer=>layer.kind==='underground'),{kind:'underground',baseZ:-16,boundaryZ:-3,cameraId:view.controls.find(camera=>camera.name==='close_downstairs')?.id});
  assert.deepEqual(updated.references,view.references);assert.deepEqual(updated.regions,view.regions);assert.equal(JSON.stringify(config),before);
  const reopened=parseEntities(source);applyCamera(codec!,reopened,config,pkg!);assert.deepEqual(writeEntities(reopened),writeEntities(file));
 });

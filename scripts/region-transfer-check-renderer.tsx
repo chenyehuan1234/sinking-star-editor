@@ -12,7 +12,7 @@ async function run(){
  click(document.querySelector('.s-project-menu')!.textContent!.trim());
  await until(()=>Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='导入／编辑原版三层世界'),'工程菜单');
  click('导入／编辑原版三层世界');
- await until(()=>document.querySelector('[aria-label="打开大世界"]')?.textContent?.includes('993'),'原版工作台');
+ await until(()=>document.querySelector('[aria-label="打开大世界"]')?.textContent?.includes('大世界'),'原版工作台');
  await until(()=>probe?.level()?.name==='overworld'&&!document.querySelector('.s-status-right')?.textContent?.includes('处理中'),'世界初始分区');
  executeCommand('save');
  await wait(1000);
@@ -33,6 +33,27 @@ async function run(){
  }
  nativeSetter.call(mode,'all');mode.dispatchEvent(new Event('change',{bubbles:true}));
  await input('编辑高度层',String(z));
+ for(const orthographic of [false,true]){
+   const distance=650;
+   probe.loadMemory({position:[x-18,y-26,z+distance],target:[x-18,y-19,z],fov:45,up:[0,0,1],orthographic,span:530});
+   await wait(300);
+   const screen=project(x,y,z),canvas=probe.renderer.domElement;
+   const anchor=probe.coordinatePoint({clientX:screen.x,clientY:screen.y},false,undefined,z)??[x,y,z];
+   for(let i=0;i<40;i++)canvas.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-100,clientX:screen.x,clientY:screen.y}));
+   await wait(350);
+   const zoomed=project(anchor[0],anchor[1],anchor[2]);
+   assert(Math.hypot(screen.x-zoomed.x,screen.y-zoomed.y)<8,(orthographic?'正交':'透视')+'大世界缩放保持指针落点');
+   assert(orthographic?probe.camera.span/probe.camera.zoom<2:probe.camera.position.distanceTo(probe.controls.target)<2,(orthographic?'正交':'透视')+'大世界可从总览尺度放大到一格');
+ }
+ await until(()=>!Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='取消加载'),'缩放分区加载完成');
+ const canvasBounds=probe.renderer.domElement.getBoundingClientRect();
+ const middleStart={x:Math.round(canvasBounds.left+canvasBounds.width/2),y:Math.round(canvasBounds.top+canvasBounds.height/2)},middleBefore=probe.camera.position.clone();
+ await window.uiCheck.pointer({type:'mouseMove',...middleStart});
+ await window.uiCheck.pointer({type:'mouseDown',...middleStart,button:'middle',clickCount:1});
+ await window.uiCheck.pointer({type:'mouseMove',x:middleStart.x+45,y:middleStart.y+18,button:'middle'});
+ await window.uiCheck.pointer({type:'mouseUp',x:middleStart.x+45,y:middleStart.y+18,button:'middle',clickCount:1});
+ await until(()=>probe.camera.position.distanceTo(middleBefore)>.005,'中键拖动更新画布');
+ assert(probe.camera.position.distanceTo(middleBefore)>.005,'快速中键拖动平移大世界');
  probe.loadMemory({position:[x,y-.2,z+15],target:[x,y,z],fov:45,up:[0,0,1]});
  await wait(550);
  await until(()=>!Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='取消加载'),'区域加载完成');

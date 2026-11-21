@@ -2,17 +2,17 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 import * as T from 'three';
 import type {CameraConfig,LevelView} from '../shared';
 import type {CameraPlan} from '../editor-organization';
-import {cameraLayer,screenAt,screenLayout,screenCoverage,plannedScreens} from '../camera-layout';
+import {screenAt,screenLayout,screenCoverage,plannedScreens} from '../camera-layout';
 import {setPreference} from './commands';
 import {selectedScreenCamera} from '../screen-camera';
 import {ScreenBoundaryLines} from './screen-boundary-lines';
 /** Only an unmodified stationary click on empty space/terrain selects a virtual screen.
  * Object picking, marquee drags, placement and mouse navigation retain priority.
  */
-export function ScreenGridOverlay(props:{editingRoom?:[number,number];onLayout?:()=>void;enabled?:boolean;onSelect?:()=>void;onEdit?:(id:number,room:[number,number])=>void;level:LevelView;config?:CameraConfig;plan?:CameraPlan;cameraId:number;layer:number;viewKey:string;getScene:()=>any}){
+export function ScreenGridOverlay(props:{editingRoom?:[number,number];onLayout?:()=>void;enabled?:boolean;onSelect?:()=>void;onEdit?:(id:number,room:[number,number])=>void;level:LevelView;config?:CameraConfig;plan?:CameraPlan;cameraId:number;layer:number;boundaryZ?:number;viewKey:string;getScene:()=>any}){
  const [picked,setPicked]=useState<{room:[number,number];id:number}|null>(null),pickedRef=useRef(picked);pickedRef.current=picked;
  // Full-world terrain bounds are expensive; recompute only when scene/config changes.
- const layout=useMemo(()=>screenLayout(props.level,props.config),[props.level,props.config]),plan=useMemo(()=>plannedScreens(props.level,props.config,props.plan),[props.level,props.config,props.plan]),camera=selectedScreenCamera(props.level.camera,props.config,props.cameraId),height=useMemo(()=>camera?cameraLayer(props.level,camera.id):null,[props.level,camera?.id]),override=props.config?.controls?.find(c=>c.id===camera?.id),z=override?.pose?.target[2]??override?.target?.[2]??(height?.known?height.z:props.layer);
+ const layout=useMemo(()=>screenLayout(props.level,props.config),[props.level,props.config]),plan=useMemo(()=>plannedScreens(props.level,props.config,props.plan),[props.level,props.config,props.plan]),camera=selectedScreenCamera(props.level.camera,props.config,props.cameraId),z=props.boundaryZ??props.layer;
  const live=useRef({...props,layout,plan,camera,z});live.current={...props,layout,plan,camera,z};
  function edit(){const p=live.current,v=pickedRef.current;if(!v||!p.enabled)return;p.getScene()?.cancel();setPreference('cameraRoom:'+p.viewKey+':'+v.id,v.room);if(p.camera)p.onEdit?.(p.camera.id,[...v.room]);}
  useEffect(()=>{if(props.editingRoom&&camera){const next={id:camera.id,room:[...props.editingRoom]as[number,number]};pickedRef.current=next;setPicked(next);}},[props.editingRoom?.[0],props.editingRoom?.[1],camera?.id]);

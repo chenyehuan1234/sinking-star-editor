@@ -3,7 +3,7 @@ import {ordinaryChannelObject} from '../placement-edit';
 import {entityKey,type ObjectKey} from '../editor-organization';
 import type{EntityView,LevelView}from'../shared';import{isAdded,isScenery}from'../editor-math';
 export const displayCategories=[['terrain','逻辑地形'],['terrainArt','地形外观'],['effects','环境特效'],['character','角色'],['monster','怪物'],['mechanism','机关／方块'],['water','水域'],['decoration','用户装饰'],['background','原版布景'],['helpers','远景／辅助']]as const;
-export type DisplayCategory=typeof displayCategories[number][0];export interface SceneDisplay{objects?:Record<string,{hidden?:boolean;locked?:boolean}>;isolate?:ObjectKey[];mode:'all'|'current'|'range';min:number;max:number;follow:boolean;upper:'fade'|'hide';cut:boolean;categories:Record<DisplayCategory,{visible:boolean;locked:boolean}>}
+export type DisplayCategory=typeof displayCategories[number][0];export interface SceneDisplay{objects?:Record<string,{hidden?:boolean;locked?:boolean}>;isolate?:ObjectKey[];mode:'all'|'current'|'range';rangeSet?:boolean;min:number;max:number;follow:boolean;upper:'fade'|'hide';cut:boolean;categories:Record<DisplayCategory,{visible:boolean;locked:boolean}>}
 export const sceneryCategories=['decoration','background','helpers','terrainArt','effects']as const;
 export type SceneryVisibility=Partial<Record<typeof sceneryCategories[number],boolean>>;
 export const defaultSceneryVisibility=():SceneryVisibility=>({decoration:false,background:false,helpers:false,terrainArt:true,effects:false});

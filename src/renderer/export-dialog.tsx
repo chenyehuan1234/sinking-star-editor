@@ -30,8 +30,8 @@ export function ExportDialog({project,current,levels,singleLevel,onClose,onDone,
     <label>输出类型<select aria-label="导出类型" disabled={busy} value={format} onChange={e=>setFormat(e.target.value as typeof format)}>
       <option value="project">{singleLevel?'可编辑单关':'可编辑工程'}</option><option value="runtime">原生运行包文件夹</option>
     </select></label>
-    <p>{format==='project'?'选择位置保存，可导回编辑器继续编辑。':'选择目标目录，生成关卡包、必要资源、工程副本和校验清单。'}</p>
-    {format==='runtime'&&<p className="s-muted">运行包包含完整的 levels.package。导出后可在目标目录查看本次自定义内容。</p>}
+    <p>{format==='project'?'保存一份可重新打开的设计文件，适合备份、分享或继续编辑。':'选择目标目录，生成关卡包、必要资源、工程副本和校验清单。'}</p>
+    {format==='runtime'&&<p className="s-muted">运行包包含完整关卡包，仍需原游戏。想自己测试时可以直接点「试玩」。</p>}
     {error&&<p role="alert" className="s-error">{error}</p>}
     <button className="primary" disabled={busy} onClick={()=>void run(exportDesign)}>{busy?'正在处理…':'选择位置并导出'}</button>
     {onShare&&<div className="s-menu-grid"><button disabled={busy||!current} onClick={()=>void run(async()=>{await onShare(true);onClose();})}><Icon name="world"/>分享当前关</button>

@@ -2,25 +2,29 @@ import {createServer} from 'node:http';
 import {Readable} from 'node:stream';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {PGlite} from '@electric-sql/pglite';
 import {community} from './app';
-import {postgres} from './database';
+import type {Objects} from './database';
+import {localDatabase} from './sqlite';
+import {migrateLocalCatalog} from './local-migration';
 import {nativeSample} from './native-sample-api';
 
 const data=path.resolve(process.env.SSTAR_COMMUNITY_DATA??'.community-local');
-const staticDir=path.resolve('dist/community'), port=Number(process.env.SSTAR_COMMUNITY_PORT??4176);
+const staticDir=path.resolve('dist/community/site'), port=Number(process.env.SSTAR_COMMUNITY_PORT??4176);
 await fs.mkdir(data,{recursive:true});
-const db=process.env.DATABASE_URL?postgres(process.env.DATABASE_URL):new PGlite(path.join(data,'postgres'));
 const disk=(key:string)=>{
   const file=path.resolve(data,'blob',key);
   if(!file.startsWith(path.join(data,'blob')+path.sep))throw Error('Invalid asset key');
   return file;
 };
-const app=community(db,{
+const objects:Objects={
   get:key=>fs.readFile(disk(key)).catch(e=>{if(e.code==='ENOENT')return null;throw e;}),
+  size:key=>fs.stat(disk(key)).then(info=>info.size).catch(e=>{if(e.code==='ENOENT')return null;throw e;}),
   async put(key,bytes){const file=disk(key);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,bytes,{flag:'wx'});},
   remove:key=>fs.rm(disk(key),{force:true}),
-});
+};
+const catalog=path.join(data,'catalog.sqlite');
+await migrateLocalCatalog(data,catalog,objects);
+const app=community(localDatabase(catalog),objects);
 const files:Record<string,string>={'/':'text/html; charset=utf-8','/index.html':'text/html; charset=utf-8','/app.js':'text/javascript; charset=utf-8','/app.css':'text/css; charset=utf-8'};
 const sample=nativeSample(path.resolve(process.env.SSTAR_NATIVE_SAMPLE_DIR??'.community-local/native-sample'));
 

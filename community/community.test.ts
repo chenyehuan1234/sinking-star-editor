@@ -4,8 +4,8 @@ import {gunzipSync,gzipSync} from 'node:zlib';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {PGlite} from '@electric-sql/pglite';
 import {community} from './app';
+import {localDatabase} from './sqlite';
 import {digest,encodeShare,independentDesign,parseShare,shareLevel} from '../src/core/share';
 import {newWorld} from '../src/core/world';
 import type {EditorProject} from '../src/shared';
@@ -122,9 +122,15 @@ test('malformed gzip, modified checksums and local-only fields are rejected',()=
   assert.throws(()=>encodeShare(contaminated,'project','0.11.0-beta.1'),/不支持的字段/);
 });
 
-test('community serves guest search and downloads and enforces author ownership and recovery',async()=>{
-  const db=new PGlite(),objects=new Map<string,Buffer>();
-  const api=community(db,{get:async k=>objects.get(k)??null,put:async(k,v)=>{objects.set(k,v);},remove:async k=>{objects.delete(k);}});
+test('community serves guest search and downloads and enforces author ownership and recovery',{timeout:10000},async()=>{
+  const db=localDatabase(),objects=new Map<string,Buffer>();
+  let onWrite:(()=>Promise<void>)|undefined;
+  const api=community(db,{
+    get:async key=>objects.get(key)??null,
+    size:async key=>objects.get(key)?.length??null,
+    put:async(key,bytes)=>{objects.set(key,bytes);await onWrite?.();},
+    remove:async key=>{objects.delete(key);},
+  });
   const call=(route:string,method='GET',input?:unknown,token='',meta?:unknown)=>{
     const headers:Record<string,string>={'x-sstar-desktop':'1'};
     if(token)headers.authorization='Bearer '+token;
@@ -136,30 +142,46 @@ test('community serves guest search and downloads and enforces author ownership 
     assert.equal(created.status,200);
     const {token,recovery}=await created.json();
     assert.ok(token&&recovery);
-    const bundle=encodeShare(design(),'project','0.11.0-beta.1',levels),meta={title:'地图 A',description:'三个机关谜题',version:'1.0'};
-    assert.equal((await call('works','POST',bundle.bytes,'',meta)).status,401);
+    const packed=encodeShare(design(),'project','0.11.0-beta.1',levels);
+    const legacy=JSON.parse(gunzipSync(packed.bytes).toString());
+    delete legacy.manifest.groups;
+    const bundle=gzipSync(JSON.stringify(legacy)),meta={title:'地图 Ａ',description:'三个机关谜题',version:'1.0'};
+    assert.equal((await call('works','POST',bundle,'',meta)).status,401);
     assert.equal((await call('works','POST',Buffer.alloc(22),token,meta)).status,400);
-    const published=await call('works','POST',bundle.bytes,token,meta);
+    const published=await call('works','POST',bundle,token,meta);
     assert.equal(published.status,201);
     const {id}=await published.json();
     const query=encodeURIComponent('地下房间');
     assert.equal((await (await call('works?q='+query)).json()).works[0].id,id);
     assert.equal((await (await call('works?q='+encodeURIComponent('红色回廊 地下房间'))).json()).works[0].id,id);
     assert.equal((await (await call('works?q='+encodeURIComponent('蓝色回廊 地下房间'))).json()).works.length,0);
-    await db.query("UPDATE releases SET manifest=manifest-'groups' WHERE work=$1",[id]);
     assert.equal((await (await call('works?q='+encodeURIComponent('红色回廊'))).json()).works[0].manifest.groups.length,2);
+    assert.equal((await (await call('works?q='+encodeURIComponent('地图 a 红色回廊'))).json()).works[0].id,id);
     assert.equal((await (await call('works?type=level')).json()).works.length,0);
     const download=await call('works/'+id+'/download?level=start'),bytes=Buffer.from(await download.arrayBuffer());
     assert.equal(download.headers.get('x-design-sha256'),digest(bytes));
     assert.equal(parseShare(bytes).manifest.scope,'group');
-    assert.deepEqual(Buffer.from(await (await call('works/'+id+'/download')).arrayBuffer()),bundle.bytes);
+    assert.deepEqual(Buffer.from(await (await call('works/'+id+'/download')).arrayBuffer()),bundle);
     const png=Buffer.from('fake');
     assert.equal((await call('works/'+id+'/cover','POST',png,token)).status,400);
     assert.equal((await call('works/'+id+'/report','POST',{reason:'需检查的测试内容'})).status,200);
-    assert.equal((await call('works/'+id,'PATCH',bundle.bytes,'',meta)).status,403);
-    assert.equal((await call('works/'+id,'PATCH',bundle.bytes,token,meta)).status,409);
-    assert.equal((await call('works/'+id,'PATCH',bundle.bytes,token,{...meta,version:'1.1'})).status,200);
+    assert.equal((await call('works/'+id,'PATCH',bundle,'',meta)).status,403);
+    assert.equal((await call('works/'+id,'PATCH',bundle,token,meta)).status,409);
+    assert.equal(objects.size,1);
+    // Block both uploads at the same point so they try to publish from the same version.
+    let writes=0,release!:()=>void;
+    const barrier=new Promise<void>(resolve=>{release=resolve;});
+    onWrite=async()=>{if(++writes===2)release();await barrier;};
+    const competing=await Promise.all(['1.1','1.1'].map(version=>call('works/'+id,'PATCH',bundle,token,{...meta,version})));
+    onWrite=undefined;
+    assert.deepEqual(competing.map(response=>response.status).sort(),[200,409]);
+    assert.equal(objects.size,2);
+    assert.equal((await db.query<{value:number}>('SELECT value FROM storage_usage'))[0].value,bundle.length*2);
     assert.equal((await (await call('works/'+id)).json()).version,'1.1');
+    await db.query('UPDATE storage_usage SET value=891289600');
+    assert.equal((await call('works','POST',bundle,token,{...meta,version:'2.0'})).status,429);
+    assert.equal((await db.query<{count:number}>('SELECT count(*) AS count FROM works'))[0].count,1);
+    assert.equal(objects.size,2);
     const reset={...identity,password:'rotated fixture password',recovery};
     const resetResponse=await call('account/recover','POST',reset);
     assert.equal(resetResponse.status,200);

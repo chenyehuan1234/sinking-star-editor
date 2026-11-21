@@ -1,6 +1,6 @@
 {
   "name": "sinking-star-editor",
-  "version": "0.11.2",
+  "version": "0.11.3",
   "private": true,
   "description": "沉星之序 · 本地关卡工作台",
   "type": "module",
@@ -18,6 +18,8 @@
     "verify:release": "node scripts/audit-release.mjs",
     "community:build": "node scripts/build-community.mjs",
     "community:start": "npm run community:build && tsx community/local.ts",
+    "community:dev": "npm run community:build && npm exec --prefix community -- wrangler dev --config community/wrangler.jsonc",
+    "community:worker-check": "tsx community/worker-check.ts",
     "community:check": "tsc --project community/tsconfig.json && tsx --test community/community.test.ts"
   },
   "dependencies": {

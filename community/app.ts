@@ -3,12 +3,12 @@ import {promisify} from 'node:util';
 import {digest,groupedManifest,parseShare,shareLevel} from '../src/core/share';
 import {searchKey} from '../src/level-catalog';
 import {coverLimit,shareExtension,shareLimit,type ShareManifest,type SharedWork} from '../src/share-types';
-import {initialize,type Database,type Objects,type Query} from './database';
+import type {Database, Objects, Statement} from './database';
 
 const derive=promisify(scrypt);
 const random=(length=16)=>randomBytes(length).toString('hex');
 const json=(value:unknown,status=200,headers:HeadersInit={})=>Response.json(value,{status,headers:{'cache-control':'no-store',...headers}});
-const maxStorage=850*1024*1024,maxTransfer=4*1024*1024*1024;
+const maxTransfer=4*1024*1024*1024;
 const inputError=(text:string,status=400)=>new HttpError(text,status);
 class HttpError extends Error {constructor(message:string,readonly status:number){super(message);}}
 
@@ -43,52 +43,70 @@ function checkImage(bytes:Buffer){
   if(type==='VP8L'&&bytes[20]===0x2f){const bits=bytes.readUInt32LE(21);width=1+(bits&0x3fff);height=1+((bits>>>14)&0x3fff);}
   if(width<1||height<1||width>640||height>360)throw inputError('图片尺寸上限为 640 × 360');
 }
-export const workSelect=`SELECT w.id,w.account,w.created,w.updated,w.active,r.id AS release,r.title,r.description,r.version,r.manifest,r.bytes,r.cover,r.previews,a.username
+const workSelect=`SELECT w.id,w.account,w.created,w.updated,w.active,r.id AS release,r.title,r.description,r.version,r.manifest,r.bytes,r.cover,r.previews,a.username
   FROM works w JOIN releases r ON r.id=w.latest JOIN accounts a ON a.id=w.account`;
-type WorkRow={id:string;account:string;created:Date|string;updated:Date|string;active:boolean;release:string;title:string;description:string;version:string;manifest:ShareManifest;bytes:number;cover:string|null;previews:Record<string,string>;username:string};
+type WorkRecord={id:string;account:string;created:string;updated:string;active:number;release:string;title:string;description:string;version:string;manifest:string;bytes:number;cover:string|null;previews:string;username:string};
+type WorkRow=Omit<WorkRecord,'manifest'|'previews'>&{manifest:ShareManifest;previews:Record<string,string>};
+const readWork=(row:WorkRecord):WorkRow=>({...row,manifest:JSON.parse(row.manifest),previews:JSON.parse(row.previews)});
 function publicWork(row:WorkRow,account?:string):SharedWork {
   return {id:row.id,title:row.title,description:row.description,author:row.username,owner:row.account===account,version:row.version,
     updated:new Date(row.updated).toISOString(),created:new Date(row.created).toISOString(),manifest:row.manifest,cover:Boolean(row.cover),previews:Object.keys(row.previews),size:row.bytes};
 }
-async function takeQuota(db:Query,key:string,amount:number,limit:number){
-  const updated=await db.query(`INSERT INTO limits (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=limits.value+$2,touched=now() WHERE limits.value+$2<=$3 RETURNING value`,[key,amount,limit]);
-  if(!updated.rows.length)throw inputError('社区额度暂时不足，请稍后再试',429);
+async function takeQuota(db:Database,key:string,amount:number,limit:number){
+  const updated=await db.query(`INSERT INTO limits (key,value) SELECT ?,? WHERE ?<=?
+    ON CONFLICT (key) DO UPDATE SET value=limits.value+excluded.value
+    WHERE limits.value+excluded.value<=? RETURNING value`,[key,amount,amount,limit,limit]);
+  if(!updated.length)throw inputError('社区额度暂时不足，请稍后再试',429);
 }
 
+export function searchFields(title:string,description:string,username:string,manifest:ShareManifest){
+  const groups=new Map(manifest.groups?.map(group=>[group.id,group.title]));
+  return [
+    searchKey([title,description,username,manifest.title].join(' ')),
+    JSON.stringify(manifest.levels.map(level=>searchKey([level.title,level.id,groups.get(level.groupId??'')??'未分组'].join(' ')))),
+  ] as const;
+}
+const matchWords=(text:string)=>`NOT EXISTS (SELECT 1 FROM json_each(filters.words) word WHERE instr(${text},word.value)=0)`;
+const searchWorks='WITH filters(words, category) AS (VALUES(?,?)) '+workSelect+` CROSS JOIN filters
+    WHERE w.active=1 AND (${matchWords('r.search_root')} OR EXISTS (
+      SELECT 1 FROM json_each(r.search_levels) stage WHERE ${matchWords("r.search_root || ' ' || stage.value")}))
+    AND (filters.category='' OR (filters.category='level' AND r.scope='level') OR (filters.category='project' AND r.scope<>'level')
+      OR (filters.category='projects' AND r.scope='project') OR (filters.category='library' AND r.scope IN ('level','group')))
+    ORDER BY w.updated DESC,w.id DESC LIMIT 21 OFFSET ?`;
+
 export function community(database:Database,objects:Objects){
-  let ready:Promise<void>|undefined;
-  let directoryMigration:Promise<void>|undefined;
   const month=()=>new Date().toISOString().slice(0,7);
-  async function updateDirectory(row:{id:string;work:string;manifest:ShareManifest}){
-    const bytes=await objects.get('design/'+row.work+'/'+row.id);
-    if(!bytes)return row.manifest;
-    let manifest;
-    try{manifest=groupedManifest(row.manifest,parseShare(bytes).design);}
-    catch{return row.manifest;}
-    await database.query("UPDATE releases SET manifest=$2 WHERE id=$1 AND NOT manifest ? 'groups'",[row.id,JSON.stringify(manifest)]);
-    return manifest;
-  }
-  async function migrateRecentDirectories(){
-    return directoryMigration??=(async()=>{
-      const {rows}=await database.query("SELECT r.id,r.work,r.manifest FROM works w JOIN releases r ON r.id=w.latest WHERE w.active AND NOT r.manifest ? 'groups' ORDER BY w.updated DESC LIMIT 12");
-      for(const row of rows)await updateDirectory(row).catch(()=>{});
-    })().finally(()=>{directoryMigration=undefined;});
-  }
   async function find(id:string){
-    const row=(await database.query(workSelect+' WHERE w.id=$1',[id])).rows[0] as WorkRow|undefined;
-    if(row?.active&&!row.manifest.groups)row.manifest=await updateDirectory({id:row.release,work:id,manifest:row.manifest}).catch(()=>row.manifest);
-    return row;
+    const [row]=await database.query<WorkRecord>(workSelect+' WHERE w.id=?',[id]);
+    return row?readWork(row):undefined;
+  }
+  async function writeObject(key:string,bytes:Buffer,commit:()=>Promise<void>,references:()=>Promise<boolean>){
+    await objects.put(key,bytes);
+    try{await commit();}
+    catch(error){
+      // A timed-out write may already have committed. Keep the object if D1 cannot confirm rollback.
+      if(await references().then(found=>!found,()=>false))await objects.remove(key).catch(()=>{});
+      const reason=String(error);
+      if(reason.includes('community_storage_limit'))throw inputError('社区存储额度不足，暂时无法发布',429);
+      if(reason.includes('community_stale_release'))throw inputError('作品已更新，请刷新后再试',409);
+      if(reason.includes('community_duplicate_version'))throw inputError('此版本已发布，请填写新版本号',409);
+      throw error;
+    }
   }
   async function identify(request:Request){
     const authorization=request.headers.get('authorization');
     const token=authorization?.match(/^Bearer ([a-f0-9]{64})$/)?.[1]??request.headers.get('cookie')?.match(/(?:^|;\s*)sstar_session=([a-f0-9]{64})(?:;|$)/)?.[1];
     if(!token)return null;
-    const key=digest(token),result=await database.query('SELECT s.account AS id,a.username FROM sessions s JOIN accounts a ON a.id=s.account WHERE s.token=$1 AND s.expires>now()',[key]);
-    return result.rows[0]?{id:String(result.rows[0].id),username:String(result.rows[0].username),key}:null;
+    const key=digest(token),[result]=await database.query<{id:string;username:string}>(
+      'SELECT s.account AS id,a.username FROM sessions s JOIN accounts a ON a.id=s.account WHERE s.token=? AND s.expires>?',[key,new Date().toISOString()]);
+    return result?{...result,key}:null;
   }
-  async function issue(request:Request,id:string,username:string,recovery?:string){
+  async function issue(request:Request,id:string,username:string,passwordHash:string,recovery?:string){
     const token=random(32);
-    await database.query(`INSERT INTO sessions (token,account,expires) VALUES ($1,$2,now()+interval '7 days')`,[digest(token),id]);
+    const expires=new Date(Date.now()+604800000).toISOString();
+    const inserted=await database.query('INSERT INTO sessions (token,account,expires) SELECT ?,id,? FROM accounts WHERE id=? AND password=? RETURNING token',
+      [digest(token),expires,id,passwordHash]);
+    if(!inserted.length)throw inputError('账号凭据已更新，请重新登录',409);
     const desktop=request.headers.get('x-sstar-desktop')==='1'&&!request.headers.has('origin');
     const cookie=`sstar_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800${new URL(request.url).protocol==='https:'?'; Secure':''}`;
     return json({username,recovery,...desktop?{token}:{}},200,desktop?{}:{'set-cookie':cookie});
@@ -97,7 +115,7 @@ export function community(database:Database,objects:Objects){
     const current=await identify(request);
     if(action==='session'&&request.method==='GET')return json({username:current?.username??null});
     if(request.method!=='POST')throw inputError('请求方式无效',405);
-    if(action==='logout'){if(current)await database.query('DELETE FROM sessions WHERE token=$1',[current.key]);return json({ok:true},200,{'set-cookie':'sstar_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0'});}
+    if(action==='logout'){if(current)await database.query('DELETE FROM sessions WHERE token=?',[current.key]);return json({ok:true},200,{'set-cookie':'sstar_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0'});}
     await takeQuota(database,`auth:${new Date().toISOString().slice(0,13)}:${visitor}`,1,35);
     const input=await jsonBody(request);
     const username=clean(input?.username,32,'用户名');
@@ -106,29 +124,27 @@ export function community(database:Database,objects:Objects){
     if(typeof password!=='string'||password.length<10||password.length>128)throw inputError('密码长度应为 10–128 个字符');
     if(action==='signup'){
       await takeQuota(database,`signup:${new Date().toISOString().slice(0,10)}:${visitor}`,1,10);
-      const id=random(),recovery=random(12);
-      const result=await database.query('INSERT INTO accounts (id,username,login,password,recovery) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (login) DO NOTHING RETURNING id',[id,username,login,await secret(password),await secret(recovery)]);
-      if(!result.rows.length)throw inputError('该用户名已使用',409);
-      return issue(request,id,username,recovery);
+      const id=random(),recovery=random(12),passwordHash=await secret(password);
+      const result=await database.query('INSERT INTO accounts (id,username,login,password,recovery) VALUES (?,?,?,?,?) ON CONFLICT (login) DO NOTHING RETURNING id',[id,username,login,passwordHash,await secret(recovery)]);
+      if(!result.length)throw inputError('该用户名已使用',409);
+      return issue(request,id,username,passwordHash,recovery);
     }
-    const found=(await database.query('SELECT id,username,password,recovery FROM accounts WHERE login=$1',[login])).rows[0];
+    const [found]=await database.query<{id:string;username:string;password:string;recovery:string}>('SELECT id,username,password,recovery FROM accounts WHERE login=?',[login]);
     if(action==='recover'){
       const recovery=clean(input.recovery,24,'恢复码');
       if(!await matches(recovery,found?.recovery??'00000000000000000000000000000000:'+ '0'.repeat(128))||!found)throw inputError('用户名或恢复码无效',401);
-      const next=random(12),changed=await database.transaction(async db=>{
-        const result=await db.query('UPDATE accounts SET password=$2,recovery=$3 WHERE id=$1 AND recovery=$4 RETURNING id',[found.id,await secret(password),await secret(next),found.recovery]);
-        if(result.rows.length)await db.query('DELETE FROM sessions WHERE account=$1',[found.id]);
-        return result.rows.length>0;
-      });
-      if(!changed)throw inputError('此恢复码已使用',401);
-      return issue(request,found.id,found.username,next);
+      const next=random(12),passwordHash=await secret(password);
+      const changed=await database.query('UPDATE accounts SET password=?,recovery=? WHERE id=? AND recovery=? RETURNING id',
+        [passwordHash,await secret(next),found.id,found.recovery]);
+      if(!changed.length)throw inputError('此恢复码已使用',401);
+      return issue(request,found.id,found.username,passwordHash,next);
     }
     if(action!=='login')throw inputError('找不到请求入口',404);
     if(!await matches(password,found?.password??'00000000000000000000000000000000:'+ '0'.repeat(128))||!found)throw inputError('用户名或密码无效',401);
-    return issue(request,found.id,found.username);
+    return issue(request,found.id,found.username,found.password);
   }
-  async function publish(request:Request,owner:string,existing?:WorkRow){
-    await takeQuota(database,`publish:${new Date().toISOString().slice(0,10)}:${owner}`,1,20);
+  async function publish(request:Request,author:{id:string;username:string},existing?:WorkRow){
+    await takeQuota(database,`publish:${new Date().toISOString().slice(0,10)}:${author.id}`,1,20);
     let metadata;
     try{metadata=JSON.parse(Buffer.from(request.headers.get('x-work-meta')??'','base64').toString());}catch{throw inputError('缺少作品信息');}
     const title=clean(metadata?.title,100,'作品名称'),description=clean(metadata?.description,800,'简介',true),version=clean(metadata?.version,40,'版本');
@@ -136,24 +152,20 @@ export function community(database:Database,objects:Objects){
     let manifest;
     try{const parsed=parseShare(bytes);manifest=groupedManifest(parsed.manifest,parsed.design);}catch(e){throw inputError((e as Error).message);}
     const id=existing?.id??random(),release=random(),key=`design/${id}/${release}`;
-    try{
-      await database.transaction(async db=>{
-        await takeQuota(db,'storage',bytes.length,maxStorage);
-        if(!existing)await db.query('INSERT INTO works (id,account,latest) VALUES ($1,$2,$3)',[id,owner,release]);
-        else{
-          const latest=(await db.query('SELECT latest,active FROM works WHERE id=$1 FOR UPDATE',[id])).rows[0];
-          if(!latest?.active||latest.latest!==existing.release)throw inputError('作品已更新，请刷新后再试',409);
-        }
-        const inserted=await db.query(`INSERT INTO releases (id,work,version,title,description,manifest,bytes) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(work,version) DO NOTHING RETURNING id`,[release,id,version,title,description,JSON.stringify(manifest),bytes.length]);
-        if(!inserted.rows.length)throw inputError('此版本已发布，请填写新版本号',409);
-        await objects.put(key,bytes);
-        await db.query('UPDATE works SET latest=$2,updated=now() WHERE id=$1',[id,release]);
-      });
-    }catch(e){await objects.remove(key).catch(()=>{});throw e;}
+    const [root,stages]=searchFields(title,description,author.username,manifest);
+    const statements:Statement[]=[];
+    if(!existing)statements.push({sql:'INSERT INTO works (id,account) VALUES (?,?)',args:[id,author.id]});
+    statements.push({
+      sql:`INSERT INTO releases (id,work,previous,version,title,description,manifest,search_root,search_levels,scope,bytes)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      args:[release,id,existing?.release??null,version,title,description,JSON.stringify(manifest),root,stages,manifest.scope,bytes.length],
+    });
+    await writeObject(key,bytes,()=>database.batch(statements),
+      async()=>Boolean((await database.query('SELECT id FROM releases WHERE id=?',[release])).length));
     return json({id},existing?200:201);
   }
   async function thumbnail(row:WorkRow,level:string|undefined,request:Request,owner?:string){
-    const old=level?row.previews[level]:row.cover;
+    const old=level?(Object.hasOwn(row.previews,level)?row.previews[level]:null):row.cover;
     if(request.method==='GET'){
       if(!old)throw inputError('该作品没有预览图',404);
       const bytes=await objects.get(old);if(!bytes)throw inputError('预览图丢失',404);
@@ -165,25 +177,28 @@ export function community(database:Database,objects:Objects){
     if(level&&!old&&Object.keys(row.previews).length>=12)throw inputError('每个版本最多公开 12 张关卡预览');
     const bytes=await body(request,coverLimit);checkImage(bytes);
     const key=`image/${row.id}/${row.release}/${random()}`;
-    try {
-      await database.transaction(async db=>{
-        await takeQuota(db,'storage',bytes.length,maxStorage);
-        const locked=(await db.query('SELECT latest,active FROM works WHERE id=$1 FOR UPDATE',[row.id])).rows[0];
-        if(!locked?.active||locked.latest!==row.release)throw inputError('作品版本已切换，请刷新后再试',409);
-        const current=(await db.query('SELECT cover,previews FROM releases WHERE id=$1 FOR UPDATE',[row.release])).rows[0];
-        if((level?current.previews[level]:current.cover)!==old)throw inputError('预览图已修改，请刷新后再试',409);
-        if(level&&!old&&Object.keys(current.previews).length>=12)throw inputError('每个版本最多公开 12 张关卡预览');
-        await objects.put(key,bytes);
-        if(level)await db.query('UPDATE releases SET previews=jsonb_set(previews,ARRAY[$2],to_jsonb($3::text)) WHERE id=$1',[row.release,level,key]);
-        else await db.query('UPDATE releases SET cover=$2 WHERE id=$1',[row.release,key]);
-      });
-    }catch(e){await objects.remove(key).catch(()=>{});throw e;}
-    if(old){const previous=await objects.get(old).catch(()=>null);await objects.remove(old).then(()=>previous?takeQuota(database,'storage',-previous.length,maxStorage):undefined).catch(()=>{});}
+    const previous=old?await objects.size(old)??0:0;
+    const previewPath=level?'$.'+JSON.stringify(level):'';
+    const update=level?'previews=json_set(previews,?,?)':'cover=?';
+    const unchanged=level?`json_extract(previews,?) IS ? AND
+      (? IS NOT NULL OR (SELECT count(*) FROM json_each(previews))<12)`:'cover IS ?';
+    await writeObject(key,bytes,async()=>{
+      const changed=await database.query(`UPDATE releases SET ${update},image_bytes=image_bytes+?
+        WHERE id=? AND ${unchanged} AND EXISTS (
+          SELECT 1 FROM works WHERE id=? AND latest=? AND active=1
+        ) RETURNING id`,
+        [...level?[previewPath,key]:[key],bytes.length-previous,row.release,
+          ...level?[previewPath,old??null,old??null]:[row.cover],row.id,row.release]);
+      if(!changed.length)throw inputError('作品版本或预览图已修改，请刷新后再试',409);
+    },async()=>{
+      const [release]=await database.query<{cover:string|null;previews:string}>('SELECT cover,previews FROM releases WHERE id=?',[row.release]);
+      return Boolean(release&&(release.cover===key||Object.values(JSON.parse(release.previews)).includes(key)));
+    });
+    if(old)await objects.remove(old).catch(()=>{});
     return json({ok:true});
   }
   return async (request:Request,ip='local'):Promise<Response>=>{
     try{
-      ready??=initialize(database).catch(e=>{ready=undefined;throw e;});await ready;
       const url=new URL(request.url),parts=url.pathname.split('/').slice(2),[area,id,action,level]=parts,method=request.method;
       if(!url.pathname.startsWith('/api/')||parts.length>4)throw inputError('找不到请求入口',404);
       const origin=request.headers.get('origin');
@@ -193,21 +208,13 @@ export function community(database:Database,objects:Objects){
       if(area!=='works')throw inputError('找不到请求入口',404);
       const current=await identify(request);
       if(!id){
-        if(method==='POST'){if(!current)throw inputError('请先登录作者账号',401);return await publish(request,current.id);}
+        if(method==='POST'){if(!current)throw inputError('请先登录作者账号',401);return await publish(request,current);}
         if(method!=='GET')throw inputError('请求方式无效',405);
         const q=clean(url.searchParams.get('q')??'',100,'检索词',true),category=url.searchParams.get('type')??'',page=Number(url.searchParams.get('page')??0);
         if(!Number.isInteger(page)||page<0||page>500)throw inputError('页码无效');
-        await migrateRecentDirectories().catch(()=>{});
         const words=searchKey(q).split(/\s+/).filter(Boolean);
-        const root="concat_ws(' ',r.title,r.description,a.username,r.manifest->>'title')";
-        const matches=(source:string)=>`NOT EXISTS (SELECT 1 FROM unnest($1::text[]) AS needle WHERE strpos(lower(normalize(${source}, NFKC)),needle)=0)`;
-        const rows=await database.query(workSelect+` WHERE w.active AND (${matches(root)} OR EXISTS (
-            SELECT 1 FROM jsonb_array_elements(r.manifest->'levels') l
-            LEFT JOIN LATERAL (SELECT g->>'title' AS title FROM jsonb_array_elements(COALESCE(r.manifest->'groups','[]'::jsonb)) g WHERE g->>'id'=l->>'groupId' LIMIT 1) grp ON TRUE
-            WHERE ${matches(`concat_ws(' ',${root},l->>'title',l->>'id',coalesce(grp.title,'未分组'))`)}))
-          AND ($2='' OR ($2='level' AND r.manifest->>'scope'='level') OR ($2='project' AND r.manifest->>'scope'<>'level')
-            OR ($2='projects' AND r.manifest->>'scope'='project') OR ($2='library' AND r.manifest->>'scope' IN ('level','group'))) ORDER BY w.updated DESC,w.id DESC LIMIT 21 OFFSET $3`,[words,category,page*20]);
-        return json({works:rows.rows.slice(0,20).map(row=>publicWork(row,current?.id)),more:rows.rows.length>20});
+        const rows=await database.query<WorkRecord>(searchWorks,[JSON.stringify(words),category,page*20]);
+        return json({works:rows.slice(0,20).map(row=>publicWork(readWork(row),current?.id)),more:rows.length>20});
       }
       if(!/^[a-f0-9]{32}$/.test(id))throw inputError('找不到此作品',404);
       const row=await find(id);
@@ -215,14 +222,14 @@ export function community(database:Database,objects:Objects){
       if(!action){
         if(method==='GET')return json(publicWork(row,current?.id));
         if(current?.id!==row.account)throw inputError('只有作者可以修改作品',403);
-        if(method==='PATCH')return await publish(request,row.account,row);
-        if(method==='DELETE'){await database.query('UPDATE works SET active=false WHERE id=$1',[id]);return json({ok:true});}
+        if(method==='PATCH')return await publish(request,current,row);
+        if(method==='DELETE'){await database.query('UPDATE works SET active=0 WHERE id=?',[id]);return json({ok:true});}
       }
       if(action==='cover'||action==='previews'&&level)return await thumbnail(row,level,request,current?.id);
       if(action==='report'&&method==='POST'){
         await takeQuota(database,`report:${new Date().toISOString().slice(0,10)}:${visitor}`,1,10);
         const reason=clean((await jsonBody(request))?.reason,500,'举报理由');
-        await database.query('INSERT INTO reports (work,visitor,note) VALUES ($1,$2,$3) ON CONFLICT(work,visitor) DO UPDATE SET note=excluded.note,created=now()',[id,current?.id??visitor,reason]);
+        await database.query('INSERT INTO reports (work,visitor,note) VALUES (?,?,?) ON CONFLICT(work,visitor) DO UPDATE SET note=excluded.note,created=excluded.created',[id,current?.id??visitor,reason]);
         return json({ok:true});
       }
       if(action==='download'&&method==='GET'){

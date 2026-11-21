@@ -44,7 +44,12 @@ test('工作台直接校验并隔离启动指定范围，无需选择存档',asy
   const events:string[]=[];
   service.assertStopped=async()=>{events.push('stopped');};
   service.runValidate=async()=>{events.push('validate');return [];};
-  service.worldDeploy=async scoped=>{events.push(scoped.levels.map(level=>level.id).join(','));return 'deployed';};
+  service.worldDeploy=async (scoped,_entry,_timing,validate)=>{
+    await service.assertStopped();
+    await validate?.();
+    events.push(scoped.levels.map(level=>level.id).join(','));
+    return 'deployed';
+  };
   Object.assign(service,{isolationReady:true,startPlaytest:async (level:string,fresh:boolean)=>{events.push(level);if(fresh)events.push('fresh');return 'started';}});
   assert.equal(await service.runLaunch(world,{mode:'single',levelIds:['b']}),'started');
   assert.deepEqual(events.slice(0,3),['stopped','validate','b']);

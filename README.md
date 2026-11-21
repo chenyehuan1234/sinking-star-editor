@@ -2,9 +2,9 @@
 
 面向 Windows 的非官方 3D 关卡编辑器。搭建地形、放置原生角色与机关、调整游戏镜头，在同一个工作台编辑完整原版世界及小关。原安装只读，试玩从受管副本启动，使用独立存档目录。
 
-**v0.11.2** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.11.2) · [更新记录](docs/RELEASE-NOTES.md#v0112--游戏更新后自动验证试玩存档) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues)
+**v0.11.3** [Windows 安装版 / ZIP 下载](https://github.com/chenyehuan1234/sinking-star-editor/releases/tag/v0.11.3) · [更新记录](docs/RELEASE-NOTES.md#v0113--画布导航与试玩优化) · [问题反馈](https://github.com/chenyehuan1234/sinking-star-editor/issues)
 
-「我的工程」是启动首页。顶部可新建单关或工程，展开工程后可从分组目录中勾选小关，加入本机关卡库。关卡库有「我的关卡」和「已下载」，支持独立编辑与直接试玩。社区通过 gzip 分享包传输可编辑设计，桌面和独立网页共用目录。[本地预览与腾讯云国际站部署](community/README.md)
+「我的工程」是启动首页。顶部可新建单关或工程，展开工程后可从分组目录中勾选小关，加入本机关卡库。关卡库有「我的关卡」和「已下载」，支持独立编辑与直接试玩。社区通过 gzip 分享包传输可编辑设计，桌面和独立网页共用目录。[本地预览与 Cloudflare 部署](community/README.md)
 
 - 统一大地图入口与主角的移动操作。新增从头试玩整个工程，修复暂停菜单闪退和冰封屏障的原生状态写入。
 

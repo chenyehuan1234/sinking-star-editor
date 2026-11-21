@@ -2,7 +2,8 @@ import fs from'node:fs/promises';import path from'node:path';import{sha256}from'
 import {SOURCE_EXE} from './save-isolation';
 import {randomUUID} from 'node:crypto';
 import {treeInfo} from './storage';
-export interface TestState {version:1;sourceHash:string;sourceBuild?:string;exeHash?:string;deployedHash:string;pendingHash?:string;aux:string[];template?:string;name?:string;world?:{id:string;revision:number;quickEntry?:string}}
+import type {PlaytestBuild} from './playtest-reuse';
+export interface TestState {version:1;sourceHash:string;sourceBuild?:string;exeHash?:string;deployedHash:string;pendingHash?:string;playtestBuild?:PlaytestBuild;aux:string[];template?:string;name?:string;world?:{id:string;revision:number;quickEntry?:string}}
 export interface CopySource {workspace:string;gamePath:string;testRoot:string;sourceHash:string;sourceBuild:string;exeHash:string}
 const markerName='_editor-test-copy.json',hash=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 export function validTestState(value:unknown):value is TestState {const s=value as TestState;return !!s&&s.version===1&&hash(s.sourceHash)&&hash(s.deployedHash)&&(s.pendingHash===undefined||hash(s.pendingHash))&&(s.exeHash===undefined||hash(s.exeHash))&&(s.sourceBuild===undefined||typeof s.sourceBuild==='string')&&Array.isArray(s.aux)&&s.aux.every(s=>typeof s==='string'&&/^data-(common|pc)\/[a-zA-Z0-9_.-]+$/.test(s));}

@@ -1,4 +1,6 @@
 import {copyGameFiles} from './copy-progress';
+import {canReusePlaytestBuild,fileHash,type PlaytestAsset} from './playtest-reuse';
+import {PlaytestTiming} from './playtest-timing';
 import {registerMaterialResolver} from '../render-purpose';
 import {linkViewGiver} from '../core/view-giver';
 import {gameplayProject,reservedEntityIds} from '../editor-organization';
@@ -235,8 +237,11 @@ export class EditorService {
   }
   async assertStopped(){
     if(process.platform!=='win32')return;
-    const result=await exec('tasklist',['/FO','CSV','/NH'],{windowsHide:true});
-    if(/"(?:sinking_star|SinkingStarPlaytest)\.exe"/i.test(result.stdout))throw new Error('请先退出沉星之序或试玩窗口，再修改测试副本');
+    const query="[Diagnostics.Process]::GetProcessesByName('sinking_star').Length + [Diagnostics.Process]::GetProcessesByName('SinkingStarPlaytest').Length";
+    const result=await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',query],{windowsHide:true,timeout:5000});
+    const count=result.stdout.trim();
+    if(!/^\d+$/.test(count))throw Error('无法确认游戏进程状态，请重试');
+    if(Number(count)>0)throw new Error('请先退出沉星之序或试玩窗口，再修改测试副本');
   }
   private statePath(){return path.join(this.workspace,'playtest-state.json');}
   private copySource():CopySource{return{workspace:this.workspace,gamePath:this.gamePath,testRoot:this.testRoot,sourceHash:this.sourceHash,sourceBuild:this.build,exeHash:this.exeHash};}
@@ -246,14 +251,15 @@ export class EditorService {
     if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(s,null,2));return s;
   }
   async preparationEstimate():Promise<import('../shared').PreparationEstimate>{await this.unchanged();const copy=await inspectTestCopy(this.copySource());return{...await estimatePreparation(this.gamePath,this.workspace,copy.prepared||Boolean(copy.sourceExeMissing)),requiresRefresh:copy.requiresRefresh};}
-  async prepare():Promise<string>{
+  async prepare():Promise<string>{await this.prepareState();return this.testRoot;}
+  private async prepareState():Promise<TestState>{
     await this.unchanged();await this.assertStopped();const source=this.copySource();
     const blank={copiedBytes:0,totalBytes:0,filesCopied:0,totalFiles:0};
     const report=(phase:import('../shared').PreparationProgress['phase'],text:string,counts=blank)=>this.onPlaytestProgress?.(text,{phase,...counts});
     try{if(await fs.access(path.join(this.workspace,'playtest-replacement.json')).then(()=>true,()=>false))report('cleanup','恢复上次试玩副本更新…');await recoverCopyReplacement(source);await cleanupAbandonedPreparingCopies(source,()=>report('cleanup','清理上次未完成的复制…'));}catch(error){this.onPlaytestProgress?.('试玩副本恢复失败：'+String(error));throw error;}
     const copy=await inspectTestCopy(source).catch(error=>{this.onPlaytestProgress?.('准备试玩副本失败：'+String(error));throw error;});
-    if(copy.sourceExeMissing){await this.verifySourceHash();await atomicWrite(path.join(this.testRoot,SOURCE_EXE),await fs.readFile(path.join(this.gamePath,'sinking_star.exe')));return this.prepare();}
-    if(copy.prepared){if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(copy.state,null,2));const raw=path.join(this.testRoot,'sinking_star.exe');if(await fs.access(raw).then(()=>true,()=>false))await fs.rename(raw,path.join(this.testRoot,SOURCE_EXE));this.onPlaytestProgress?.('复用已有试玩副本');return this.testRoot;}
+    if(copy.sourceExeMissing){await this.verifySourceHash();await atomicWrite(path.join(this.testRoot,SOURCE_EXE),await fs.readFile(path.join(this.gamePath,'sinking_star.exe')));return this.prepareState();}
+    if(copy.prepared){if(copy.recoverState)await atomicWrite(this.statePath(),JSON.stringify(copy.state,null,2));const raw=path.join(this.testRoot,'sinking_star.exe');if(await fs.access(raw).then(()=>true,()=>false))await fs.rename(raw,path.join(this.testRoot,SOURCE_EXE));this.onPlaytestProgress?.('复用已有试玩副本');return copy.state!;}
     const building=path.join(this.workspace,`preparing-${Date.now()}-${process.pid}`);
     try{
       report('scan','统计试玩副本大小…');
@@ -272,7 +278,7 @@ export class EditorService {
       report('replace','替换当前试玩副本…',counts);
       await promoteTestCopy(source,building,final);await atomicWrite(this.statePath(),JSON.stringify(state,null,2));
       report('cleanup','清理旧试玩副本…',counts);await recoverCopyReplacement(source);
-      this.onPlaytestProgress?.(copy.requiresRefresh?'试玩副本已更新，旧副本已清理':'试玩副本已准备完成');return this.testRoot;
+      this.onPlaytestProgress?.(copy.requiresRefresh?'试玩副本已更新，旧副本已清理':'试玩副本已准备完成');return state;
     }catch(error){
       // A surviving replacement journal owns its rollback and staging directory.
       // Never discard those files when recovery needs them.
@@ -281,8 +287,78 @@ export class EditorService {
       this.onPlaytestProgress?.('准备试玩副本失败：'+String(error));throw error;
     }
   }
+
+  private compilerSignature?:Promise<string>;
+  private lastLaunchTiming?:PlaytestTiming;
+  private async deploymentKey(design:unknown){
+    this.compilerSignature??=Promise.all([fileHash(__filename),fileHash(path.join(path.dirname(this.workerFile),'preview-worker.cjs'))]).then(testRevision);
+    return testRevision({source:this.sourceHash,build:this.build,exe:this.exeHash,compiler:await this.compilerSignature,design});
+  }
+
+  private async checkDeploymentSource(){
+    await this.assertStopped();
+    await this.verifySourceHash();
+    if(await fileHash(path.join(this.gamePath,'sinking_star.exe'))!==this.exeHash)throw Error('Steam 游戏程序已更新，请重启编辑器连接新版后再试玩');
+  }
+
+  private async prepareDeployment(key:string|undefined,validate:(()=>Promise<void>)|undefined,timing?:PlaytestTiming){
+    const candidate=key?await fs.readFile(this.statePath(),'utf8').then(value=>JSON.parse(value) as TestState).catch(()=>null):null;
+    const check=()=>validate?(timing?timing.measure('validation',validate):validate()):Promise.resolve();
+    if(candidate?.playtestBuild?.key!==key||!key)await check();
+    this.onPlaytestProgress?.('准备或复用试玩副本…');
+    const state=await (timing?timing.measure('copy',()=>this.prepareState()):this.prepareState());
+    if(key&&candidate?.playtestBuild?.key===key){
+      const reusable=!state.pendingHash&&await canReusePlaytestBuild(state.playtestBuild,key,state.aux,this.gamePath,this.testRoot).catch(()=>false);
+      if(reusable){
+        this.onPlaytestProgress?.('复用已校验的关卡包和配套资源');
+        return {state,reusable:true};
+      }
+      await check();
+    }
+    return {state,reusable:false};
+  }
+
+  private async writeDeployment(state:TestState,output:Buffer,key:string|undefined,resources:{source:string;target:string}[],generated=new Map<string,Buffer>(),world?:TestState['world']){
+    const assets=new Map<string,PlaytestAsset>();
+    for(const resource of resources){
+      const source=path.join(this.gamePath,resource.source);
+      assets.set(resource.target,{...resource,hash:await fileHash(source)});
+    }
+    for(const [target,data] of generated)assets.set(target,{target,hash:sha256(data)});
+    const oldAux=state.aux.filter(name=>!assets.has(name));
+    const writes:PlaytestAsset[]=[];
+    for(const asset of assets.values()){
+      const target=path.join(this.testRoot,asset.target);
+      await managedPath(this.workspace,target);
+      if(await fileHash(target)!==asset.hash)writes.push(asset);
+    }
+    await this.assertStopped();
+    const wasInterrupted=Boolean(state.pendingHash);
+    state.pendingHash=sha256(output);
+    delete state.playtestBuild;
+    state.aux=[...new Set([...state.aux,...assets.keys()])];
+    await atomicWrite(this.statePath(),JSON.stringify(state,null,2));
+    const packageFile=path.join(this.testRoot,'data/levels.package');
+    await managedPath(this.workspace,packageFile);
+    await this.restoreAux({...state,aux:oldAux});
+    for(const {target,source,hash} of writes){
+      const file=path.join(this.testRoot,target);
+      if(source&&hash!==null)await fs.copyFile(path.join(this.gamePath,source),file);
+      else if(source)await fs.rm(file,{force:true});
+      else await atomicWrite(file,generated.get(target)!);
+    }
+    if(wasInterrupted||state.deployedHash!==state.pendingHash)await atomicWrite(packageFile,output);
+    state.deployedHash=state.pendingHash;
+    state.aux=[...assets.keys()];
+    delete state.pendingHash;
+    if(world)state.world=world;else delete state.world;
+    if(key)state.playtestBuild={key,assets:[...assets.values()]};
+    await atomicWrite(this.statePath(),JSON.stringify(state,null,2));
+  }
+
   private async restoreAux(s:TestState){
     for(const rel of s.aux){const source=path.join(this.gamePath,rel),target=path.join(this.testRoot,rel);
+      await managedPath(this.workspace,target);
       try{await fs.copyFile(source,target);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')await fs.rm(target,{force:true});else throw e;}
     }
   }
@@ -298,7 +374,7 @@ export class EditorService {
     const copies:{source:string;target:string}[]=[];
     for(const ext of ['all_paint_data','all_lightmap_data'])copies.push({source:`data-common/${p.template}.${ext}`,target:`data-common/intro.${ext}`});
     for(const name of await fs.readdir(path.join(this.gamePath,'data-pc')))if(name.startsWith(p.template+'_')&&name.endsWith('-probe_array.texture'))copies.push({source:`data-pc/${name}`,target:`data-pc/intro${name.slice(p.template.length)}`});
-    s.aux=[...new Set([...s.aux,...copies.map(c=>c.target)])];s.pendingHash=sha256(output);
+    s.aux=[...new Set([...s.aux,...copies.map(c=>c.target)])];s.pendingHash=sha256(output);delete s.playtestBuild;
     // Persist recovery intent before touching test assets. Original Steam files are never a target.
     await atomicWrite(this.statePath(),JSON.stringify(s,null,2));
     for(const c of copies){try{await fs.copyFile(path.join(this.gamePath,c.source),path.join(this.testRoot,c.target));}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;await fs.rm(path.join(this.testRoot,c.target),{force:true});}}
@@ -311,7 +387,7 @@ export class EditorService {
     await this.unchanged();await this.assertStopped();const s=await this.readState();
     const original=await fs.readFile(path.join(this.workspace,'backups',s.sourceHash+'.package'));
     if(sha256(original)!==s.sourceHash)throw new Error('原包备份哈希不匹配，恢复已停止');
-    s.pendingHash=this.sourceHash;await atomicWrite(this.statePath(),JSON.stringify(s,null,2));
+    s.pendingHash=this.sourceHash;delete s.playtestBuild;await atomicWrite(this.statePath(),JSON.stringify(s,null,2));
     await this.restoreAux(s);await atomicWrite(path.join(this.testRoot,'data/levels.package'),original);
     await atomicWrite(this.statePath(),JSON.stringify(freshTestState(this.copySource()),null,2));
     return '测试副本的关卡包和辅助资源已恢复；Steam 安装目录未改动。';
@@ -334,16 +410,21 @@ export class EditorService {
     return worker.request<import('../association').IndexedAssociation[]>('native-associations',{project:p,build:this.build});
   }
   async nativeRegion(r:NativeRegionRequest):Promise<NativeRegionResult>{await this.unchanged();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');return worker.request('native-region',{...r,build:this.build});}
-  async nativeDeploy(project:NativeWorldProject):Promise<string>{
-    await this.nativeIndex(project);await this.assertStopped();await this.verifySourceHash();
-    const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');
-    this.onPlaytestProgress?.('构建完整世界的原生修改…');
-    const result=await worker.request<{buffer:Uint8Array;changed:string[];resources?:{source:string;target:string}[]}>('native-build',{project,build:this.build});
-    await this.prepare();const state=await this.readState();await this.restoreAux(state);
-    const resources=await this.nativeAliases(project,result.resources??[]);state.aux=[...new Set([...state.aux,...resources.map(r=>r.target)])];
-    const output=Buffer.from(result.buffer.buffer,result.buffer.byteOffset,result.buffer.byteLength);state.pendingHash=sha256(output);await atomicWrite(this.statePath(),JSON.stringify(state,null,2));
-    for(const r of resources)try{await fs.copyFile(path.join(this.gamePath,r.source),path.join(this.testRoot,r.target));}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
-    await atomicWrite(path.join(this.testRoot,'data/levels.package'),output);state.deployedHash=state.pendingHash;delete state.pendingHash;delete state.world;await atomicWrite(this.statePath(),JSON.stringify(state,null,2));
+  async nativeDeploy(project:NativeWorldProject,timing?:PlaytestTiming,validate?:()=>Promise<void>):Promise<string>{
+    await this.nativeIndex(project);
+    await (timing?timing.measure('sourceCheck',()=>this.checkDeploymentSource()):this.checkDeploymentSource());
+    const key=timing?await this.deploymentKey({kind:'native',project}):undefined;
+    const {state,reusable}=await this.prepareDeployment(key,validate,timing);
+    if(reusable)return '已复用完整世界试玩包';
+    const build=async()=>{
+      const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');
+      this.onPlaytestProgress?.('构建完整世界的原生修改…');
+      const result=await worker.request<{buffer:Uint8Array;changed:string[];resources?:{source:string;target:string}[]}>('native-build',{project,build:this.build});
+      const resources=await this.nativeAliases(project,result.resources??[]);
+      const output=Buffer.from(result.buffer.buffer,result.buffer.byteOffset,result.buffer.byteLength);
+      await this.writeDeployment(state,output,key,resources);
+    };
+    await (timing?timing.measure('buildAndDeploy',build):build());
     return '已部署完整世界到试玩副本';
   }
   async nativeBuild(project:NativeWorldProject){await this.unchanged();await this.verifySourceHash();const worker=await this.previewWorker();if(!worker)throw Error('请先构建编辑器后台');validateNativeWorld(project);const result=project.version===5||Object.values(project.edits).some(ops=>ops.length)||Object.values(project.levelEdits).some(ops=>ops.length)?await worker.request<{buffer:Uint8Array;changed:string[]}>('native-build',{project,build:this.build}):{buffer:this.pkg.buffer,changed:[]},file=path.join(this.workspace,'exports','native-world-'+project.id+'-'+Date.now()+'.package');const buffer=Buffer.from(result.buffer.buffer,result.buffer.byteOffset,result.buffer.byteLength);await atomicWrite(file,buffer);await atomicWrite(path.join(path.dirname(file),path.basename(file,'.package')+'.sstar-native-world.json'),JSON.stringify(project,null,2));return{path:file,hash:sha256(buffer),changed:result.changed};}
@@ -361,18 +442,33 @@ export class EditorService {
     return issues;
   }
   async worldBuild(w:WorldProject){await this.checkWorld(w);await this.verifySourceHash();const b=this.compiler!.build(w),output=this.pkg.rebuild(b.changes),name=`world-${w.id}-${Date.now()}`,out=path.join(this.workspace,'exports',name+'.package');await atomicWrite(out,output);await atomicWrite(path.join(this.workspace,'exports',name+'.sstar-world.json'),JSON.stringify(w,null,2));return{path:out,hash:sha256(output)};}
-  async worldDeploy(w:WorldProject,quickEntry?:string){
-    await this.checkWorld(w);await this.verifySourceHash();await this.assertStopped();this.onPlaytestProgress?.('准备或复用试玩副本…');await this.prepare();this.onPlaytestProgress?.('构建所选范围…');
-    const built=this.compiler!.build(w,quickEntry),output=this.pkg.rebuild(built.changes),s=await this.readState();await this.restoreAux(s);
-    const generated=new Map<string,Buffer>();const emptyPaint=Buffer.alloc(16);emptyPaint.write('allp');emptyPaint.writeUInt32LE(6,4);const emptyLight=Buffer.alloc(8);emptyLight.writeUInt32LE(3);
-    for(const name of['overworld','intro']){generated.set(`data-common/${name}.all_paint_data`,emptyPaint);generated.set(`data-common/${name}.all_lightmap_data`,emptyLight);}
-    const resources=[...built.resources];const pc=await fs.readdir(path.join(this.gamePath,'data-pc'));
-    for(const l of w.levels){const target=built.levelNames[l.id],source=l.project.template;for(const name of pc)if(name.startsWith(source+'_')&&name.endsWith('.texture'))resources.push({source:`data-pc/${name}`,target:`data-pc/${target}${name.slice(source.length)}`});}
-    s.aux=[...new Set([...s.aux,...generated.keys(),...resources.map(r=>r.target)])];s.pendingHash=sha256(output);await atomicWrite(this.statePath(),JSON.stringify(s,null,2));
-    for(const r of resources)try{await fs.copyFile(path.join(this.gamePath,r.source),path.join(this.testRoot,r.target));}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;await fs.rm(path.join(this.testRoot,r.target),{force:true});}
-    for(const[rel,data]of generated)await atomicWrite(path.join(this.testRoot,rel),data);
-    await atomicWrite(path.join(this.testRoot,'data/levels.package'),output);s.deployedHash=sha256(output);delete s.pendingHash;s.world={id:w.id,revision:built.revision,quickEntry};await atomicWrite(this.statePath(),JSON.stringify(s,null,2));
-    await atomicWrite(path.join(this.workspace,'projects',`${w.id}.last-deployed.sstar-world.json`),JSON.stringify(w,null,2));
+  async worldDeploy(w:WorldProject,quickEntry?:string,timing?:PlaytestTiming,validate?:()=>Promise<void>){
+    await this.checkWorld(w);
+    await (timing?timing.measure('sourceCheck',()=>this.checkDeploymentSource()):this.checkDeploymentSource());
+    const key=timing?await this.deploymentKey({kind:'world',world:w,quickEntry}):undefined;
+    const {state,reusable}=await this.prepareDeployment(key,validate,timing);
+    if(reusable)return '已复用所选范围的试玩包';
+    const build=async()=>{
+      this.onPlaytestProgress?.('构建所选范围…');
+      const built=this.compiler!.build(w,quickEntry),output=this.pkg.rebuild(built.changes);
+      const generated=new Map<string,Buffer>(),emptyPaint=Buffer.alloc(16),emptyLight=Buffer.alloc(8);
+      emptyPaint.write('allp');emptyPaint.writeUInt32LE(6,4);emptyLight.writeUInt32LE(3);
+      for(const name of ['overworld','intro']){
+        generated.set(`data-common/${name}.all_paint_data`,emptyPaint);
+        generated.set(`data-common/${name}.all_lightmap_data`,emptyLight);
+      }
+      const resources=[...built.resources];
+      const pc=await fs.readdir(path.join(this.gamePath,'data-pc'));
+      for(const l of w.levels){
+        const target=built.levelNames[l.id],source=l.project.template;
+        for(const name of pc)if(name.startsWith(source+'_')&&name.endsWith('.texture')){
+          resources.push({source:`data-pc/${name}`,target:`data-pc/${target}${name.slice(source.length)}`});
+        }
+      }
+      await this.writeDeployment(state,output,key,resources,generated,{id:w.id,revision:built.revision,quickEntry});
+      await atomicWrite(path.join(this.workspace,'projects',`${w.id}.last-deployed.sstar-world.json`),JSON.stringify(w,null,2));
+    };
+    await (timing?timing.measure('buildAndDeploy',build):build());
     return `已整体部署 ${w.levels.length} 个小关卡和 ${w.map.entries.length} 个入口。所有入口可直接进入。`;
   }
   async worldLaunch(_w:WorldProject,_quickEntry?:string,_initialLevel?:string,_fresh=false):Promise<string>{return blockPlaytest();}
@@ -435,25 +531,39 @@ export class EditorService {
   private async isolatedRunPlan(context:TestContext):Promise<PlaytestPlan>{
     return {context,compatible:[],incompatible:[],supported:this.isolationReady,preparation:await this.preparationEstimate(),reason:this.isolationReady?'试玩前自动核对独立存档目录':isolationUnavailable};
   }
-  private async startPlaytest(initialLevel:string,fresh=false,fromLibrary=false){
+  private async startPlaytest(initialLevel:string,fresh=false,fromLibrary=false,timing?:PlaytestTiming){
     this.onPlaytestProgress?.('准备独立试玩存档…');
     await this.assertStopped();
     const source=await fs.readFile(path.join(this.testRoot,SOURCE_EXE));
     if(sha256(source)!==this.exeHash)throw Error('试玩程序已变化，请重新准备试玩副本');
     const file=path.join(this.testRoot,RUNTIME_EXE);
     await managedPath(this.workspace,file);
-    const save=await preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{fresh,library:fromLibrary,verify:async bound=>{
+    const prepareSave=()=>preparePlaytestSaves(this.workspace,this.sourceHash,initialLevel,{fresh,library:fromLibrary,verify:async bound=>{
       const program=patchSaveDirectory(source,bound.id);
-      await atomicWrite(file,program.buffer);
-      if(sha256(await fs.readFile(file))!==program.hash)throw Error('独立试玩程序校验失败');
+      if(await fileHash(file)!==program.hash){
+        await atomicWrite(file,program.buffer);
+        if(await fileHash(file)!==program.hash)throw Error('独立试玩程序校验失败');
+      }
       this.onPlaytestProgress?.('核对试玩副本的存档路径…');
       await this.assertStopped();
-      await verifyRuntimeSavePath(file,this.testRoot,bound.alias,bound.saves);
+      const verify=()=>verifyRuntimeSavePath(file,this.testRoot,bound.alias,bound.saves);
+      await (timing?timing.measure('savePathProbe',verify):verify());
     }});
+    const save=await (timing?timing.measure('savePreparation',prepareSave):prepareSave());
     await this.assertStopped();
     this.onPlaytestProgress?.('启动独立试玩…');
-    const child=spawn(file,[],{cwd:this.testRoot,stdio:'ignore',detached:true,windowsHide:false});
-    await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
+    const launch=async()=>{
+      const child=spawn(file,[],{cwd:this.testRoot,stdio:'ignore',detached:true,windowsHide:false});
+      await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
+      return child;
+    };
+    const child=await (timing?timing.measure('spawn',launch):launch());
+    if(timing&&child.pid){
+      this.lastLaunchTiming=timing;
+      void timing.window(child.pid).then(async ms=>{
+        if(this.lastLaunchTiming===timing)await atomicWrite(path.join(this.workspace,'playtest-launch-timing.json'),JSON.stringify(timing.report(ms),null,2));
+      }).catch(()=>{});
+    }
     child.once('exit',()=>{void this.exclusive(async()=>{
       await this.assertStopped();
       await save.profiles.captureIndependentSettings();
@@ -461,38 +571,44 @@ export class EditorService {
     child.unref();
     return fromLibrary?'已启动独立试玩，从关卡初始状态开始。':fresh?'已在独立存档中从头试玩整个工程。':'已启动独立试玩。';
   }
+
   async runLaunch(w:WorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice,entryLevel?:string){
-    const fresh=freshWorldRun(r);
+    const timing=new PlaytestTiming(entryLevel?'library':r?.mode),fresh=freshWorldRun(r);
     if(!this.isolationReady)throw Error(isolationUnavailable);
-    this.onPlaytestProgress?.('检查试玩范围与原生依赖…');
-    await this.assertStopped();
-    const issues=await this.runValidate(w,r),errors=issues.filter(i=>i.severity==='error');
-    if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
     const scoped=scopedWorld(w,r);
     if(entryLevel&&!scoped.levels.some(level=>level.id===entryLevel))throw Error('试玩关卡不在所选范围内');
-    await this.worldDeploy(scoped);
+    await this.worldDeploy(scoped,undefined,timing,async()=>{
+      this.onPlaytestProgress?.('检查试玩范围与原生依赖…');
+      const errors=(await this.runValidate(w,r)).filter(i=>i.severity==='error');
+      if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
+    });
     const initial=entryLevel??(r.mode==='single'?scoped.levels[0].id:undefined);
-    return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',fresh,Boolean(entryLevel));
+    return this.startPlaytest(initial?['ed',scoped.id,initial].join('_'):'overworld',fresh,Boolean(entryLevel),timing);
   }
   async nativeRunLaunch(p:NativeWorldProject,r:RunRequest,_legacyChoice?:PlaytestChoice){
+    const timing=new PlaytestTiming('native-'+r?.mode);
     if(!this.isolationReady)throw Error(isolationUnavailable);
     await this.assertStopped();
     await this.checkNativeRun(p,r);
-    if(p.version===5){
+    const validate=async()=>{
+      if(p.version!==5)return;
+      this.onPlaytestProgress?.('检查原版世界试玩范围与依赖…');
       const errors=(await this.nativeValidate(p)).filter(i=>i.severity==='error'&&(r.mode==='world'||i.levelId===r.levelIds[0]));
       if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
-    }
+    };
     if(r.mode==='single'){
       const name=r.levelIds[0],w=newWorld(p.sourceHash,p.sourceBuild);w.id=p.id;
       w.levels=[{id:'native_scene',title:name,project:nativeScene(p,name)!}];
       const scoped=scopedWorld(w,{mode:'single',levelIds:['native_scene']});
-      const errors=(await this.worldValidate(scoped)).filter(i=>i.severity==='error');
-      if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
-      await this.worldDeploy(scoped);
-      return this.startPlaytest('ed_'+scoped.id+'_native_scene');
+      await this.worldDeploy(scoped,undefined,timing,async()=>{
+        await validate();
+        const errors=(await this.worldValidate(scoped)).filter(i=>i.severity==='error');
+        if(errors.length)throw Error(errors.map(i=>i.message).join('；'));
+      });
+      return this.startPlaytest('ed_'+scoped.id+'_native_scene',false,false,timing);
     }
-    await this.nativeDeploy(p);
-    return this.startPlaytest('overworld',freshWorldRun(r));
+    await this.nativeDeploy(p,timing,validate);
+    return this.startPlaytest('overworld',freshWorldRun(r),false,timing);
   }
 
   async worldReset(_w:WorldProject):Promise<string>{return blockPlaytest();}

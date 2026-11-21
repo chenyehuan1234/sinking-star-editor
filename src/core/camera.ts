@@ -123,5 +123,24 @@ export function cameraView(c:PropertyCodec,file:EntityFile):CameraView{
  const controls=file.records.filter(r=>r.type==='Camera_Control'&&c.parse(r).complete).map(r=>readCamera(c,r,byId));
  const regions=file.records.filter(r=>(r.type==='Camera_Marker'||r.type==='Marker'&&c.get(r,'script_name','')==='camera_z_lock')&&c.parse(r).complete).map(r=>({id:r.id,name:String(c.get(r,'entity_name',''))||cameraObjectLabel(c,r)+' #'+r.id,position:point(r),extents:['x','y','z'].map(a=>Number(c.get(r,'props.box_extents.'+a,1)))as Vec3,kind:r.type==='Marker'?-1:Number(c.get(r,'overhead_map_type')),cameraId:Number(c.get(r,'overhead_map_id')),category:cameraCategory(c,r)??undefined,sourceType:r.type as 'Camera_Marker'|'Marker',priority:r.type==='Camera_Marker'?Number(c.get(r,'priority')):undefined,targetId:r.type==='Marker'?Number(c.get(r,'script_target_entity_id')):undefined,nativeParameter:r.type==='Marker'?Number(c.get(r,'float_parameter')):undefined}));
  const ids=new Set([...controls,...regions].map(r=>r.id)),references=file.records.flatMap(r=>c.parse(r).fields.filter(f=>f.schema.pid&&Number(f.value)&&(cameraManaged(c,r)||ids.has(Number(f.value)))).map(f=>({sourceId:r.id,field:f.schema.name,targetId:Number(f.value)})));
- return{layered:hasCameraLayers(c,settings),perScreen:Boolean(get('per_screen_camera',false)),screenSize:[Number(get('squares_per_screen_x',nativeScreenSize)),Number(get('squares_per_screen_y',nativeScreenSize))],origin:[Number(get('per_screen_camera_corner.x',0)),Number(get('per_screen_camera_corner.y',0))],margins:[Number(get('room_margin_x',0)),Number(get('room_margin_y',0))],controls,regions,references};
+ const layered=hasCameraLayers(c,settings);
+ const primary=controls.filter(camera=>camera.primary&&!camera.overview);
+ const nativeZ=(field:string)=>{const value=settings&&c.get(settings,field,NaN);return typeof value==='number'&&Number.isFinite(value)?value:undefined;};
+ const lower=settings&&c.get(settings,'has_lower_layer',false),upper=settings&&c.get(settings,'has_upper_layer',false);
+ const below=nativeZ('underground_barrier'),above=nativeZ('skyground_barrier');
+ const layers:NonNullable<CameraView['layers']>=[];
+ function layer(kind:typeof layers[number]['kind'],baseZ?:number,boundaryZ?:number){
+  const candidates=primary.filter(camera=>{
+   if(!layered)return kind==='ground';
+   const z=camera.position[2];
+   if(kind==='underground')return below!==undefined&&z<below;
+   if(kind==='sky')return above!==undefined&&z>above;
+   return (!lower||below!==undefined&&z>below)&&(!upper||above!==undefined&&z<above);
+  });
+  layers.push({kind,baseZ,boundaryZ,cameraId:candidates.length===1?candidates[0].id:undefined});
+ }
+ if(lower)layer('underground',nativeZ('underground_z0'),below);
+ layer('ground',nativeZ('ground_z0'));
+ if(upper)layer('sky',nativeZ('skyground_z0'),above);
+ return{layered,layers,perScreen:Boolean(get('per_screen_camera',false)),screenSize:[Number(get('squares_per_screen_x',nativeScreenSize)),Number(get('squares_per_screen_y',nativeScreenSize))],origin:[Number(get('per_screen_camera_corner.x',0)),Number(get('per_screen_camera_corner.y',0))],margins:[Number(get('room_margin_x',0)),Number(get('room_margin_y',0))],controls,regions,references};
 }
